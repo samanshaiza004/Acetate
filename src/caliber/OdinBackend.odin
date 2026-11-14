@@ -1,5 +1,6 @@
 package audacity_backend
 
+import "core:math"
 import "core:testing"
 
 // Mirrors lib-utility/MathApprox.h's FastLog2 bit approximation. Keeping this
@@ -162,6 +163,39 @@ odin_compressor_lookahead_process :: proc "c" (
 			index -= 1
 		}
 	}
+}
+
+// Mirrors the sample loop in CompressorProcessor::ApplyEnvelope. The delay
+// line and its shifting remain owned by the C++ processor.
+@(export, link_name="audacity_odin_compressor_apply_envelope")
+odin_compressor_apply_envelope :: proc "c" (
+	delayed_input: [^]f32,
+	output: [^]f32,
+	envelope: [^]f32,
+	block_len: uintptr,
+	makeup_gain_db: f32,
+	abs_max: ^f32,
+	abs_max_index: ^i32,
+) {
+	if abs_max == nil || abs_max_index == nil do return
+
+	maximum: f32 = 0.0
+	maximum_index: i32 = 0
+	if block_len > 0 && delayed_input != nil && output != nil && envelope != nil {
+		for i in 0..<block_len {
+			input_sample := delayed_input[i]
+			absolute_sample := odin_abs_f32(input_sample)
+			if absolute_sample > maximum {
+				maximum = absolute_sample
+				maximum_index = i32(i)
+			}
+			gain_db := envelope[i] + makeup_gain_db
+			gain := math.pow_f32(10.0, 0.05 * gain_db)
+			output[i] = input_sample * gain
+		}
+	}
+	abs_max^ = maximum
+	abs_max_index^ = maximum_index
 }
 
 @(export, link_name="audacity_odin_fade_process_block")

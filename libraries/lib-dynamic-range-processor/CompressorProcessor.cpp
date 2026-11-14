@@ -13,6 +13,9 @@
 #include "MathApprox.h"
 #include "SimpleCompressor/GainReductionComputer.h"
 #include "SimpleCompressor/LookAheadGainReduction.h"
+#if defined(AUDACITY_USE_ODIN_BACKEND)
+#include "OdinBackend.h"
+#endif
 #include <algorithm>
 #include <cassert>
 
@@ -189,6 +192,11 @@ void CompressorProcessor::ApplyEnvelope(
    for (auto i = 0; i < mNumChannels; ++i)
    {
       const auto in = mDelayedInput[i].data();
+#if defined(AUDACITY_USE_ODIN_BACKEND)
+      audacity_odin_compressor_apply_envelope(
+         in, out[i], mEnvelope.data(), static_cast<size_t>(blockLen),
+         makeupGainDb, &chanAbsMax[i], &chanAbsMaxIndex[i]);
+#else
       for (auto j = 0; j < blockLen; ++j)
       {
          if (std::abs(in[j]) > chanAbsMax[i])
@@ -199,6 +207,7 @@ void CompressorProcessor::ApplyEnvelope(
          out[i][j] =
             in[j] * std::pow(10.f, 0.05f * (mEnvelope[j] + makeupGainDb));
       }
+#endif
       std::move(in + blockLen, in + blockLen + d, in);
    }
    const auto i = chanAbsMax[0] > chanAbsMax[1] ? 0 : 1;

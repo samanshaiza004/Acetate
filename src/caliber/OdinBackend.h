@@ -36,6 +36,12 @@ void audacity_odin_compressor_lookahead_process(
    float* buffer, int32_t buffer_size, int32_t write_position,
    int32_t last_pushed_samples, int32_t delay_in_samples);
 
+// Applies the current compressor envelope and returns the channel peak.
+void audacity_odin_compressor_apply_envelope(
+   const float* delayed_input, float* output, const float* envelope,
+   size_t block_len, float makeup_gain_db, float* abs_max,
+   int32_t* abs_max_index);
+
 // Scores one channel's samples into the shared candidate positions in place.
 void audacity_odin_zero_crossing_score_channel(
    float* samples, size_t sample_count, float* candidate_scores,

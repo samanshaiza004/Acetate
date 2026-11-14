@@ -38,6 +38,11 @@ C++ retains and allocates the ring buffer and owns delay configuration, push,
 read, and processor lifetime; Odin traverses and shapes the borrowed ring
 synchronously without allocation.
 
+Odin also applies each channel's gain-reduction envelope to the delayed samples
+and computes that channel's peak sample and index. C++ retains the delayed
+channel buffers, shifts their remainder, aggregates frame statistics, and
+owns processor settings and scheduling.
+
 The Select > At Zero Crossings command keeps its existing Audacity checks,
 sample-window reads, and selection/history updates. Odin scores the fetched
 channels and selects the candidate offset synchronously. PCM buffers bypass
