@@ -23,3 +23,51 @@ odin_track_selection_action :: proc "c" (
 	}
 	return 0
 }
+
+@(export, link_name="audacity_odin_shift_selection_range")
+odin_shift_selection_range :: proc "c" (
+	track_count: i64,
+	clicked_index: i64,
+	stored_anchor_index: i64,
+	first_selected_index: i64,
+	last_selected_index: i64,
+	out_anchor_index: ^i64,
+	out_first_index: ^i64,
+	out_last_index: ^i64,
+	out_has_anchor: ^u8,
+) -> i32 {
+	if track_count <= 0 || clicked_index < 0 || clicked_index >= track_count ||
+		out_anchor_index == nil || out_first_index == nil ||
+		out_last_index == nil || out_has_anchor == nil {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	anchor := stored_anchor_index
+	if anchor < 0 || anchor >= track_count {
+		anchor = -1
+		if first_selected_index >= 0 && first_selected_index < track_count {
+			last := last_selected_index
+			if last < first_selected_index || last >= track_count {
+				last = first_selected_index
+			}
+			if clicked_index >= first_selected_index {
+				anchor = first_selected_index
+			} else {
+				anchor = last
+			}
+		}
+	}
+
+	if anchor >= 0 {
+		out_anchor_index^ = anchor
+		out_first_index^ = min(clicked_index, anchor)
+		out_last_index^ = max(clicked_index, anchor)
+		out_has_anchor^ = 1
+	} else {
+		out_anchor_index^ = -1
+		out_first_index^ = clicked_index
+		out_last_index^ = clicked_index
+		out_has_anchor^ = 0
+	}
+	return i32(CALIBER_STATUS_OK)
+}

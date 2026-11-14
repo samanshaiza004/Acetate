@@ -12,6 +12,9 @@
 #include "SyncLock.h"
 #include "Track.h"
 #include "Project.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "OdinApplicationBackend.h"
+#endif
 
 #include <cassert>
 
@@ -102,6 +105,74 @@ void SelectionState::SelectNone(TrackList &tracks)
 void SelectionState::ChangeSelectionOnShiftClick(
    TrackList &tracks, Track &track)
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   auto odinExtendFrom = tracks.Lock(mLastPickedTrack);
+   const auto trackCount = static_cast<int64_t>(tracks.Size());
+   const auto begin = tracks.begin();
+   const auto clicked = tracks.Find(&track);
+   const auto clickedIndex = clicked == tracks.end()
+      ? int64_t{-1}
+      : static_cast<int64_t>(std::distance(begin, clicked));
+   auto storedAnchorIndex = int64_t{-1};
+   if (odinExtendFrom) {
+      const auto anchor = tracks.Find(odinExtendFrom.get());
+      if (anchor != tracks.end())
+         storedAnchorIndex = static_cast<int64_t>(std::distance(begin, anchor));
+      else
+         odinExtendFrom.reset();
+   }
+
+   auto firstSelectedIndex = int64_t{-1};
+   auto lastSelectedIndex = int64_t{-1};
+   Track::Holder firstSelected;
+   Track::Holder lastSelected;
+   if (!odinExtendFrom) {
+      auto index = int64_t{0};
+      for (auto selectedTrack : tracks) {
+         if (selectedTrack->GetSelected()) {
+            if (firstSelectedIndex < 0) {
+               firstSelectedIndex = index;
+               firstSelected = selectedTrack->SharedPointer();
+            }
+            lastSelectedIndex = index;
+            lastSelected = selectedTrack->SharedPointer();
+         }
+         ++index;
+      }
+   }
+
+   int64_t anchorIndex;
+   int64_t firstIndex;
+   int64_t lastIndex;
+   uint8_t hasAnchor{};
+   const auto status = audacity_odin_shift_selection_range(
+      trackCount, clickedIndex, storedAnchorIndex, firstSelectedIndex,
+      lastSelectedIndex, &anchorIndex, &firstIndex, &lastIndex, &hasAnchor);
+   if (status == 0) {
+      if (hasAnchor && !odinExtendFrom) {
+         if (anchorIndex == firstSelectedIndex)
+            odinExtendFrom = firstSelected;
+         else if (anchorIndex == lastSelectedIndex)
+            odinExtendFrom = lastSelected;
+      }
+
+      SelectNone(tracks);
+      if (hasAnchor) {
+         auto index = int64_t{0};
+         for (auto selectedTrack : tracks) {
+            if (firstIndex <= index && index <= lastIndex)
+               SelectTrack(*selectedTrack, true, false);
+            ++index;
+         }
+      }
+      else
+         SelectTrack(track, true, true);
+
+      mLastPickedTrack = odinExtendFrom;
+      return;
+   }
+#endif
+
    // We will either extend from the first or from the last.
    auto pExtendFrom = tracks.Lock(mLastPickedTrack);
 

@@ -59,6 +59,11 @@ to Odin. C++ retains TrackList traversal and calls `Track::SetSelected`,
 including the original Set/Add/Remove side-effect pattern and fractional range
 comparisons.
 
+Shift-click track selection delegates the anchor fallback and inclusive range
+decision to Odin. The C++ selection adapter continues to resolve weak Track
+references, apply `SetSelected` operations, and retain the project-local anchor
+for rollback by `SelectionStateChanger`.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter
