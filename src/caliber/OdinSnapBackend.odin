@@ -457,3 +457,50 @@ test_snap_command_rejects_wrong_identity_and_corruption :: proc(t: ^testing.T) {
 	testing.expect(t, encode_command(0, SNAP_ACTION_SET_MODE, SNAP_MODE_OFF, bytes[:]) == CALIBER_STATUS_INVALID_ARGUMENT)
 	testing.expect(t, encode_command(41, SNAP_ACTION_SET_MODE, 3, bytes[:]) == CALIBER_STATUS_INVALID_ARGUMENT)
 }
+
+@(export, link_name="audacity_odin_selection_time_calculate")
+odin_selection_time_calculate :: proc "c" (
+	relative_mode: i32,
+	start_offset: f64,
+	end_offset: f64,
+	project_end: f64,
+	selection_start: f64,
+	selection_end: f64,
+	out_start: ^f64,
+	out_end: ^f64,
+) -> Caliber_Status {
+	if out_start == nil || out_end == nil ||
+		math.is_nan(start_offset) || math.is_inf(start_offset) ||
+		math.is_nan(end_offset) || math.is_inf(end_offset) ||
+		math.is_nan(project_end) || math.is_inf(project_end) ||
+		math.is_nan(selection_start) || math.is_inf(selection_start) ||
+		math.is_nan(selection_end) || math.is_inf(selection_end) {
+		return CALIBER_STATUS_INVALID_ARGUMENT
+	}
+
+	mode := u32(relative_mode)
+	if mode > 5 do mode = 0
+
+	t0, t1: f64
+	switch mode {
+	case 0:
+		t0, t1 = start_offset, end_offset
+	case 1:
+		t0, t1 = start_offset, project_end + end_offset
+	case 2:
+		t0, t1 = project_end - start_offset, project_end - end_offset
+	case 3:
+		t0, t1 = start_offset + selection_start, end_offset + selection_start
+	case 4:
+		t0, t1 = start_offset + selection_start, end_offset + selection_end
+	case 5:
+		t0, t1 = selection_end - start_offset, selection_end - end_offset
+	}
+	if math.is_nan(t0) || math.is_inf(t0) || math.is_nan(t1) || math.is_inf(t1) {
+		return CALIBER_STATUS_INVALID_ARGUMENT
+	}
+
+	out_start^ = t0
+	out_end^ = t1
+	return CALIBER_STATUS_OK
+}

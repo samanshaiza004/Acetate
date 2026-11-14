@@ -38,6 +38,11 @@ channels and selects the candidate offset synchronously. PCM buffers bypass
 Caliber's general command queue; Caliber remains the bounded control-plane
 transport for the Snap commands.
 
+Select > At Time also delegates its six relative-offset formulas to a
+synchronous Odin C ABI function. Project and selection values remain owned and
+read by Audacity; the Odin function returns only the two calculated endpoints.
+This pure calculation does not create a Caliber context or queue a command.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

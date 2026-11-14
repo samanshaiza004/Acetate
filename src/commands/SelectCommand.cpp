@@ -48,6 +48,9 @@ explicitly code all three.
 #include "ViewInfo.h"
 #include "CommandContext.h"
 #include "WaveTrack.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "../caliber/OdinSelectionTimeBackend.h"
+#endif
 
 
 const ComponentInterfaceSymbol SelectTimeCommand::Symbol
@@ -122,6 +125,13 @@ bool SelectTimeCommand::Apply(const CommandContext & context){
    double t1;
 
    auto &selectedRegion = ViewInfo::Get( *p ).selectedRegion;
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   if( audacity_odin_selection_time_calculate(
+      bHasRelativeSpec ? mRelativeTo : 0,
+      mT0, mT1, end, selectedRegion.t0(), selectedRegion.t1(), &t0, &t1
+   ) != CALIBER_STATUS_OK )
+      return false;
+#else
    switch( bHasRelativeSpec ? mRelativeTo : 0 ){
    default:
    case 0: //project start
@@ -149,6 +159,7 @@ bool SelectTimeCommand::Apply(const CommandContext & context){
       t1 =  selectedRegion.t1() - mT1;
       break;
    }
+#endif
 
    selectedRegion.setTimes( t0, t1 );
    return true;
