@@ -79,6 +79,91 @@ odin_compressor_process_envelope :: proc "c" (
 	max_gain_reduction_db^ = max_gain_reduction
 }
 
+// Mirrors LookAheadGainReduction::process. The C++ processor owns the ring
+// buffer and its lifetime; Odin only shapes the borrowed buffer in place.
+@(export, link_name="audacity_odin_compressor_lookahead_process")
+odin_compressor_lookahead_process :: proc "c" (
+	buffer: [^]f32,
+	buffer_size: i32,
+	write_position: i32,
+	last_pushed_samples: i32,
+	delay_in_samples: i32,
+) {
+	if buffer == nil || buffer_size <= 0 do return
+
+	next_gain_reduction_value: f32 = 0.0
+	step: f32 = 0.0
+
+	index := write_position - 1
+	if index < 0 do index += buffer_size
+
+	size_1 := index + 1
+	if last_pushed_samples < size_1 do size_1 = last_pushed_samples
+	if last_pushed_samples <= 0 do size_1 = 0
+	size_2 := last_pushed_samples - size_1
+
+	for _ in 0..<size_1 {
+		sample := buffer[index]
+		if sample > next_gain_reduction_value {
+			buffer[index] = next_gain_reduction_value
+			next_gain_reduction_value += step
+		} else {
+			step = -sample / f32(delay_in_samples)
+			next_gain_reduction_value = sample + step
+		}
+		index -= 1
+	}
+
+	if size_2 > 0 {
+		index = buffer_size - 1
+		for _ in 0..<size_2 {
+			sample := buffer[index]
+			if sample > next_gain_reduction_value {
+				buffer[index] = next_gain_reduction_value
+				next_gain_reduction_value += step
+			} else {
+				step = -sample / f32(delay_in_samples)
+				next_gain_reduction_value = sample + step
+			}
+			index -= 1
+		}
+	}
+
+	if index < 0 do index = buffer_size - 1
+
+	size_1 = index + 1
+	if delay_in_samples < size_1 do size_1 = delay_in_samples
+	if delay_in_samples <= 0 do size_1 = 0
+	size_2 = delay_in_samples - size_1
+	break_was_used := false
+
+	for _ in 0..<size_1 {
+		sample := buffer[index]
+		if sample > next_gain_reduction_value {
+			buffer[index] = next_gain_reduction_value
+			next_gain_reduction_value += step
+		} else {
+			break_was_used = true
+			break
+		}
+		index -= 1
+	}
+
+	if !break_was_used && size_2 > 0 {
+		index = buffer_size - 1
+		for _ in 0..<size_2 {
+			sample := buffer[index]
+			if sample > next_gain_reduction_value {
+				buffer[index] = next_gain_reduction_value
+				next_gain_reduction_value += step
+			} else {
+				break
+			}
+			index -= 1
+		}
+	}
+}
+
 @(export, link_name="audacity_odin_fade_process_block")
 odin_fade_process_block :: proc "c" (
 	fade_in: u8,

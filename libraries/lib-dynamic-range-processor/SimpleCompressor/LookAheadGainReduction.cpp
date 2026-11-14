@@ -20,6 +20,9 @@
 #include "LookAheadGainReduction.h"
 #include <cmath>
 #include <algorithm>
+#if defined(AUDACITY_USE_ODIN_BACKEND)
+#include "../../../src/caliber/OdinBackend.h"
+#endif
 
 namespace DanielRudrich {
 void LookAheadGainReduction::setDelayTime (float delayTimeInSeconds)
@@ -67,6 +70,11 @@ void LookAheadGainReduction::pushSamples (const float* src, const int numSamples
 
 void LookAheadGainReduction::process()
 {
+#if defined(AUDACITY_USE_ODIN_BACKEND)
+    audacity_odin_compressor_lookahead_process(
+        buffer.data(), static_cast<int32_t>(buffer.size()), writePosition,
+        lastPushedSamples, delayInSamples);
+#else
     /** The basic idea here is to look for high gain-reduction values in the signal, and apply a fade which starts exactly  `delayInSamples` many samples before that value appears. Depending on the value itself, the slope of the fade will vary.
 
      Some things to note:
@@ -191,6 +199,7 @@ void LookAheadGainReduction::process()
             --index;
         }
     }
+#endif
 }
 
 

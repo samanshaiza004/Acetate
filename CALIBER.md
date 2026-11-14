@@ -28,9 +28,15 @@ analysis, cancellation, progress reporting, and project mutation.
 
 The compressor gain-reduction envelope kernel also runs in Odin. Its direct
 in-process call is synchronous and allocation-free; the C++ processor retains
-settings, cross-block state, peak-meter atomics, lookahead, and scheduling. The
-same processor serves offline effects and realtime-effect processing, so its
-sample buffers never enter Caliber's command queue.
+settings, cross-block envelope state, peak-meter atomics, lookahead storage and
+configuration, and scheduling. The same processor serves offline effects and
+realtime-effect processing, so its sample buffers never enter Caliber's command
+queue.
+
+The compressor's gain-reduction lookahead ring processing also runs in Odin.
+C++ retains and allocates the ring buffer and owns delay configuration, push,
+read, and processor lifetime; Odin traverses and shapes the borrowed ring
+synchronously without allocation.
 
 The Select > At Zero Crossings command keeps its existing Audacity checks,
 sample-window reads, and selection/history updates. Odin scores the fetched
@@ -42,6 +48,11 @@ Select > At Time also delegates its six relative-offset formulas to a
 synchronous Odin C ABI function. Project and selection values remain owned and
 read by Audacity; the Odin function returns only the two calculated endpoints.
 This pure calculation does not create a Caliber context or queue a command.
+
+The scriptable Select Tracks command delegates its per-track range/mode decision
+to Odin. C++ retains TrackList traversal and calls `Track::SetSelected`,
+including the original Set/Add/Remove side-effect pattern and fractional range
+comparisons.
 
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes

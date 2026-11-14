@@ -31,6 +31,11 @@ void audacity_odin_compressor_process_envelope(
    float alpha_release, float* state, float* max_input_db,
    float* max_gain_reduction_db);
 
+// Shapes the gain-reduction delay ring synchronously, without allocation.
+void audacity_odin_compressor_lookahead_process(
+   float* buffer, int32_t buffer_size, int32_t write_position,
+   int32_t last_pushed_samples, int32_t delay_in_samples);
+
 // Scores one channel's samples into the shared candidate positions in place.
 void audacity_odin_zero_crossing_score_channel(
    float* samples, size_t sample_count, float* candidate_scores,

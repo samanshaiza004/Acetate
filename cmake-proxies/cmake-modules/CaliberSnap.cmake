@@ -92,6 +92,8 @@ add_custom_command(
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinSnapBackend.h"
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinSelectionTimeBackend.h"
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinBackend.h"
+      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinApplicationBackend.h"
+      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinApplicationBackend.odin"
       "${AUDACITY_CALIBER_SOURCE}/include/caliber.h"
    WORKING_DIRECTORY "${AUDACITY_CALIBER_ROOT}"
    VERBATIM )

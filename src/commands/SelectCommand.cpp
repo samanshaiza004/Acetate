@@ -49,6 +49,7 @@ explicitly code all three.
 #include "CommandContext.h"
 #include "WaveTrack.h"
 #ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "../caliber/OdinApplicationBackend.h"
 #include "../caliber/OdinSelectionTimeBackend.h"
 #endif
 
@@ -278,10 +279,23 @@ bool SelectTracksCommand::Apply(const CommandContext &context)
       mFirstTrack = 0.0;
 
    // Multiple channels count as fractions of a track.
-   double last = mFirstTrack + mNumTracks;
    double first = mFirstTrack;
+#ifndef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   double last = mFirstTrack + mNumTracks;
+#endif
 
    for (auto t : tracks) {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+      switch (audacity_odin_track_selection_action(
+         mMode, first, mNumTracks, index)) {
+      case 1:
+         t->SetSelected(false);
+         break;
+      case 2:
+         t->SetSelected(true);
+         break;
+      }
+#else
       const bool sel = first <= index && index < last;
       if (mMode == 0) // Set
          t->SetSelected(sel);
@@ -289,6 +303,7 @@ bool SelectTracksCommand::Apply(const CommandContext &context)
          t->SetSelected(sel);
       else if(mMode == 2 && sel) // Remove
          t->SetSelected(!sel);
+#endif
       ++index;
    }
    return true;
