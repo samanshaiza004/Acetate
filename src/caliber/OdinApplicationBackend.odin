@@ -1,5 +1,7 @@
 package audacity_backend
 
+import "core:math"
+
 // Returns 0 when the current track is untouched, 1 when C++ should deselect
 // it, and 2 when C++ should select it. Track objects and mutation remain in
 // Audacity; Odin owns only the Select Tracks range/mode decision.
@@ -80,5 +82,37 @@ odin_shift_selection_range :: proc "c" (
 		out_last_index^ = clicked_index
 		out_has_anchor^ = 0
 	}
+	return i32(CALIBER_STATUS_OK)
+}
+
+@(export, link_name="audacity_odin_selection_adjustment_clamp")
+odin_selection_adjustment_clamp :: proc "c" (
+	is_contract: u8,
+	moves_start: u8,
+	t0: f64,
+	t1: f64,
+	requested_time: f64,
+	end_limit: f64,
+	out_time: ^f64,
+) -> i32 {
+	if is_contract > 1 || moves_start > 1 || out_time == nil ||
+		math.is_nan(t0) || math.is_inf(t0) ||
+		math.is_nan(t1) || math.is_inf(t1) ||
+		math.is_nan(requested_time) || math.is_inf(requested_time) ||
+		math.is_nan(end_limit) || math.is_inf(end_limit) {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	new_time := max(0.0, requested_time)
+	new_time = min(new_time, end_limit)
+	if is_contract != 0 {
+		if moves_start != 0 {
+			new_time = min(t1, new_time)
+		} else {
+			new_time = max(t0, new_time)
+		}
+	}
+
+	out_time^ = new_time
 	return i32(CALIBER_STATUS_OK)
 }

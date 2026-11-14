@@ -67,6 +67,11 @@ for rollback by `SelectionStateChanger`.
 Track-list click selection also delegates the modifier/anchor routing decision
 to Odin. C++ retains selection mutation and selected-time-range updates.
 
+Keyboard selection extension/contraction delegates track/screen boundary
+clamping and endpoint crossing constraints to Odin after C++ resolves the
+snapped or pixel-based candidate time. Selection mutation, viewport scrolling,
+and history remain in C++.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

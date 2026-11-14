@@ -24,6 +24,12 @@ int32_t audacity_odin_shift_selection_range(
    int64_t* out_anchor_index, int64_t* out_first_index,
    int64_t* out_last_index, uint8_t* out_has_anchor);
 
+// Applies track/screen bounds and, for contraction, prevents selection edges
+// from crossing. Returns zero on success; invalid values leave output intact.
+int32_t audacity_odin_selection_adjustment_clamp(
+   uint8_t is_contract, uint8_t moves_start, double t0, double t1,
+   double requested_time, double end_limit, double* out_time);
+
 #ifdef __cplusplus
 }
 #endif

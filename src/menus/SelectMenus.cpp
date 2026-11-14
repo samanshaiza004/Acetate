@@ -11,6 +11,7 @@
 #include "ProjectSnap.h"
 #ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
 #include "OdinBackend.h"
+#include "OdinApplicationBackend.h"
 #include "ProjectSnapAdapter.h"
 #include <wx/log.h>
 #endif
@@ -310,12 +311,23 @@ SelectionOperation operation)
    // newT is where we want to move to
    double newT = OffsetTime( project,
       bMoveT0 ? t0 : t1, seekStep, timeUnit, snapMode);
-   // constrain to be in the track/screen limits.
-   newT = std::max( 0.0, newT );
-   newT = std::min( newT, end);
-   // optionally constrain to be a contraction, i.e. so t0/t1 do not cross over
-   if( operation == SELECTION_CONTRACT )
-      newT = bMoveT0 ? std::min( t1, newT ) : std::max( t0, newT );
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   double plannedT = newT;
+   const auto status = audacity_odin_selection_adjustment_clamp(
+      operation == SELECTION_CONTRACT, bMoveT0, t0, t1, newT, end,
+      &plannedT);
+   if (status == 0)
+      newT = plannedT;
+   else
+#endif
+   {
+      // Constrain to be in the track/screen limits.
+      newT = std::max( 0.0, newT );
+      newT = std::min( newT, end);
+      // Optionally constrain to be a contraction, i.e. so t0/t1 do not cross over.
+      if( operation == SELECTION_CONTRACT )
+         newT = bMoveT0 ? std::min( t1, newT ) : std::max( t0, newT );
+   }
 
    // Actually move
    if( bMoveT0 )
