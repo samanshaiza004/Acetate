@@ -678,16 +678,17 @@ int AudioIOBase::GetOptimalSupportedSampleRate()
 {
    const int playDevice = getPlayDevIndex();
    const int recordDevice = getRecordDevIndex();
-   if (playDevice == paNoDevice || recordDevice == paNoDevice)
-      return 44100;
 
    // For ASIO, use the last known device rate
-   if (DeviceManager::IsAsioDevice(playDevice)) {
+   if (playDevice != paNoDevice && DeviceManager::IsAsioDevice(playDevice)) {
       const PaDeviceInfo *info = Pa_GetDeviceInfo(playDevice);
       if (info && info->defaultSampleRate > 0)
          return static_cast<int>(info->defaultSampleRate);
       return 44100;
    }
+
+   if (playDevice == paNoDevice || recordDevice == paNoDevice)
+      return 44100;
 
    auto rate = GetClosestSupportedSampleRate(playDevice, recordDevice, 44100);
 

@@ -7,7 +7,7 @@ set( AUDACITY_CALIBER_SOURCE "" CACHE PATH "Clean pinned Caliber source checkout
 if( NOT EXISTS "${AUDACITY_CALIBER_SOURCE}/include/caliber.h" )
    message( FATAL_ERROR "Set AUDACITY_CALIBER_SOURCE to the pinned Caliber Git checkout" )
 endif()
-if( WIN32 OR CMAKE_CROSSCOMPILING )
+if( WIN32 OR CMAKE_CROSSCOMPILING OR ( NOT APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" ) )
    message( FATAL_ERROR "Experimental Caliber Snap currently supports native macOS and Linux builds only" )
 endif()
 find_package( Git REQUIRED )

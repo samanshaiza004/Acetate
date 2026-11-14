@@ -38,7 +38,7 @@ git -C /path/to/caliber checkout <pinned-revision>
 cmake -S . -B build-caliber \
   -Daudacity_use_caliber_snap=ON \
   -DAUDACITY_CALIBER_SOURCE=/path/to/caliber
-cmake --build build-caliber --target Audacity
+cmake --build build-caliber --target Audacity audacity-caliber-snap-test audacity-caliber-snap-bridge-test
 ctest --test-dir build-caliber -R audacity-caliber-snap --output-on-failure
 ```
 
@@ -49,7 +49,9 @@ populated Cargo dependency cache are required. The first experimental build
 supports native macOS and Linux configurations; Windows, cross-compilation,
 and universal macOS binaries remain unsupported by this opt-in module.
 
-The integration test uses real `AudacityProject`, `ProjectSnap`,
+The project adapter test uses real `AudacityProject`, `ProjectSnap`,
 `ProjectSelectionManager`, and `ViewInfo` state. It checks observer behavior,
 selection snapping, per-project isolation, monotonic session revisions, and
-off-thread rejection.
+off-thread rejection. The bridge test also covers ABI rejection, full queues,
+failed and corrupted state operations, and repeated session use. Both targets
+are part of the documented root CTest command.

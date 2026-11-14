@@ -1420,6 +1420,18 @@ if( audacity_use_caliber_snap AND ${_OPT}has_tests )
          lib-project-rate
          wxBase
    )
+
+   add_executable( audacity-caliber-snap-bridge-test "${topdir}/tests/caliber/SnapBridgeTest.cpp" )
+   target_link_libraries( audacity-caliber-snap-bridge-test PRIVATE audacity-caliber-snap )
+   set_target_properties(
+      audacity-caliber-snap-bridge-test
+      PROPERTIES
+         FOLDER "tests"
+         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+         BUILD_RPATH "${_DESTDIR}/${_PKGLIB}"
+   )
+   add_test( NAME audacity-caliber-snap-bridge COMMAND audacity-caliber-snap-bridge-test )
+   set_tests_properties( audacity-caliber-snap-bridge PROPERTIES LABELS "unit_tests" )
 endif()
 
 if( CMAKE_VERSION VERSION_GREATER_EQUAL "3.16" AND NOT CCACHE_PROGRAM )
