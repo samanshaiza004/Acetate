@@ -18,6 +18,9 @@
 
 #include "GainReductionComputer.h"
 #include "MathApprox.h"
+#ifdef AUDACITY_USE_ODIN_BACKEND
+#include "OdinBackend.h"
+#endif
 
 namespace DanielRudrich {
 namespace
@@ -118,6 +121,16 @@ float GainReductionComputer::applyCharacteristicToOverShoot(
 
 void GainReductionComputer::computeGainInDecibelsFromSidechainSignal (const float* sideChainSignal, float* destination, const int numSamples)
 {
+#ifdef AUDACITY_USE_ODIN_BACKEND
+    float blockMaxInputLevel;
+    float blockMaxGainReduction;
+    const auto blockLen = numSamples > 0 ? static_cast<size_t>(numSamples) : 0;
+    audacity_odin_compressor_process_envelope(
+        sideChainSignal, destination, blockLen, threshold, knee, slope, alphaAttack,
+        alphaRelease, &state, &blockMaxInputLevel, &blockMaxGainReduction);
+    maxInputLevel = blockMaxInputLevel;
+    maxGainReduction = blockMaxGainReduction;
+#else
     maxInputLevel = -std::numeric_limits<float>::infinity();
     maxGainReduction = 0.0f;
 
@@ -147,6 +160,7 @@ void GainReductionComputer::computeGainInDecibelsFromSidechainSignal (const floa
         if (state < maxGainReduction)
             maxGainReduction = state;
     }
+#endif
 }
 
 void GainReductionComputer::computeLinearGainFromSidechainSignal (const float* sideChainSignal, float* destination, const int numSamples)

@@ -26,6 +26,12 @@ The Normalize effect's streaming DC accumulator and per-block offset/gain
 transform also run in Odin. Audacity continues to own track traversal, peak
 analysis, cancellation, progress reporting, and project mutation.
 
+The compressor gain-reduction envelope kernel also runs in Odin. Its direct
+in-process call is synchronous and allocation-free; the C++ processor retains
+settings, cross-block state, peak-meter atomics, lookahead, and scheduling. The
+same processor serves offline effects and realtime-effect processing, so its
+sample buffers never enter Caliber's command queue.
+
 The Select > At Zero Crossings command keeps its existing Audacity checks,
 sample-window reads, and selection/history updates. Odin scores the fetched
 channels and selects the candidate offset synchronously. PCM buffers bypass
@@ -40,9 +46,9 @@ calls from a non-UI thread.
 
 This is an incremental migration, not a complete Audacity backend rewrite or an
 asynchronous backend. The project adapter still calls Audacity's C++ model
-synchronously on the UI thread. The Fade path runs on the offline effect worker,
-not the realtime audio callback. Do not send audio buffers through Caliber's
-general command queue; realtime DSP needs a separate realtime-safe ABI.
+synchronously on the UI thread. Fade runs on the offline effect worker; the
+compressor kernel also runs in realtime-effect processing. Neither sends audio
+buffers through Caliber's general command queue.
 
 ## Build
 
@@ -55,8 +61,8 @@ git -C /path/to/caliber checkout <pinned-revision>
 cmake -S . -B build-caliber \
   -Daudacity_use_odin_caliber_backend=ON \
   -DAUDACITY_CALIBER_SOURCE=/path/to/caliber
-cmake --build build-caliber --target Audacity audacity-caliber-snap-test audacity-caliber-snap-bridge-test audacity-caliber-odin-backend-test
-ctest --test-dir build-caliber -R audacity-caliber --output-on-failure
+cmake --build build-caliber --target Audacity audacity-caliber-snap-test audacity-caliber-snap-bridge-test audacity-caliber-odin-backend-test lib-dynamic-range-processor-test
+ctest --test-dir build-caliber -R 'audacity-caliber|lib-dynamic-range-processor' --output-on-failure
 ```
 
 The feature is disabled by default. Configuration verifies the Caliber Git
@@ -73,7 +79,9 @@ The project adapter test uses real `AudacityProject`, `ProjectSnap`,
 selection snapping, per-project isolation, monotonic session revisions, and
 off-thread rejection. The bridge test covers ABI rejection, full queues,
 failed and corrupted state operations, and repeated session use. The Odin
-backend test checks Fade and Normalize block math plus zero-crossing parity with
-the previous C++ calculation, including mixed window sizes and threshold
-rejection. It also covers chunk continuity, in-place processing, and
-empty/invalid input. CTest runs all four tests.
+backend test checks Fade, Normalize, and compressor block math plus zero-crossing
+and compressor parity with the C++ calculations. It covers attack and release,
+soft-knee processing, sample-state continuity across blocks, in-place
+processing, and empty input. The dynamic-range processor test also exercises
+the C++ integration path with Odin enabled. The focused CTest command runs
+these alongside the four Caliber/Odin-specific tests.

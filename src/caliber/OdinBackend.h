@@ -22,6 +22,15 @@ double audacity_odin_normalize_accumulate_sum(
 void audacity_odin_normalize_process_block(
    float* samples, size_t block_len, float offset, float multiplier);
 
+// Computes compressor gain reduction. State belongs to the caller and is
+// carried across blocks; exact input/output aliasing is supported. No
+// allocation, locking, or Caliber transport occurs.
+void audacity_odin_compressor_process_envelope(
+   const float* sidechain, float* destination, size_t block_len,
+   float threshold_db, float knee_db, float slope, float alpha_attack,
+   float alpha_release, float* state, float* max_input_db,
+   float* max_gain_reduction_db);
+
 // Scores one channel's samples into the shared candidate positions in place.
 void audacity_odin_zero_crossing_score_channel(
    float* samples, size_t sample_count, float* candidate_scores,

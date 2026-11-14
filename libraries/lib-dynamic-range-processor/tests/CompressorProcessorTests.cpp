@@ -11,6 +11,9 @@
 #pragma once
 
 #include "CompressorProcessor.h"
+#include "SimpleCompressor/GainReductionComputer.h"
+#include <algorithm>
+#include <array>
 #include <catch2/catch.hpp>
 
 TEST_CASE("GetMaxCompressionDb", "simple test")
@@ -70,4 +73,37 @@ TEST_CASE("CompressorProcessor", "smoke test")
       sut.Process(p, p, toProcess);
       progress += toProcess;
    }
+}
+
+TEST_CASE("GainReductionComputer preserves the sidechain envelope contract")
+{
+   DanielRudrich::GainReductionComputer sut;
+   constexpr auto sampleRate = 48000.0;
+   sut.prepare(sampleRate);
+   sut.setThreshold(-20.0f);
+   sut.setKnee(6.0f);
+   sut.setRatio(4.0f);
+   sut.setAttackTime(0.01f);
+   sut.setReleaseTime(0.1f);
+
+   const std::array<float, 8> input{0.0f, 0.01f, 0.1f, 0.5f, 1.0f, 0.5f, 0.1f, 0.0f};
+   auto originalInput = input;
+   std::array<float, 8> output{};
+   sut.computeGainInDecibelsFromSidechainSignal(
+      input.data(), output.data(), static_cast<int>(input.size()));
+
+   REQUIRE(input == originalInput);
+   REQUIRE(output[0] == Approx(0.0f));
+   REQUIRE(output[4] < output[3]);
+   REQUIRE(output[7] > output[6]);
+   REQUIRE(sut.getMaxInputLevelInDecibels() == Approx(0.0f).margin(0.1f));
+   REQUIRE(sut.getMaxGainReductionInDecibels() ==
+      Approx(*std::min_element(output.begin(), output.end())).margin(1e-5f));
+
+   const std::array<float, 3> releaseInput{0.0f, 0.0f, 0.0f};
+   std::array<float, 3> releaseOutput{};
+   sut.computeGainInDecibelsFromSidechainSignal(
+      releaseInput.data(), releaseOutput.data(), static_cast<int>(releaseInput.size()));
+   REQUIRE(releaseOutput[0] > output[7]);
+   REQUIRE(releaseOutput[2] > releaseOutput[0]);
 }

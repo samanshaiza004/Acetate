@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -39,6 +40,53 @@ void ReferenceZeroCrossingScore(
       scores[i] += samples[j];
       scores[i] += 0.1 * std::abs(int(i) - int(candidateCount / 2)) /
                    float(candidateCount / 2);
+   }
+}
+
+float ReferenceFastLog2(float x)
+{
+   union
+   {
+      float val;
+      int32_t bits;
+   } u = { x };
+   auto result = float(((u.bits >> 23) & 255) - 128);
+   u.bits &= ~(255 << 23);
+   u.bits += 127 << 23;
+   result += ((-0.3358287811f) * u.val + 2.0f) * u.val - 0.65871759316667f;
+   return result;
+}
+
+void ReferenceCompressorEnvelope(
+   std::vector<float>& samples, float thresholdDb, float kneeDb, float slope,
+   float alphaAttack, float alphaRelease, float& state,
+   float& maxInputDb, float& maxGainReductionDb)
+{
+   constexpr float log2ToDb = 20 / 3.321928094887362f;
+   maxInputDb = -std::numeric_limits<float>::infinity();
+   maxGainReductionDb = 0.0f;
+   for (auto& sample : samples) {
+      const auto inputLevelDb = log2ToDb * ReferenceFastLog2(std::fabs(sample));
+      if (inputLevelDb > maxInputDb)
+         maxInputDb = inputLevelDb;
+      const auto overShoot = inputLevelDb - thresholdDb;
+      const auto kneeHalf = kneeDb / 2;
+      float gainReduction;
+      if (overShoot <= -kneeHalf)
+         gainReduction = 0.0f;
+      else if (overShoot > -kneeHalf && overShoot <= kneeHalf)
+         gainReduction = 0.5f * slope * (overShoot + kneeHalf) *
+                         (overShoot + kneeHalf) / kneeDb;
+      else
+         gainReduction = slope * overShoot;
+      const auto diff = gainReduction - state;
+      if (diff < 0.0f)
+         state += alphaAttack * diff;
+      else
+         state += alphaRelease * diff;
+      sample = state;
+      if (state < maxGainReductionDb)
+         maxGainReductionDb = state;
    }
 }
 
@@ -139,6 +187,64 @@ void Run()
       rejectedScores.data(), rejectedScores.size(), 1, &actualOffset);
    Require(!expectedRejected && !actualRejected,
       "zero-crossing threshold accepted an unsuitable candidate");
+
+   // Match the existing C++ envelope kernel across attack, release, the soft
+   // knee, silence, negative inputs, and in-place buffer use.
+   std::vector<float> envelope{
+      -0.0f, std::numeric_limits<float>::denorm_min(), -0.01f, 0.1f,
+      0.5f, 1.f, 0.5f, 0.1f, 0.f};
+   auto referenceEnvelope = envelope;
+   float envelopeState{};
+   float referenceState{};
+   float maxInputDb{};
+   float referenceMaxInputDb{};
+   float maxReductionDb{};
+   float referenceMaxReductionDb{};
+   constexpr float thresholdDb = -20.f;
+   constexpr float kneeDb = 6.f;
+   constexpr float slope = -0.75f;
+   constexpr float alphaAttack = 0.35f;
+   constexpr float alphaRelease = 0.1f;
+   ReferenceCompressorEnvelope(
+      referenceEnvelope, thresholdDb, kneeDb, slope, alphaAttack,
+      alphaRelease, referenceState, referenceMaxInputDb,
+      referenceMaxReductionDb);
+   audacity_odin_compressor_process_envelope(
+      envelope.data(), envelope.data(), envelope.size(), thresholdDb, kneeDb, slope,
+      alphaAttack, alphaRelease, &envelopeState, &maxInputDb,
+      &maxReductionDb);
+   for (size_t i = 0; i < envelope.size(); ++i)
+      Require(std::fabs(envelope[i] - referenceEnvelope[i]) < 1e-5f,
+         "compressor envelope samples differ from the C++ reference");
+   Require(std::fabs(envelopeState - referenceState) < 1e-5f &&
+      std::fabs(maxInputDb - referenceMaxInputDb) < 1e-5f &&
+      std::fabs(maxReductionDb - referenceMaxReductionDb) < 1e-5f,
+      "compressor envelope state or meters differ from the C++ reference");
+
+   auto firstHalf = std::vector<float>{0.2f, 0.8f, 0.4f, 0.f};
+   auto secondHalf = std::vector<float>{0.9f, 0.1f, 0.f};
+   auto joined = firstHalf;
+   joined.insert(joined.end(), secondHalf.begin(), secondHalf.end());
+   auto referenceJoined = joined;
+   float joinedState{};
+   float referenceJoinedState{};
+   ReferenceCompressorEnvelope(
+      referenceJoined, thresholdDb, kneeDb, slope, alphaAttack,
+      alphaRelease, referenceJoinedState, referenceMaxInputDb,
+      referenceMaxReductionDb);
+   audacity_odin_compressor_process_envelope(
+      firstHalf.data(), firstHalf.data(), firstHalf.size(), thresholdDb, kneeDb, slope,
+      alphaAttack, alphaRelease, &joinedState, &maxInputDb, &maxReductionDb);
+   audacity_odin_compressor_process_envelope(
+      secondHalf.data(), secondHalf.data(), secondHalf.size(), thresholdDb, kneeDb, slope,
+      alphaAttack, alphaRelease, &joinedState, &maxInputDb, &maxReductionDb);
+   firstHalf.insert(firstHalf.end(), secondHalf.begin(), secondHalf.end());
+   Require(firstHalf.size() == referenceJoined.size(), "compressor chunks changed size");
+   for (size_t i = 0; i < firstHalf.size(); ++i)
+      Require(std::fabs(firstHalf[i] - referenceJoined[i]) < 1e-5f,
+         "compressor envelope changed across block boundaries");
+   Require(std::fabs(joinedState - referenceJoinedState) < 1e-5f,
+      "compressor envelope state changed across block boundaries");
 
    // Each block receives its own buffers. This verifies the same sample index
    // can be retained by the C++ effect object across block boundaries.

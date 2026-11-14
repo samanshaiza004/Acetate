@@ -2,6 +2,83 @@ package audacity_backend
 
 import "core:testing"
 
+// Mirrors lib-utility/MathApprox.h's FastLog2 bit approximation. Keeping this
+// approximation here preserves the compressor's existing response, including
+// its behavior for zero and subnormal input.
+odin_fast_log2 :: proc "contextless" (x: f32) -> f32 {
+	bits := transmute(u32) x
+	log_2 := f32(int((bits >> 23) & 255) - 128)
+	normalized_bits := (bits & ~(u32(255) << 23)) + (u32(127) << 23)
+	normalized := transmute(f32) normalized_bits
+	return log_2 + ((-0.3358287811 * normalized + 2.0) * normalized - 0.65871759316667)
+}
+
+odin_abs_f32 :: proc "contextless" (x: f32) -> f32 {
+	bits := transmute(u32) x
+	return transmute(f32) (bits & 0x7fffffff)
+}
+
+odin_compressor_characteristic :: proc "contextless" (
+	over_shoot: f32,
+	knee: f32,
+	slope: f32,
+) -> f32 {
+	knee_half := knee / 2.0
+	if over_shoot <= -knee_half {
+		return 0.0
+	} else if over_shoot > -knee_half && over_shoot <= knee_half {
+		return 0.5 * slope * (over_shoot + knee_half) * (over_shoot + knee_half) / knee
+	} else {
+		return slope * over_shoot
+	}
+}
+
+@(export, link_name="audacity_odin_compressor_process_envelope")
+odin_compressor_process_envelope :: proc "c" (
+	sidechain: [^]f32,
+	destination: [^]f32,
+	block_len: uintptr,
+	threshold_db: f32,
+	knee_db: f32,
+	slope: f32,
+	alpha_attack: f32,
+	alpha_release: f32,
+	state: ^f32,
+	max_input_db: ^f32,
+	max_gain_reduction_db: ^f32,
+) {
+	if state == nil || max_input_db == nil || max_gain_reduction_db == nil do return
+
+	negative_infinity := transmute(f32) u32(0xff800000)
+	max_input: f32 = negative_infinity
+	max_gain_reduction: f32 = 0.0
+	if block_len > 0 && sidechain != nil && destination != nil {
+		log2_to_db: f32 = 20.0 / 3.321928094887362
+		for i in 0..<block_len {
+			level_db := log2_to_db * odin_fast_log2(odin_abs_f32(sidechain[i]))
+			if level_db > max_input {
+				max_input = level_db
+			}
+
+			over_shoot := level_db - threshold_db
+			gain_reduction := odin_compressor_characteristic(over_shoot, knee_db, slope)
+			diff := gain_reduction - state^
+			if diff < 0.0 {
+				state^ += alpha_attack * diff
+			} else {
+				state^ += alpha_release * diff
+			}
+			destination[i] = state^
+			if state^ < max_gain_reduction {
+				max_gain_reduction = state^
+			}
+		}
+	}
+
+	max_input_db^ = max_input
+	max_gain_reduction_db^ = max_gain_reduction
+}
+
 @(export, link_name="audacity_odin_fade_process_block")
 odin_fade_process_block :: proc "c" (
 	fade_in: u8,
@@ -206,6 +283,38 @@ test_normalize_empty_blocks_are_noops :: proc(t: ^testing.T) {
 	sum := odin_normalize_accumulate_sum(nil, 0, 3.5)
 	testing.expect(t, sum == 3.5)
 	odin_normalize_process_block(nil, 0, 1, 2)
+}
+
+@(test)
+test_compressor_envelope_attack_release_and_in_place :: proc(t: ^testing.T) {
+	samples := [8]f32{0.0, 0.01, 0.1, 0.5, 1.0, 0.5, 0.1, 0.0}
+	state: f32
+	max_input: f32
+	max_reduction: f32
+	odin_compressor_process_envelope(
+		raw_data(samples[:]), raw_data(samples[:]), uintptr(len(samples)), -20.0, 6.0, -0.75,
+		0.35, 0.1, &state, &max_input, &max_reduction,
+	)
+	testing.expect(t, samples[0] == 0.0)
+	testing.expect(t, samples[4] < samples[3])
+	testing.expect(t, samples[7] > samples[6])
+	testing.expect(t, state == samples[7])
+	testing.expect(t, max_input > -1.0 && max_input < 1.0)
+	testing.expect(t, max_reduction == samples[5])
+}
+
+@(test)
+test_compressor_empty_block_resets_meters_but_preserves_state :: proc(t: ^testing.T) {
+	state: f32 = -3.0
+	max_input: f32 = 1.0
+	max_reduction: f32 = -1.0
+	odin_compressor_process_envelope(
+		nil, nil, 0, -20.0, 0.0, -0.5, 0.25, 0.1,
+		&state, &max_input, &max_reduction,
+	)
+	testing.expect(t, state == -3.0)
+	testing.expect(t, max_input < -1.0e30)
+	testing.expect(t, max_reduction == 0.0)
 }
 
 @(test)
