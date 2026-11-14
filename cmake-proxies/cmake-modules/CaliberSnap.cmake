@@ -79,7 +79,7 @@ set_target_properties( audacity-caliber-ffi PROPERTIES IMPORTED_LOCATION "${cali
    INTERFACE_INCLUDE_DIRECTORIES "${AUDACITY_CALIBER_SOURCE}/include" )
 add_dependencies( audacity-caliber-ffi audacity-caliber-cargo )
 set( caliber_odin_dir "${CMAKE_BINARY_DIR}/caliber-odin" )
-set( caliber_odin_archive "${caliber_odin_dir}/${CMAKE_STATIC_LIBRARY_PREFIX}audacity_caliber_snap_odin${CMAKE_STATIC_LIBRARY_SUFFIX}" )
+set( caliber_odin_archive "${caliber_odin_dir}/${CMAKE_STATIC_LIBRARY_PREFIX}audacity_odin_backend${CMAKE_STATIC_LIBRARY_SUFFIX}" )
 add_custom_command(
    OUTPUT "${caliber_odin_archive}"
    COMMAND "${CMAKE_COMMAND}" -E make_directory "${caliber_odin_dir}"
@@ -88,7 +88,9 @@ add_custom_command(
       "-out:${caliber_odin_archive}"
    DEPENDS
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinSnapBackend.odin"
+      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinEffectBackend.odin"
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinSnapBackend.h"
+      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinEffectBackend.h"
       "${AUDACITY_CALIBER_SOURCE}/include/caliber.h"
    WORKING_DIRECTORY "${AUDACITY_CALIBER_ROOT}"
    VERBATIM )

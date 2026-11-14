@@ -9,6 +9,9 @@
 **********************************************************************/
 
 #include "Fade.h"
+#ifdef AUDACITY_USE_ODIN_BACKEND
+#include "OdinEffectBackend.h"
+#endif
 
 Fade::Fade(bool fadeIn)
 {
@@ -51,6 +54,14 @@ size_t Fade::ProcessBlock(
    EffectSettings&, const float* const* inBlock, float* const* outBlock,
    size_t blockLen)
 {
+#ifdef AUDACITY_USE_ODIN_BACKEND
+   auto sampleIndex = mSample.as_long_long();
+   const auto processed = audacity_odin_fade_process_block(
+      static_cast<uint8_t>(mFadeIn), mSampleCnt.as_long_long(), &sampleIndex,
+      inBlock[0], outBlock[0], blockLen);
+   mSample = sampleIndex;
+   return processed;
+#else
    const float* ibuf = inBlock[0];
    float* obuf = outBlock[0];
 
@@ -71,6 +82,7 @@ size_t Fade::ProcessBlock(
    }
 
    return blockLen;
+#endif
 }
 
 const ComponentInterfaceSymbol FadeIn::Symbol { XO("Fade In") };

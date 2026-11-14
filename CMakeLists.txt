@@ -154,7 +154,8 @@ set( _OPT "audacity_" )
 # Our very own project
 project( Audacity )
 
-option( audacity_use_caliber_snap "Enable the experimental Odin/Caliber Snap boundary" OFF )
+option( audacity_use_odin_caliber_backend
+   "Enable experimental Odin application logic with Caliber transport" OFF )
 
 if( APPLE )
    # XCode 14 no longer allows building unsigned binaries.
