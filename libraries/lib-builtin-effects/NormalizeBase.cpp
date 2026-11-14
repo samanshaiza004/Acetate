@@ -9,6 +9,9 @@
 
 ***********************************************************************/
 #include "NormalizeBase.h"
+#ifdef AUDACITY_USE_ODIN_BACKEND
+#include "OdinEffectBackend.h"
+#endif
 #include "EffectOutputTracks.h"
 #include "ShuttleAutomation.h"
 #include "WaveChannelUtilities.h"
@@ -368,16 +371,24 @@ bool NormalizeBase::ProcessOne(
 /// @see AnalyseDataLoudnessDC
 double NormalizeBase::AnalyseDataDC(float* buffer, size_t len, double sum)
 {
+#ifdef AUDACITY_USE_ODIN_BACKEND
+   return audacity_odin_normalize_accumulate_sum(buffer, len, sum);
+#else
    for (decltype(len) i = 0; i < len; i++)
       sum += (double)buffer[i];
    return sum;
+#endif
 }
 
 void NormalizeBase::ProcessData(float* buffer, size_t len, float offset)
 {
+#ifdef AUDACITY_USE_ODIN_BACKEND
+   audacity_odin_normalize_process_block(buffer, len, offset, mMult);
+#else
    for (decltype(len) i = 0; i < len; i++)
    {
       float adjFrame = (buffer[i] + offset) * mMult;
       buffer[i] = adjFrame;
    }
+#endif
 }

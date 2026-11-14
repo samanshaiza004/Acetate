@@ -42,6 +42,20 @@ void Run()
    Require(sampleIndex == 0 && output == std::array<float, 4>{1.f, 1.f, 1.f, 1.f},
       "rejected fade changed its index or output");
 
+   const std::array<float, 3> normalizeFirst{-1.f, 0.5f, 1.f};
+   const std::array<float, 2> normalizeSecond{0.25f, -0.75f};
+   auto sum = audacity_odin_normalize_accumulate_sum(
+      normalizeFirst.data(), normalizeFirst.size(), 2.0);
+   sum = audacity_odin_normalize_accumulate_sum(
+      normalizeSecond.data(), normalizeSecond.size(), sum);
+   Require(sum == 2.0, "Normalize DC analysis changed its double accumulator");
+
+   std::array<float, 4> normalized{-1.f, -0.5f, 0.f, 0.5f};
+   audacity_odin_normalize_process_block(
+      normalized.data(), normalized.size(), 0.25f, 2.f);
+   Require(normalized == std::array<float, 4>{-1.5f, -0.5f, 0.5f, 1.5f},
+      "Normalize block transform changed its offset/gain formula");
+
    // Each block receives its own buffers. This verifies the same sample index
    // can be retained by the C++ effect object across block boundaries.
    std::array<float, 2> first{2.f, 2.f}, firstOutput{};

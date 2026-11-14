@@ -18,9 +18,13 @@ increase across edits in one project; separate projects use separate sessions.
 
 The opt-in also routes the built-in Fade effect's offline block math through
 Odin. Its sample index remains owned by the effect instance and advances across
-blocks; Odin receives borrowed buffers synchronously. The remaining effects and
-all other Audacity project and application logic still use their existing C++
+blocks; Odin receives borrowed buffers synchronously. Most effects and the
+remaining Audacity project and application logic still use their existing C++
 implementations.
+
+The Normalize effect's streaming DC accumulator and per-block offset/gain
+transform also run in Odin. Audacity continues to own track traversal, peak
+analysis, cancellation, progress reporting, and project mutation.
 
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
@@ -63,5 +67,5 @@ The project adapter test uses real `AudacityProject`, `ProjectSnap`,
 selection snapping, per-project isolation, monotonic session revisions, and
 off-thread rejection. The bridge test covers ABI rejection, full queues,
 failed and corrupted state operations, and repeated session use. The Odin
-effect test checks fade-in/out samples, chunk continuity, in-place processing,
-and invalid zero-length input. CTest runs all four tests.
+effect test checks Fade and Normalize block math, chunk continuity, in-place
+processing, and empty/invalid input. CTest runs all four tests.

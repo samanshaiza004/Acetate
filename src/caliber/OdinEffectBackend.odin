@@ -28,6 +28,36 @@ odin_fade_process_block :: proc "c" (
 	return block_len
 }
 
+@(export, link_name="audacity_odin_normalize_accumulate_sum")
+odin_normalize_accumulate_sum :: proc "c" (
+	input: [^]f32,
+	block_len: uintptr,
+	initial_sum: f64,
+) -> f64 {
+	if block_len == 0 || input == nil do return initial_sum
+
+	sum := initial_sum
+	for i in 0..<block_len {
+		sum += f64(input[i])
+	}
+	return sum
+}
+
+@(export, link_name="audacity_odin_normalize_process_block")
+odin_normalize_process_block :: proc "c" (
+	samples: [^]f32,
+	block_len: uintptr,
+	offset: f32,
+	multiplier: f32,
+) {
+	if block_len == 0 || samples == nil do return
+
+	for i in 0..<block_len {
+		adjusted := (samples[i] + offset) * multiplier
+		samples[i] = adjusted
+	}
+}
+
 @(test)
 test_fade_in_and_out_weights :: proc(t: ^testing.T) {
 	input := [4]f32{1, 1, 1, 1}
@@ -84,4 +114,24 @@ test_fade_rejects_missing_buffers_without_advancing :: proc(t: ^testing.T) {
 	processed = odin_fade_process_block(1, 12, &index, nil, nil, 0)
 	testing.expect(t, processed == 0)
 	testing.expect(t, index == 7)
+}
+
+@(test)
+test_normalize_streaming_sum_and_sample_processing :: proc(t: ^testing.T) {
+	first := [3]f32{-1, 0.5, 1}
+	second := [2]f32{0.25, -0.75}
+	sum := odin_normalize_accumulate_sum(raw_data(first[:]), 3, 2.0)
+	sum = odin_normalize_accumulate_sum(raw_data(second[:]), 2, sum)
+	testing.expect(t, sum == 2.0)
+
+	samples := [4]f32{-1, -0.5, 0, 0.5}
+	odin_normalize_process_block(raw_data(samples[:]), 4, 0.25, 2)
+	testing.expect(t, samples == [4]f32{-1.5, -0.5, 0.5, 1.5})
+}
+
+@(test)
+test_normalize_empty_blocks_are_noops :: proc(t: ^testing.T) {
+	sum := odin_normalize_accumulate_sum(nil, 0, 3.5)
+	testing.expect(t, sum == 3.5)
+	odin_normalize_process_block(nil, 0, 1, 2)
 }
