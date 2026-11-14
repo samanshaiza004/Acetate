@@ -24,6 +24,17 @@ odin_track_selection_action :: proc "c" (
 	return 0
 }
 
+@(export, link_name="audacity_odin_track_list_selection_action")
+odin_track_list_selection_action :: proc "c" (
+	control_down: u8,
+	shift_down: u8,
+	has_anchor: u8,
+) -> u8 {
+	if control_down != 0 do return 1
+	if shift_down != 0 && has_anchor != 0 do return 2
+	return 0
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,

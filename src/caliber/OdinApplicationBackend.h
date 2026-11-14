@@ -11,6 +11,11 @@ extern "C" {
 uint8_t audacity_odin_track_selection_action(
    int32_t mode, double first_track, double track_count, int32_t index);
 
+// Returns 0 for replacing selection, 1 for toggling one track, and 2 for
+// extending from the retained anchor.
+uint8_t audacity_odin_track_list_selection_action(
+   uint8_t control_down, uint8_t shift_down, uint8_t has_anchor);
+
 // Resolves the anchor and inclusive range for a Shift-click. An index of -1
 // means that the corresponding anchor/selection endpoint is unavailable.
 int32_t audacity_odin_shift_selection_range(

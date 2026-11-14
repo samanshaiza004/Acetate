@@ -64,6 +64,9 @@ decision to Odin. The C++ selection adapter continues to resolve weak Track
 references, apply `SetSelected` operations, and retain the project-local anchor
 for rollback by `SelectionStateChanger`.
 
+Track-list click selection also delegates the modifier/anchor routing decision
+to Odin. C++ retains selection mutation and selected-time-range updates.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

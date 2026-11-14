@@ -207,6 +207,22 @@ void SelectionState::ChangeSelectionOnShiftClick(
 void SelectionState::HandleListSelection(TrackList &tracks, ViewInfo &viewInfo,
   Track &track, bool shift, bool ctrl, bool syncLocked)
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   switch (audacity_odin_track_list_selection_action(
+      ctrl, shift, mLastPickedTrack.expired())) {
+   case 1:
+      SelectTrack(track, !track.GetSelected(), true);
+      break;
+   case 2:
+      ChangeSelectionOnShiftClick(tracks, track);
+      break;
+   default:
+      SelectNone(tracks);
+      SelectTrack(track, true, true);
+      SelectTrackLength(viewInfo, track, syncLocked);
+      break;
+   }
+#else
    // AS: If the shift button is being held down, invert
    //  the selection on this track.
    if (ctrl)
@@ -220,6 +236,7 @@ void SelectionState::HandleListSelection(TrackList &tracks, ViewInfo &viewInfo,
          SelectTrackLength(viewInfo, track, syncLocked);
       }
    }
+#endif
 }
 
 SelectionStateChanger::SelectionStateChanger
