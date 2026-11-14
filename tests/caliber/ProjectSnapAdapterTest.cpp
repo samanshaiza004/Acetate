@@ -107,6 +107,13 @@ TEST_CASE("Caliber Snap adapter uses real project state and notifications", "[ca
    REQUIRE(firstSnap.GetSnapMode() == SnapMode::SNAP_NEAREST);
    REQUIRE(notifications == 4);
 
+   result = AudacityCaliber::SetProjectSnapMode(
+      *first, AudacityCaliber::SnapMode::Prior, firstSession);
+   REQUIRE(result.hasState);
+   REQUIRE(result.revision == 4);
+   REQUIRE(result.state.mode == AudacityCaliber::SnapMode::Prior);
+   REQUIRE(firstSnap.GetSnapMode() == SnapMode::SNAP_PRIOR);
+
    // A later observer may change the mode again while handling the original
    // notification. The published state must describe the final project state.
    firstSnap.SetSnapMode(SnapMode::SNAP_OFF);

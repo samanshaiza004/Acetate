@@ -14,10 +14,16 @@ public:
    explicit ProjectDomain(AudacityProject& project)
       : mProject(project), mProjectId(ProjectSnapId(project)) {}
 
-   void SetEnabled(bool enabled) override
+   void SetMode(SnapMode mode) override
    {
-      ProjectSnap::Get(mProject).SetSnapMode(
-         enabled ? ::SnapMode::SNAP_NEAREST : ::SnapMode::SNAP_OFF);
+      ::SnapMode projectMode;
+      switch (mode) {
+      case SnapMode::Off: projectMode = ::SnapMode::SNAP_OFF; break;
+      case SnapMode::Nearest: projectMode = ::SnapMode::SNAP_NEAREST; break;
+      case SnapMode::Prior: projectMode = ::SnapMode::SNAP_PRIOR; break;
+      default: projectMode = static_cast<::SnapMode>(UINT32_MAX); break;
+      }
+      ProjectSnap::Get(mProject).SetSnapMode(projectMode);
    }
 
    SnapState Read() const override
@@ -52,6 +58,13 @@ uint64_t ProjectSnapId(AudacityProject& project) noexcept
 SnapResult SetProjectSnapEnabled(AudacityProject& project, bool enabled,
    SnapSession& session) noexcept
 {
+   return SetProjectSnapMode(project,
+      enabled ? SnapMode::Nearest : SnapMode::Off, session);
+}
+
+SnapResult SetProjectSnapMode(AudacityProject& project, SnapMode mode,
+   SnapSession& session) noexcept
+{
    // This check precedes every Caliber call (and every project access here).
    if (!wxIsMainThread()) {
       SnapResult result;
@@ -63,8 +76,13 @@ SnapResult SetProjectSnapEnabled(AudacityProject& project, bool enabled,
       result.status = CALIBER_STATUS_INVALID_ARGUMENT;
       return result;
    }
+   if (static_cast<uint32_t>(mode) > static_cast<uint32_t>(SnapMode::Prior)) {
+      SnapResult result;
+      result.status = CALIBER_STATUS_INVALID_ARGUMENT;
+      return result;
+   }
    ProjectDomain domain{project};
-   const auto dispatchStatus = session.Dispatch(enabled);
+   const auto dispatchStatus = session.DispatchMode(mode);
    if (dispatchStatus != CALIBER_STATUS_OK) {
       SnapResult result;
       result.status = dispatchStatus;

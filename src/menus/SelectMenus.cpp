@@ -9,6 +9,10 @@
 #include "ProjectHistory.h"
 #include "ProjectRate.h"
 #include "ProjectSnap.h"
+#ifdef AUDACITY_USE_CALIBER_SNAP
+#include "ProjectSnapAdapter.h"
+#include <wx/log.h>
+#endif
 #include "../ProjectWindows.h"
 #include "../SelectUtilities.h"
 #include "SyncLock.h"
@@ -679,22 +683,45 @@ void OnZeroCrossing(const CommandContext &context)
    ProjectHistory::Get( project ).ModifyState(false);
 }
 
-void OnSnapToOff(const CommandContext &context)
+void ApplySnapToMode(const CommandContext& context, ::SnapMode projectMode)
 {
    auto &project = context.project;
-   ProjectSnap::Get(project).SetSnapMode(SnapMode::SNAP_OFF);
+#ifdef AUDACITY_USE_CALIBER_SNAP
+   AudacityCaliber::SnapMode caliberMode;
+   switch (projectMode) {
+   case ::SnapMode::SNAP_OFF: caliberMode = AudacityCaliber::SnapMode::Off; break;
+   case ::SnapMode::SNAP_NEAREST: caliberMode = AudacityCaliber::SnapMode::Nearest; break;
+   case ::SnapMode::SNAP_PRIOR: caliberMode = AudacityCaliber::SnapMode::Prior; break;
+   default: return;
+   }
+   AudacityCaliber::SnapSession session(AudacityCaliber::ProjectSnapId(project));
+   const auto result = AudacityCaliber::SetProjectSnapMode(
+      project, caliberMode, session);
+   // Preserve the native command if the boundary failed before applying it.
+   // Once observers have run, never replay a potentially non-idempotent edit.
+   if (!result.applyStarted)
+      ProjectSnap::Get(project).SetSnapMode(projectMode);
+   if (result.status != CALIBER_STATUS_OK || !result.hasState)
+      wxLogWarning("Caliber Snap menu command failed (status %d, apply started %d)",
+         static_cast<int>(result.status), static_cast<int>(result.applyStarted));
+#else
+   ProjectSnap::Get(project).SetSnapMode(projectMode);
+#endif
+}
+
+void OnSnapToOff(const CommandContext &context)
+{
+   ApplySnapToMode(context, ::SnapMode::SNAP_OFF);
 }
 
 void OnSnapToNearest(const CommandContext &context)
 {
-   auto &project = context.project;
-   ProjectSnap::Get( project ).SetSnapMode(SnapMode::SNAP_NEAREST);
+   ApplySnapToMode(context, ::SnapMode::SNAP_NEAREST);
 }
 
 void OnSnapToPrior(const CommandContext &context)
 {
-   auto &project = context.project;
-   ProjectSnap::Get(project).SetSnapMode(SnapMode::SNAP_PRIOR);
+   ApplySnapToMode(context, ::SnapMode::SNAP_PRIOR);
 }
 
 void OnSelToStart(const CommandContext &context)

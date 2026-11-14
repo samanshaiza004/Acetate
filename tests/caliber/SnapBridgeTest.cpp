@@ -22,10 +22,10 @@ struct Domain final : SnapDomain {
    bool setPriorOnEnable{};
    bool throws{};
    explicit Domain(uint64_t id) : state{id, SnapMode::Off, 1.2, 2.8, "seconds"} {}
-   void SetEnabled(bool enabled) override {
+   void SetMode(SnapMode mode) override {
       ++calls;
-      state.mode = enabled ? SnapMode::Nearest : SnapMode::Off;
-      if (enabled) {
+      state.mode = mode;
+      if (mode == SnapMode::Nearest) {
          state.selectionStart = std::round(state.selectionStart);
          state.selectionEnd = std::round(state.selectionEnd);
          if (setPriorOnEnable) state.mode = SnapMode::Prior;
@@ -63,7 +63,7 @@ CaliberStatus CorruptRead(const CaliberContext* context, CaliberStatePublication
 }
 CaliberStatus CorruptCommand(const CaliberContext* context, uint8_t* out, size_t cap, size_t* len) {
    auto status = realApi->context_take_command(context, out, cap, len);
-   if (status == CALIBER_STATUS_OK) out[4] = 2;
+   if (status == CALIBER_STATUS_OK) out[4] = 3;
    return status;
 }
 CaliberStatus FailTake(const CaliberContext*, uint8_t*, size_t, size_t*) {
@@ -115,7 +115,7 @@ void Run()
    CHECK(result.state.selectionStart == 1.0 && result.state.selectionEnd == 3.0);
    CHECK(first.calls == 1 && second.calls == 0);
    CHECK(sent.size() == 24 && std::memcmp(sent.data(), "ASCM", 4) == 0);
-   CHECK(sent[4] == 1 && sent[6] == 1 && sent[8] == 101 && sent[16] == 1);
+   CHECK(sent[4] == 2 && sent[6] == 1 && sent[8] == 101 && sent[16] == 1);
    CHECK(releases == 1 && destroys == 0);
    result = SetSnapEnabled(secondSession, true, second);
    CHECK(result.hasState && result.state.projectId == 202 && second.calls == 1);

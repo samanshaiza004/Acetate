@@ -10,4 +10,6 @@ uint64_t ProjectSnapId(AudacityProject& project) noexcept;
 // UI thread only. The project must remain alive for this synchronous call.
 SnapResult SetProjectSnapEnabled(AudacityProject& project, bool enabled,
    SnapSession& session) noexcept;
+SnapResult SetProjectSnapMode(AudacityProject& project, SnapMode mode,
+   SnapSession& session) noexcept;
 }

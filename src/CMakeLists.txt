@@ -1432,6 +1432,15 @@ if( audacity_use_caliber_snap AND ${_OPT}has_tests )
    )
    add_test( NAME audacity-caliber-snap-bridge COMMAND audacity-caliber-snap-bridge-test )
    set_tests_properties( audacity-caliber-snap-bridge PROPERTIES LABELS "unit_tests" )
+
+   add_test(
+      NAME audacity-caliber-odin
+      COMMAND "${AUDACITY_CALIBER_ODIN}" test "${topdir}/src/caliber"
+         "-target:${AUDACITY_CALIBER_ODIN_TARGET}"
+         "-out:${CMAKE_BINARY_DIR}/audacity-caliber-odin-test"
+      WORKING_DIRECTORY "${topdir}"
+   )
+   set_tests_properties( audacity-caliber-odin PROPERTIES LABELS "unit_tests" )
 endif()
 
 if( CMAKE_VERSION VERSION_GREATER_EQUAL "3.16" AND NOT CCACHE_PROGRAM )
