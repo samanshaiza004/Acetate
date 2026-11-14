@@ -10,7 +10,7 @@
 
 #include "Fade.h"
 #ifdef AUDACITY_USE_ODIN_BACKEND
-#include "OdinEffectBackend.h"
+#include "OdinBackend.h"
 #endif
 
 Fade::Fade(bool fadeIn)

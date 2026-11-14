@@ -36,7 +36,7 @@
 
 #include "ProjectSnap.h"
 
-#ifdef AUDACITY_USE_CALIBER_SNAP
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
 #include "caliber/ProjectSnapAdapter.h"
 #include <wx/log.h>
 #include <wx/thread.h>
@@ -418,7 +418,7 @@ void SnappingToolBar::OnSize(wxSizeEvent& evt)
 
 void SnappingToolBar::OnSnapModeChanged()
 {
-#ifdef AUDACITY_USE_CALIBER_SNAP
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
    // The generic Caliber ABI can allocate and lock. This path is UI-only.
    if (!wxIsMainThread())
       return;

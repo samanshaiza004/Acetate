@@ -16,7 +16,7 @@ add_executable( ${TARGET} )
 if( audacity_use_odin_caliber_backend )
    include( "${topdir}/cmake-proxies/cmake-modules/CaliberSnap.cmake" )
    target_sources( ${TARGET} PRIVATE caliber/ProjectSnapAdapter.cpp caliber/ProjectSnapAdapter.h )
-   target_compile_definitions( ${TARGET} PRIVATE AUDACITY_USE_CALIBER_SNAP=1 )
+   target_compile_definitions( ${TARGET} PRIVATE AUDACITY_USE_ODIN_CALIBER_BACKEND=1 )
    target_link_libraries( ${TARGET} PRIVATE audacity-caliber-snap )
    target_include_directories( lib-builtin-effects PRIVATE "${topdir}/src/caliber" )
    target_compile_definitions( lib-builtin-effects PRIVATE AUDACITY_USE_ODIN_BACKEND=1 )
@@ -1435,15 +1435,15 @@ if( audacity_use_odin_caliber_backend AND ${_OPT}has_tests )
    add_test( NAME audacity-caliber-snap-bridge COMMAND audacity-caliber-snap-bridge-test )
    set_tests_properties( audacity-caliber-snap-bridge PROPERTIES LABELS "unit_tests" )
 
-   add_executable( audacity-caliber-odin-effect-test
-      "${topdir}/tests/caliber/OdinEffectBackendTest.cpp" )
-   target_link_libraries( audacity-caliber-odin-effect-test PRIVATE audacity-caliber-snap )
-   set_target_properties( audacity-caliber-odin-effect-test PROPERTIES
+   add_executable( audacity-caliber-odin-backend-test
+      "${topdir}/tests/caliber/OdinBackendTest.cpp" )
+   target_link_libraries( audacity-caliber-odin-backend-test PRIVATE audacity-caliber-snap )
+   set_target_properties( audacity-caliber-odin-backend-test PROPERTIES
       FOLDER "tests"
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
       BUILD_RPATH "${_DESTDIR}/${_PKGLIB}" )
-   add_test( NAME audacity-caliber-odin-effect COMMAND audacity-caliber-odin-effect-test )
-   set_tests_properties( audacity-caliber-odin-effect PROPERTIES LABELS "unit_tests" )
+   add_test( NAME audacity-caliber-odin-backend COMMAND audacity-caliber-odin-backend-test )
+   set_tests_properties( audacity-caliber-odin-backend PROPERTIES LABELS "unit_tests" )
 
    add_test(
       NAME audacity-caliber-odin

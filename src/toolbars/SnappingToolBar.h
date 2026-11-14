@@ -58,7 +58,7 @@ class SnappingToolBar final : public ToolBar {
 
    wxWeakRef<wxCheckBox> mSnapModeCheckBox;
    wxWeakRef<wxComboCtrl> mSnapToCombo;
-#ifdef AUDACITY_USE_CALIBER_SNAP
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
    std::shared_ptr<AudacityCaliber::SnapSession> mCaliberSnapSession;
 #endif
    

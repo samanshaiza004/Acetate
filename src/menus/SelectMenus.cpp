@@ -9,7 +9,8 @@
 #include "ProjectHistory.h"
 #include "ProjectRate.h"
 #include "ProjectSnap.h"
-#ifdef AUDACITY_USE_CALIBER_SNAP
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "OdinBackend.h"
 #include "ProjectSnapAdapter.h"
 #include <wx/log.h>
 #endif
@@ -63,6 +64,10 @@ double NearestZeroCrossing(AudacityProject &project, double t0)
       // Looking for actual crossings.  Update dist
       for (size_t iChannel = 0; iChannel < nChannels; ++iChannel) {
          const auto oneDist = buffers[iChannel];
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+         audacity_odin_zero_crossing_score_channel(
+            oneDist, oneWindowSize, dist.get(), windowSize);
+#else
          double prev = 2.0;
          for (size_t i = 0; i < oneWindowSize; ++i) {
             float fDist = fabs(oneDist[i]); // score is absolute value
@@ -90,10 +95,18 @@ double NearestZeroCrossing(AudacityProject &project, double t0)
             dist[i] +=
                0.1 * (abs(int(i) - int(windowSize / 2))) / float(windowSize / 2);
          }
+#endif
       }
       nTracks++;
    }
 
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   int64_t bestOffset{};
+   if (!audacity_odin_zero_crossing_best_offset(
+          dist.get(), windowSize, nTracks, &bestOffset))
+      return t0;
+   return t0 + static_cast<double>(bestOffset) / rate;
+#else
    // Find minimum
    int argmin = 0;
    float min = 3.0;
@@ -112,6 +125,7 @@ double NearestZeroCrossing(AudacityProject &project, double t0)
       return t0;
 
    return t0 + (argmin - (int)windowSize / 2) / rate;
+#endif
 }
 
 // If this returns true, then there was a key up, and nothing more to do,
@@ -686,7 +700,7 @@ void OnZeroCrossing(const CommandContext &context)
 void ApplySnapToMode(const CommandContext& context, ::SnapMode projectMode)
 {
    auto &project = context.project;
-#ifdef AUDACITY_USE_CALIBER_SNAP
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
    AudacityCaliber::SnapMode caliberMode;
    switch (projectMode) {
    case ::SnapMode::SNAP_OFF: caliberMode = AudacityCaliber::SnapMode::Off; break;

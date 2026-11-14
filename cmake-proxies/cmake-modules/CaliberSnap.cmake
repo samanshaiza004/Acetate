@@ -88,9 +88,9 @@ add_custom_command(
       "-out:${caliber_odin_archive}"
    DEPENDS
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinSnapBackend.odin"
-      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinEffectBackend.odin"
+      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinBackend.odin"
       "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinSnapBackend.h"
-      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinEffectBackend.h"
+      "${AUDACITY_CALIBER_ROOT}/src/caliber/OdinBackend.h"
       "${AUDACITY_CALIBER_SOURCE}/include/caliber.h"
    WORKING_DIRECTORY "${AUDACITY_CALIBER_ROOT}"
    VERBATIM )

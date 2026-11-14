@@ -1,4 +1,4 @@
-package audacity_caliber_snap
+package audacity_backend
 
 import "core:testing"
 
@@ -56,6 +56,78 @@ odin_normalize_process_block :: proc "c" (
 		adjusted := (samples[i] + offset) * multiplier
 		samples[i] = adjusted
 	}
+}
+
+@(export, link_name="audacity_odin_zero_crossing_score_channel")
+odin_zero_crossing_score_channel :: proc "c" (
+	samples: [^]f32,
+	sample_count: uintptr,
+	candidate_scores: [^]f32,
+	candidate_count: uintptr,
+) {
+	if samples == nil || candidate_scores == nil ||
+		sample_count == 0 || candidate_count == 0 {
+		return
+	}
+
+	previous: f64 = 2.0
+	for i in 0..<sample_count {
+		sample := samples[i]
+		score := sample
+		if score < 0 do score = -score
+
+		if previous * f64(sample) > 0 {
+			score = f32(f64(score) + 0.4)
+		} else if previous > 0 {
+			score = f32(f64(score) + 0.1)
+		}
+		previous = f64(sample)
+		samples[i] = score
+	}
+
+	for i in 0..<candidate_count {
+		j := i
+		if candidate_count != sample_count {
+			j = i * (sample_count - 1) / (candidate_count - 1)
+		}
+		candidate_scores[i] += samples[j]
+
+		distance := int(i) - int(candidate_count / 2)
+		if distance < 0 do distance = -distance
+		penalty := 0.1 * f64(distance) / f64(candidate_count / 2)
+		candidate_scores[i] = f32(f64(candidate_scores[i]) + penalty)
+	}
+}
+
+@(export, link_name="audacity_odin_zero_crossing_best_offset")
+odin_zero_crossing_best_offset :: proc "c" (
+	candidate_scores: [^]f32,
+	candidate_count: uintptr,
+	track_count: i32,
+	sample_offset: ^i64,
+) -> u8 {
+	if candidate_scores == nil || candidate_count == 0 || sample_offset == nil {
+		return 0
+	}
+
+	argmin := 0
+	minimum: f32 = 3.0
+	for i in 0..<candidate_count {
+		if candidate_scores[i] < minimum {
+			argmin = int(i)
+			minimum = candidate_scores[i]
+		}
+	}
+
+	if track_count == 1 && f64(minimum) > 0.2 * f64(track_count) {
+		return 0
+	}
+	if track_count > 1 && f64(minimum) > 0.6 * f64(track_count) {
+		return 0
+	}
+
+	sample_offset^ = i64(argmin - int(candidate_count) / 2)
+	return 1
 }
 
 @(test)
@@ -134,4 +206,24 @@ test_normalize_empty_blocks_are_noops :: proc(t: ^testing.T) {
 	sum := odin_normalize_accumulate_sum(nil, 0, 3.5)
 	testing.expect(t, sum == 3.5)
 	odin_normalize_process_block(nil, 0, 1, 2)
+}
+
+@(test)
+test_zero_crossing_scoring_and_threshold :: proc(t: ^testing.T) {
+	samples := [4]f32{-1, -0.4, 0.2, 0.8}
+	scores := [4]f32{}
+	odin_zero_crossing_score_channel(raw_data(samples[:]), 4,
+		raw_data(scores[:]), 4)
+	testing.expect(t, scores == [4]f32{1.2, 0.85, 0.2, 1.25})
+
+	offset: i64
+	found := odin_zero_crossing_best_offset(raw_data(scores[:]), 4, 2, &offset)
+	testing.expect(t, found == 1)
+	testing.expect(t, offset == 0)
+	found = odin_zero_crossing_best_offset(raw_data(scores[:]), 4, 1, &offset)
+	testing.expect(t, found == 0)
+
+	bad_scores := [2]f32{1, 1}
+	found = odin_zero_crossing_best_offset(raw_data(bad_scores[:]), 2, 1, &offset)
+	testing.expect(t, found == 0)
 }

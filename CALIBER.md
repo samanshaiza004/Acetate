@@ -26,6 +26,12 @@ The Normalize effect's streaming DC accumulator and per-block offset/gain
 transform also run in Odin. Audacity continues to own track traversal, peak
 analysis, cancellation, progress reporting, and project mutation.
 
+The Select > At Zero Crossings command keeps its existing Audacity checks,
+sample-window reads, and selection/history updates. Odin scores the fetched
+channels and selects the candidate offset synchronously. PCM buffers bypass
+Caliber's general command queue; Caliber remains the bounded control-plane
+transport for the Snap commands.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter
@@ -49,7 +55,7 @@ git -C /path/to/caliber checkout <pinned-revision>
 cmake -S . -B build-caliber \
   -Daudacity_use_odin_caliber_backend=ON \
   -DAUDACITY_CALIBER_SOURCE=/path/to/caliber
-cmake --build build-caliber --target Audacity audacity-caliber-snap-test audacity-caliber-snap-bridge-test audacity-caliber-odin-effect-test
+cmake --build build-caliber --target Audacity audacity-caliber-snap-test audacity-caliber-snap-bridge-test audacity-caliber-odin-backend-test
 ctest --test-dir build-caliber -R audacity-caliber --output-on-failure
 ```
 
@@ -67,5 +73,7 @@ The project adapter test uses real `AudacityProject`, `ProjectSnap`,
 selection snapping, per-project isolation, monotonic session revisions, and
 off-thread rejection. The bridge test covers ABI rejection, full queues,
 failed and corrupted state operations, and repeated session use. The Odin
-effect test checks Fade and Normalize block math, chunk continuity, in-place
-processing, and empty/invalid input. CTest runs all four tests.
+backend test checks Fade and Normalize block math plus zero-crossing parity with
+the previous C++ calculation, including mixed window sizes and threshold
+rejection. It also covers chunk continuity, in-place processing, and
+empty/invalid input. CTest runs all four tests.

@@ -22,6 +22,16 @@ double audacity_odin_normalize_accumulate_sum(
 void audacity_odin_normalize_process_block(
    float* samples, size_t block_len, float offset, float multiplier);
 
+// Scores one channel's samples into the shared candidate positions in place.
+void audacity_odin_zero_crossing_score_channel(
+   float* samples, size_t sample_count, float* candidate_scores,
+   size_t candidate_count);
+
+// Returns nonzero when a candidate passes the existing quality threshold.
+uint8_t audacity_odin_zero_crossing_best_offset(
+   const float* candidate_scores, size_t candidate_count, int32_t track_count,
+   int64_t* sample_offset);
+
 #ifdef __cplusplus
 }
 #endif

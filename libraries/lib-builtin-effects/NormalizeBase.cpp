@@ -10,7 +10,7 @@
 ***********************************************************************/
 #include "NormalizeBase.h"
 #ifdef AUDACITY_USE_ODIN_BACKEND
-#include "OdinEffectBackend.h"
+#include "OdinBackend.h"
 #endif
 #include "EffectOutputTracks.h"
 #include "ShuttleAutomation.h"

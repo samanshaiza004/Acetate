@@ -1,4 +1,4 @@
-package audacity_caliber_snap
+package audacity_backend
 
 import "core:math"
 import "core:testing"
