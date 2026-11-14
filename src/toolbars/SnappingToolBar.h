@@ -15,6 +15,7 @@
 #include <wx/weakref.h>
 
 #include <array>
+#include <memory>
 
 #include "ToolBar.h"
 #include "widgets/auStaticText.h"
@@ -26,6 +27,7 @@ class wxComboCtrl;
 class wxSizeEvent;
 
 class AudacityProject;
+namespace AudacityCaliber { class SnapSession; }
 
 class SnappingToolBar final : public ToolBar {
 
@@ -56,6 +58,9 @@ class SnappingToolBar final : public ToolBar {
 
    wxWeakRef<wxCheckBox> mSnapModeCheckBox;
    wxWeakRef<wxComboCtrl> mSnapToCombo;
+#ifdef AUDACITY_USE_CALIBER_SNAP
+   std::shared_ptr<AudacityCaliber::SnapSession> mCaliberSnapSession;
+#endif
    
    Observer::Subscription mSnappingModeChangedSubscription;
 

@@ -36,6 +36,12 @@
 
 #include "ProjectSnap.h"
 
+#ifdef AUDACITY_USE_CALIBER_SNAP
+#include "caliber/ProjectSnapAdapter.h"
+#include <wx/log.h>
+#include <wx/thread.h>
+#endif
+
 #if wxUSE_ACCESSIBILITY
 #include "WindowAccessible.h"
 #endif
@@ -412,18 +418,54 @@ void SnappingToolBar::OnSize(wxSizeEvent& evt)
 
 void SnappingToolBar::OnSnapModeChanged()
 {
+#ifdef AUDACITY_USE_CALIBER_SNAP
+   // The generic Caliber ABI can allocate and lock. This path is UI-only.
+   if (!wxIsMainThread())
+      return;
+   // Observers run synchronously and may close the toolbar or project. Keep
+   // the project alive and use weak window references after the call.
+   auto project = mProject.shared_from_this();
+   auto checkBox = mSnapModeCheckBox;
+   auto combo = mSnapToCombo;
+   if (!checkBox || !combo)
+      return;
+   const bool snapEnabled = checkBox->GetValue();
+   const auto projectId = AudacityCaliber::ProjectSnapId(*project);
+   if (!mCaliberSnapSession || mCaliberSnapSession->ProjectId() != projectId)
+      mCaliberSnapSession = std::make_shared<AudacityCaliber::SnapSession>(projectId);
+   // Observers may close the project and destroy this toolbar during Pump.
+   // Keep the in-flight Caliber context alive until the operation returns.
+   auto session = mCaliberSnapSession;
+   const auto result = AudacityCaliber::SetProjectSnapEnabled(
+      *project, snapEnabled, *session);
+   if (!result.applyStarted)
+      ProjectSnap::Get(*project).SetSnapMode(
+         snapEnabled ? SnapMode::SNAP_NEAREST : SnapMode::SNAP_OFF);
+   const bool actualEnabled = result.hasState
+      ? result.state.mode != AudacityCaliber::SnapMode::Off
+      : ProjectSnap::Get(*project).GetSnapMode() != SnapMode::SNAP_OFF;
+   if (checkBox)
+      checkBox->SetValue(actualEnabled);
+   if (combo) {
+      combo->Enable(actualEnabled);
+      if (!actualEnabled)
+         combo->SelectNone();
+   }
+   if (result.status != CALIBER_STATUS_OK || !result.hasState)
+      wxLogWarning("Caliber Snap boundary failed (status %d, apply started %d)",
+         static_cast<int>(result.status), static_cast<int>(result.applyStarted));
+#else
    const bool snapEnabled = mSnapModeCheckBox->GetValue();
-
    ProjectSnap::Get(mProject).SetSnapMode(
       snapEnabled ? SnapMode::SNAP_NEAREST : SnapMode::SNAP_OFF);
 
    mSnapToCombo->Enable(snapEnabled);
 
-
    // wxEVT_KILL_FOCUS is not always sent by wxWidgets.
    // Remove any selection from the combo box if we've disabled it.
    if (!snapEnabled)
       mSnapToCombo->SelectNone();
+#endif
 }
 
 static RegisteredToolbarFactory factory{

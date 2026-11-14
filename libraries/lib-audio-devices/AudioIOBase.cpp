@@ -676,8 +676,12 @@ std::vector<long> AudioIOBase::GetSupportedSampleRates(int playDevice, int recDe
  * the real rates. */
 int AudioIOBase::GetOptimalSupportedSampleRate()
 {
-   // For ASIO, use the last known device rate
    const int playDevice = getPlayDevIndex();
+   const int recordDevice = getRecordDevIndex();
+   if (playDevice == paNoDevice || recordDevice == paNoDevice)
+      return 44100;
+
+   // For ASIO, use the last known device rate
    if (DeviceManager::IsAsioDevice(playDevice)) {
       const PaDeviceInfo *info = Pa_GetDeviceInfo(playDevice);
       if (info && info->defaultSampleRate > 0)
@@ -685,7 +689,7 @@ int AudioIOBase::GetOptimalSupportedSampleRate()
       return 44100;
    }
 
-   auto rate = GetClosestSupportedSampleRate(-1, -1, 44100);
+   auto rate = GetClosestSupportedSampleRate(playDevice, recordDevice, 44100);
 
    // if there are no supported rates, the next bit crashes. So check first,
    // and give them a "sensible" value if there are no valid values. They
@@ -754,17 +758,10 @@ int AudioIOBase::getPlayDevIndex(const wxString &devNameArg)
 
    PaDeviceIndex deviceNum = Pa_GetDefaultOutputDevice();
 
-   // Sometimes PortAudio returns -1 if it cannot find a suitable default
-   // device, so we just use the first one available
-   //
-   // LL:  At this point, preferences and active no longer match
-   //
-   //      And I can't imagine how far we'll get specifying an "invalid" index later
-   //      on...are we certain "0" even exists?
-   if (deviceNum < 0) {
-      assert(false);
-      deviceNum = 0;
-   }
+   // PortAudio returns paNoDevice when there is no output device. Preserve
+   // that sentinel so callers can report or handle the unavailable device.
+   if (deviceNum < 0)
+      return paNoDevice;
 
    return deviceNum;
 }
@@ -807,20 +804,13 @@ int AudioIOBase::getRecordDevIndex(const wxString &devNameArg)
    // FIXME: TRAP_ERR PaErrorCode not handled well in getRecordDevIndex()
    PaDeviceIndex deviceNum = Pa_GetDefaultInputDevice();
 
-   // Sometimes PortAudio returns -1 if it cannot find a suitable default
-   // device, so we just use the first one available
-   // PortAudio has an error reporting function.  We should log/report the error?
-   //
-   // LL:  At this point, preferences and active no longer match
-   //
-   //      And I can't imagine how far we'll get specifying an "invalid" index later
-   //      on...are we certain "0" even exists?
+   // PortAudio returns paNoDevice when there is no input device. Preserve the
+   // sentinel so callers can report or handle the unavailable device.
    if (deviceNum < 0) {
-      // JKC: This will happen if you run with no config file
-      // This happens once.  Config file will exist on the next run.
-      // TODO: Look into this a bit more.  Could be relevant to blank Device Toolbar.
-      wxLogDebug("PortAudio returns -1, cannot find a suitable default device, so we just use the first one available");
-      deviceNum = 0;
+      // There is no input device to select. Preserve the PortAudio sentinel;
+      // callers can report the unavailable device.
+      wxLogDebug("PortAudio reports no default input device");
+      return paNoDevice;
    }
 
    return deviceNum;

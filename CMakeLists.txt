@@ -154,6 +154,8 @@ set( _OPT "audacity_" )
 # Our very own project
 project( Audacity )
 
+option( audacity_use_caliber_snap "Enable the experimental Caliber Snap checkbox boundary" OFF )
+
 if( APPLE )
    # XCode 14 no longer allows building unsigned binaries.
    # So for the XCode 14 `-` is passed as the code sign identity, which stands for

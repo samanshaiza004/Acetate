@@ -346,7 +346,7 @@ protected:
     *
     * Pure utility function, but it comes round a number of times in the code
     * and would be neater done once. If the device isn't found, return the
-    * default device index.
+    * default device index, or paNoDevice if no default exists.
     */
    static int getRecordDevIndex(const wxString &devName = {});
 
@@ -363,7 +363,7 @@ protected:
     *
     * Pure utility function, but it comes round a number of times in the code
     * and would be neater done once. If the device isn't found, return the
-    * default device index.
+    * default device index, or paNoDevice if no default exists.
     */
    static int getPlayDevIndex(const wxString &devName = {});
 

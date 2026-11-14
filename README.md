@@ -24,6 +24,9 @@ Build instructions are available [here](https://github.com/audacity/audacity/blo
 
 Additional development resources may be found [here](https://audacity.gitbook.io/dev/).
 
+This fork's optional experimental Caliber boundary is documented in
+[`CALIBER.md`](CALIBER.md).
+
 ## License
 
 Audacity is open source software licensed GPLv3. Most code files are GPLv2-or-later, with the notable exceptions being /lib-src (which contains third party libraries), as well as VST3-related code. Documentation is licensed CC-by 3.0 unless otherwise noted. Details can be found in the [license file](LICENSE.txt).

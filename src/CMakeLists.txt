@@ -13,6 +13,20 @@ message( STATUS "========== Configuring ${TARGET} ==========" )
 set( CMAKE_ENABLE_EXPORTS ON )
 
 add_executable( ${TARGET} )
+if( audacity_use_caliber_snap )
+   include( "${topdir}/cmake-proxies/cmake-modules/CaliberSnap.cmake" )
+   target_sources( ${TARGET} PRIVATE caliber/ProjectSnapAdapter.cpp caliber/ProjectSnapAdapter.h )
+   target_compile_definitions( ${TARGET} PRIVATE AUDACITY_USE_CALIBER_SNAP=1 )
+   target_link_libraries( ${TARGET} PRIVATE audacity-caliber-snap )
+   if( APPLE )
+      # The statically linked dependency's MIT notice accompanies the app.
+      set_source_files_properties( caliber/CALIBER-LICENSE-MIT.txt PROPERTIES MACOSX_PACKAGE_LOCATION Resources )
+      target_sources( ${TARGET} PRIVATE caliber/CALIBER-LICENSE-MIT.txt )
+   else()
+      install( FILES "${topdir}/src/caliber/CALIBER-LICENSE-MIT.txt"
+         DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/audacity" )
+   endif()
+endif()
 add_dependencies( ${TARGET} locale )
 add_dependencies( ${TARGET} nyquist )
 add_dependencies( ${TARGET} plug-ins )
@@ -1388,6 +1402,25 @@ target_include_directories( ${TARGET} PRIVATE ${INCLUDES} )
 target_link_options( ${TARGET} PRIVATE ${LDFLAGS} )
 target_link_libraries( ${TARGET} PUBLIC ${AUDACITY_LIBRARIES} )
 target_link_libraries( ${TARGET} ${LIBRARIES} )
+
+if( audacity_use_caliber_snap AND ${_OPT}has_tests )
+   add_unit_test(
+      NAME audacity-caliber-snap
+      MOCK_PREFS
+      MOCK_AUDIO
+      SOURCES
+         "${topdir}/tests/caliber/ProjectSnapAdapterTest.cpp"
+         "${topdir}/src/caliber/ProjectSnapAdapter.cpp"
+      LIBRARIES
+         audacity-caliber-snap
+         lib-time-frequency-selection
+         lib-snapping
+         lib-project-history
+         lib-numeric-formats
+         lib-project-rate
+         wxBase
+   )
+endif()
 
 if( CMAKE_VERSION VERSION_GREATER_EQUAL "3.16" AND NOT CCACHE_PROGRAM )
    if( ${_OPT}use_pch )
