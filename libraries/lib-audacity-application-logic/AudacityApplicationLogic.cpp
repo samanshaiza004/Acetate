@@ -9,6 +9,9 @@
 
 **********************************************************************/
 #include "AudacityApplicationLogic.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "OdinApplicationBackend.h"
+#endif
 #include "BasicUI.h"
 #include "CommandManager.h"
 #include "Effect.h"
@@ -138,14 +141,54 @@ bool AudacityApplicationLogic::DoEffect(
    if (em.GetSkipStateFlag())
       flags = flags | EffectManager::kSkipState;
 
-   if (!(flags & EffectManager::kSkipState))
+   bool pushHistory = !(flags & EffectManager::kSkipState);
+   bool rememberLast = !(flags & EffectManager::kDontRepeatLast);
+   bool zoomToFit = type == EffectTypeGenerate &&
+      (!anyTracks || (clean && selectedRegion.t0() == 0.0));
+   bool scrollToBottom = tracks.Size() > nTracksOriginally;
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   int32_t odinEffectKind = -1;
+   switch (type)
+   {
+   case EffectTypeGenerate:
+      odinEffectKind = AUDACITY_ODIN_EFFECT_GENERATE;
+      break;
+   case EffectTypeProcess:
+      odinEffectKind = AUDACITY_ODIN_EFFECT_PROCESS;
+      break;
+   case EffectTypeAnalyze:
+      odinEffectKind = AUDACITY_ODIN_EFFECT_ANALYZE;
+      break;
+   case EffectTypeTool:
+      odinEffectKind = AUDACITY_ODIN_EFFECT_TOOL;
+      break;
+   default:
+      break;
+   }
+
+   uint32_t completionPlan{};
+   const auto completionStatus = audacity_odin_effect_completion_plan(
+      odinEffectKind, (flags & EffectManager::kSkipState) != 0,
+      (flags & EffectManager::kDontRepeatLast) != 0,
+      tracks.Size() > nTracksOriginally, anyTracks, clean,
+      selectedRegion.t0(), &completionPlan);
+   if (completionStatus == 0) {
+      pushHistory = (completionPlan & AUDACITY_ODIN_EFFECT_PLAN_PUSH_HISTORY) != 0;
+      rememberLast = (completionPlan & AUDACITY_ODIN_EFFECT_PLAN_REMEMBER) != 0;
+      zoomToFit = (completionPlan & AUDACITY_ODIN_EFFECT_PLAN_ZOOM_TO_FIT) != 0;
+      scrollToBottom =
+         (completionPlan & AUDACITY_ODIN_EFFECT_PLAN_SCROLL_TO_BOTTOM) != 0;
+   }
+#endif
+
+   if (pushHistory)
    {
       auto shortDesc = PluginManager::Get().GetName(ID);
       const auto longDesc = XO("Applied effect: %s").Format(shortDesc);
       ProjectHistory::Get(project).PushState(longDesc, shortDesc);
    }
 
-   if (!(flags & EffectManager::kDontRepeatLast))
+   if (rememberLast)
    {
       // Remember a successful generator, effect, analyzer, or tool Process
       auto shortDesc = PluginManager::Get().GetName(ID);
@@ -191,10 +234,9 @@ bool AudacityApplicationLogic::DoEffect(
    // The following automatically re-zooms after sound was generated.
    // IMO, it was disorienting, removing to try out without re-fitting
    // mchinen:12/14/08 reapplying for generate effects
-   if (type == EffectTypeGenerate)
+   if (zoomToFit)
    {
-      if (!anyTracks || (clean && selectedRegion.t0() == 0.0))
-         viewport.ZoomFitHorizontally();
+      viewport.ZoomFitHorizontally();
    }
 
    // PRL:  Redraw explicitly because sometimes history push is skipped
@@ -209,7 +251,7 @@ bool AudacityApplicationLogic::DoEffect(
    // New tracks added?  Scroll them into view so that user sees them.
    // Don't care what track type.  An analyser might just have added a
    // Label track and we want to see it.
-   if (tracks.Size() > nTracksOriginally)
+   if (scrollToBottom)
    {
       viewport.ScrollToBottom();
    }

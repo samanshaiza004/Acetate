@@ -77,6 +77,11 @@ The batch `SelectAllIfNoneAndAllowed` helper delegates its preserve/select/rejec
 decision to Odin. C++ still reads preferences and project selection state, then
 performs the selection mutation and history update.
 
+The shared effect application layer delegates its post-effect history,
+repeat-command, generator zoom, and added-track scroll policy to Odin. Plugin
+resolution, settings, dialogs, effect processing, command-manager mutation,
+viewport calls, focus, and project history remain C++ responsibilities.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

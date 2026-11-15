@@ -47,6 +47,36 @@ odin_select_all_if_none_action :: proc "c" (
 	return 2
 }
 
+@(export, link_name="audacity_odin_effect_completion_plan")
+odin_effect_completion_plan :: proc "c" (
+	effect_kind: i32,
+	skip_history: u8,
+	dont_repeat_last: u8,
+	tracks_added: u8,
+	had_tracks: u8,
+	clean_tracks: u8,
+	selection_start: f64,
+	out_plan: ^u32,
+) -> i32 {
+	if effect_kind < 0 || effect_kind > 3 ||
+		skip_history > 1 || dont_repeat_last > 1 || tracks_added > 1 ||
+		had_tracks > 1 || clean_tracks > 1 || out_plan == nil ||
+		math.is_nan(selection_start) || math.is_inf(selection_start) {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	plan: u32 = 0
+	if skip_history == 0 do plan |= 1 << 0
+	if dont_repeat_last == 0 do plan |= 1 << 1
+	if effect_kind == 0 && (had_tracks == 0 || (clean_tracks != 0 && selection_start == 0)) {
+		plan |= 1 << 2
+	}
+	if tracks_added != 0 do plan |= 1 << 3
+
+	out_plan^ = plan
+	return i32(CALIBER_STATUS_OK)
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,

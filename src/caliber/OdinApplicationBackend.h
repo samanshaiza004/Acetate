@@ -21,6 +21,26 @@ uint8_t audacity_odin_track_list_selection_action(
 uint8_t audacity_odin_select_all_if_none_action(
    uint8_t selection_needed, uint8_t selection_allowed);
 
+enum {
+   AUDACITY_ODIN_EFFECT_GENERATE = 0,
+   AUDACITY_ODIN_EFFECT_PROCESS = 1,
+   AUDACITY_ODIN_EFFECT_ANALYZE = 2,
+   AUDACITY_ODIN_EFFECT_TOOL = 3,
+};
+
+enum {
+   AUDACITY_ODIN_EFFECT_PLAN_PUSH_HISTORY = 1u << 0,
+   AUDACITY_ODIN_EFFECT_PLAN_REMEMBER = 1u << 1,
+   AUDACITY_ODIN_EFFECT_PLAN_ZOOM_TO_FIT = 1u << 2,
+   AUDACITY_ODIN_EFFECT_PLAN_SCROLL_TO_BOTTOM = 1u << 3,
+};
+
+// Computes post-effect application policy. C++ retains all project/UI effects.
+int32_t audacity_odin_effect_completion_plan(
+   int32_t effect_kind, uint8_t skip_history, uint8_t dont_repeat_last,
+   uint8_t tracks_added, uint8_t had_tracks, uint8_t clean_tracks,
+   double selection_start, uint32_t* out_plan);
+
 // Resolves the anchor and inclusive range for a Shift-click. An index of -1
 // means that the corresponding anchor/selection endpoint is unavailable.
 int32_t audacity_odin_shift_selection_range(
