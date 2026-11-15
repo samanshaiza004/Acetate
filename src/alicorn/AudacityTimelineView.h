@@ -38,9 +38,11 @@ int32_t audacity_alicorn_timeline_view_pointer(
    uint32_t button,
    AudacityWaveformSelection* selection);
 
-/* Segment and tick arrays are borrowed only for the call. Colors are linear. */
+/* Geometry arrays are borrowed only for the call. Colors are linear. */
 int32_t audacity_alicorn_timeline_view_update_waveform(
    AudacityAlicornTimelineView* view,
+   const AudacityWaveformRectangle* rectangles,
+   uint64_t rectangle_count,
    const AudacityWaveformSegment* segments,
    uint64_t segment_count);
 int32_t audacity_alicorn_timeline_view_update_ruler(

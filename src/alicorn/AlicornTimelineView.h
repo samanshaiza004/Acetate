@@ -33,6 +33,8 @@ public:
    bool DrawWaveform(
       wxDC& dc,
       const wxRect& clip,
+      const AudacityWaveformRectangle* rectangles,
+      size_t rectangleCount,
       const AudacityWaveformSegment* segments,
       size_t count);
    bool DrawPlayhead(

@@ -57,6 +57,8 @@ struct PaintContext {
 
 void DrawGeometry(
    void* rawContext,
+   const AudacityWaveformRectangle* rectangles,
+   uint64_t rectangleCount,
    const AudacityWaveformSegment* segments,
    uint64_t segmentCount,
    AudacitySnapRect bounds,
@@ -65,7 +67,8 @@ void DrawGeometry(
    float translationY)
 {
    auto* context = static_cast<PaintContext*>(rawContext);
-   if (!context || !context->graphics || !segments)
+   if (!context || !context->graphics ||
+       (rectangleCount > 0 && !rectangles) || (segmentCount > 0 && !segments))
       return;
 
    bounds.y -= static_cast<float>(context->yOrigin);
@@ -82,6 +85,22 @@ void DrawGeometry(
          commandClip.x, commandClip.y,
          commandClip.width, commandClip.height);
    graphics->Translate(bounds.x + translationX, bounds.y + translationY);
+
+   graphics->SetPen(wxPen(wxColour(0, 0, 0, 0), 0, wxPENSTYLE_TRANSPARENT));
+   wxColour previousFill;
+   bool hasBrush = false;
+   for (uint64_t i = 0; i < rectangleCount; ++i) {
+      const auto& rectangle = rectangles[i];
+      const auto color = ToWxColour(AudacitySnapColor{
+         rectangle.r, rectangle.g, rectangle.b, rectangle.a});
+      if (!hasBrush || color != previousFill) {
+         graphics->SetBrush(wxBrush(color));
+         previousFill = color;
+         hasBrush = true;
+      }
+      graphics->DrawRectangle(
+         rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+   }
 
    wxColour previousColour;
    int previousWidth = 0;
@@ -238,16 +257,21 @@ int32_t AlicornTimelineView::Pointer(
 bool AlicornTimelineView::DrawWaveform(
    wxDC& dc,
    const wxRect& clip,
+   const AudacityWaveformRectangle* rectangles,
+   size_t rectangleCount,
    const AudacityWaveformSegment* segments,
    size_t count)
 {
-   if (!mView || !ResizeWaveform(dc.GetSize()) || (count > 0 && !segments))
+   if (!mView || !ResizeWaveform(dc.GetSize()) ||
+       (rectangleCount > 0 && !rectangles) || (count > 0 && !segments))
       return false;
-   if (count == 0)
+   if (rectangleCount == 0 && count == 0)
       return true;
 
    if (audacity_alicorn_timeline_view_update_waveform(
-          mView, segments, static_cast<uint64_t>(count)) < 0)
+          mView,
+          rectangles, static_cast<uint64_t>(rectangleCount),
+          segments, static_cast<uint64_t>(count)) < 0)
       return false;
 
    std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
@@ -276,7 +300,7 @@ bool AlicornTimelineView::DrawPlayhead(
       linear.b,
       linear.a
    };
-   return DrawWaveform(dc, clip, &line, 1);
+   return DrawWaveform(dc, clip, nullptr, 0, &line, 1);
 }
 
 bool AlicornTimelineView::UpdateRuler(

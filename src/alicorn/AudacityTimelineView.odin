@@ -10,6 +10,11 @@ AudacityWaveformSegment :: struct {
 	r, g, b, a: f32,
 }
 
+AudacityWaveformRectangle :: struct {
+	x, y, width, height: f32,
+	r, g, b, a: f32,
+}
+
 AudacityWaveformSelection :: struct {
 	phase: u32,
 	anchor_x: f32,
@@ -18,6 +23,8 @@ AudacityWaveformSelection :: struct {
 
 AudacityWaveformPaintCallback :: #type proc "c" (
 	ctx: rawptr,
+	rectangles: ^AudacityWaveformRectangle,
+	rectangle_count: u64,
 	segments: ^AudacityWaveformSegment,
 	segment_count: u64,
 	bounds: AudacitySnapRect,
@@ -55,6 +62,7 @@ Timeline_View :: struct {
 }
 
 MAX_TIMELINE_GEOMETRY_SEGMENTS :: alicorn.GPU_SURFACE_MAX_VERTICES / 6
+MAX_TIMELINE_GEOMETRY_RECTANGLES :: alicorn.GPU_SURFACE_MAX_VERTICES / alicorn.GPU_SURFACE_RECTANGLE_VERTICES
 MAX_TIMELINE_LABELS :: 1024
 MAX_TIMELINE_LABEL_BYTES :: 4096
 
@@ -377,17 +385,31 @@ audacity_alicorn_timeline_view_pointer :: proc "c" (
 @(export, link_name="audacity_alicorn_timeline_view_update_waveform")
 audacity_alicorn_timeline_view_update_waveform :: proc "c" (
 	opaque_view: rawptr,
+	rectangle_input: ^AudacityWaveformRectangle,
+	rectangle_count: u64,
 	input: ^AudacityWaveformSegment,
 	segment_count: u64,
 ) -> i32 {
 	context = odin_runtime.default_context()
 	view := transmute(^Timeline_View)opaque_view
-	if !valid_timeline_view(view) || (segment_count > 0 && input == nil) ||
+	if !valid_timeline_view(view) ||
+	   (rectangle_count > 0 && rectangle_input == nil) ||
+	   (segment_count > 0 && input == nil) ||
+	   rectangle_count > u64(MAX_TIMELINE_GEOMETRY_RECTANGLES) ||
 	   segment_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) {
 		return -1
 	}
+	if segment_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS)-rectangle_count { return -1 }
+	rectangle_input_slice := mem.slice_ptr(rectangle_input, int(rectangle_count))
 	count := int(segment_count)
 	input_segments := mem.slice_ptr(input, count)
+	rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]alicorn.GPU_Surface_Filled_Rectangle
+	for source, index in rectangle_input_slice {
+		rectangles[index] = alicorn.GPU_Surface_Filled_Rectangle{
+			bounds=alicorn.Rect{source.x, source.y, source.width, source.height},
+			color=alicorn.Color{source.r, source.g, source.b, source.a},
+		}
+	}
 	segments: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Line_Segment
 	for i in 0..<count {
 		source := input_segments[i]
@@ -398,9 +420,10 @@ audacity_alicorn_timeline_view_update_waveform :: proc "c" (
 			color=alicorn.Color{source.r, source.g, source.b, source.a},
 		}
 	}
-	if !alicorn.gpu_surface_update_geometry(
+	if !alicorn.gpu_surface_update_geometry_with_rectangles(
 		&view.runtime,
 		view.waveform_geometry_id,
+		rectangles[:int(rectangle_count)],
 		segments[:count],
 		nil,
 	) {
@@ -498,8 +521,22 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 		geometry, geometry_ok := command.payload.(alicorn.Geometry_Paint)
 		if !geometry_ok { continue }
 		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
-		if !payload_ok || len(payload.segments) == 0 { continue }
+		if !payload_ok || (len(payload.rectangles) == 0 && len(payload.segments) == 0) { continue }
 
+		output_rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]AudacityWaveformRectangle
+		for i in 0..<len(payload.rectangles) {
+			rectangle := payload.rectangles[i]
+			output_rectangles[i] = AudacityWaveformRectangle{
+				x=rectangle.bounds.x,
+				y=rectangle.bounds.y,
+				width=rectangle.bounds.w,
+				height=rectangle.bounds.h,
+				r=rectangle.color.r,
+				g=rectangle.color.g,
+				b=rectangle.color.b,
+				a=rectangle.color.a,
+			}
+		}
 		output: [MAX_TIMELINE_GEOMETRY_SEGMENTS]AudacityWaveformSegment
 		for i in 0..<len(payload.segments) {
 			segment := payload.segments[i]
@@ -515,9 +552,15 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 				a=segment.color.a,
 			}
 		}
+		rectangle_pointer: ^AudacityWaveformRectangle = nil
+		if len(payload.rectangles) > 0 { rectangle_pointer = &output_rectangles[0] }
+		segment_pointer: ^AudacityWaveformSegment = nil
+		if len(payload.segments) > 0 { segment_pointer = &output[0] }
 		callback(
 			callback_context,
-			&output[0],
+			rectangle_pointer,
+			u64(len(payload.rectangles)),
+			segment_pointer,
 			u64(len(payload.segments)),
 			snap_rect(command.bounds),
 			snap_rect(command.clip),
@@ -578,6 +621,8 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 			}
 			geometry_callback(
 				callback_context,
+				nil,
+				0,
 				&output[0],
 				u64(len(geometry.segments)),
 				snap_rect(command.bounds),

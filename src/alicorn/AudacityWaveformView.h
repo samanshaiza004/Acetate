@@ -21,6 +21,17 @@ typedef struct AudacityWaveformSegment {
    float a;
 } AudacityWaveformSegment;
 
+typedef struct AudacityWaveformRectangle {
+   float x;
+   float y;
+   float width;
+   float height;
+   float r;
+   float g;
+   float b;
+   float a;
+} AudacityWaveformRectangle;
+
 typedef struct AudacityWaveformSelection {
    uint32_t phase;
    float anchor_x;
@@ -37,6 +48,8 @@ enum {
 
 typedef void (*AudacityWaveformPaintCallback)(
    void *context,
+   const AudacityWaveformRectangle *rectangles,
+   uint64_t rectangle_count,
    const AudacityWaveformSegment *segments,
    uint64_t segment_count,
    AudacitySnapRect bounds,

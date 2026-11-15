@@ -20,17 +20,18 @@ not a window-wide Alicorn host.
 The waveform adapter reads Audacity's existing 256-column min/max/RMS cache.
 At normal zoom, it also sends bounded per-column envelope/background fill,
 zero-line, selected-range fill and edge, and waveform segments through the
-retained geometry surface. This uses thin segment strokes as a temporary fill
-encoding; the C++ paint callback still maps the retained geometry through wx
-`wxGraphicsContext`, so this is not yet a renderer migration. The native path
-remains the fallback for sync-lock patterns, envelope highlighting, high-zoom
-sample drawing, and any rejected geometry batch. Alicorn #200 tracks a
-first-class retained rectangle batch to replace the fill encoding. The playback
-indicator uses the same retained geometry surface after the cached track
-backing bitmap is presented; Audacity's playback scroller remains authoritative.
-The ruler adapter copies Audacity's generated tick positions, formatted labels,
-fonts, and colors into the same retained tree. It does not reimplement ruler
-policy.
+retained geometry surface. Fill runs use bounded first-class rectangles rather
+than thin-line encoding; Alicorn owns and validates the complete paint payload
+and keeps it within one vertex budget. The C++ paint callback still presents
+that retained geometry through wx `wxGraphicsContext`, so this is not yet a
+renderer migration. wx remains the fallback for sync-lock patterns, envelope
+highlighting, high-zoom sample drawing, and any rejected geometry batch. The
+rectangle payload closes the API gap tracked by Alicorn #200; native pixel and
+repaint-cost acceptance remains open. The playback indicator uses the same
+retained geometry surface after the cached track backing bitmap is presented;
+Audacity's playback scroller remains authoritative. The ruler adapter copies
+Audacity's generated tick positions, formatted labels, fonts, and colors into
+the same retained tree. It does not reimplement ruler policy.
 
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection

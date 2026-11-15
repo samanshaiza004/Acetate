@@ -332,11 +332,12 @@ public:
          return false;
 
       constexpr auto CacheWidth = GraphicsDataCacheBase::CacheElementWidth;
-      // Up to three background strips (base + two envelope lobes), two
+      // Up to three background rectangles (base + two envelope lobes), two
       // waveform strokes (sample + RMS), a zero line, and two selection edges
-      // can be emitted per cache element. The pinned Alicorn geometry surface
-      // accepts 1365 segments; this bounded batch stays below that limit.
-      std::array<AudacityWaveformSegment, CacheWidth * 5 + 3> segments{};
+      // can be emitted per cache element. Together they fit the retained
+      // surface's shared 8192-vertex budget.
+      std::array<AudacityWaveformRectangle, CacheWidth * 3> rectangles{};
+      std::array<AudacityWaveformSegment, CacheWidth * 2 + 3> segments{};
       auto elementFirstPixel =
          zoomInfo.TimeToPosition(from) - static_cast<int64_t>(it.GetLeftOffset());
       auto drawX = targetRect.x + leftOffset;
@@ -407,18 +408,19 @@ public:
                1.0 / zoomInfo.GetZoom());
          }
 
-         size_t outputCount = 0;
-         const auto append = [&](const AudacityWaveformSegment& segment) {
-            if (outputCount >= segments.size())
+         size_t rectangleCount = 0;
+         size_t segmentCount = 0;
+         const auto appendSegment = [&](const AudacityWaveformSegment& segment) {
+            if (segmentCount >= segments.size())
                return false;
-            segments[outputCount++] = segment;
+            segments[segmentCount++] = segment;
             return true;
          };
 
          if (includeBackground) {
-            // The pinned geometry surface has no rectangle payload yet. A
-            // one-pixel vertical segment preserves bounded, paint-only updates;
-            // retain the wx fallback for any batch that cannot be represented.
+            // Keep using Audacity's cached envelope summary and emit only the
+            // visible column fills. An unrepresentable snapshot falls back to
+            // the complete wx painter below.
             if (!backgroundEnvelope || backgroundRect.width <= 0 ||
                 backgroundRect.height != params.Height ||
                 backgroundRect.y != targetRect.y)
@@ -428,12 +430,19 @@ public:
             const auto fillRun = [&](int x, int top, int bottom, graphics::Color color) {
                if (bottom <= top)
                   return true;
-               const auto centerX = static_cast<float>(x) + 0.5f;
-               return append(makeSegment(
-                  centerX,
-                  static_cast<float>(top) + 0.5f,
-                  static_cast<float>(bottom) - 0.5f,
-                  color));
+               if (rectangleCount >= rectangles.size())
+                  return false;
+               rectangles[rectangleCount++] = AudacityWaveformRectangle{
+                  static_cast<float>(x),
+                  static_cast<float>(targetRect.y + top),
+                  1.0f,
+                  static_cast<float>(bottom - top),
+                  toLinear(color.GetRed()),
+                  toLinear(color.GetGreen()),
+                  toLinear(color.GetBlue()),
+                  static_cast<float>(color.GetAlpha()) / 255.0f
+               };
+               return true;
             };
 
             for (auto columnIndex = firstColumn; columnIndex < lastColumn; ++columnIndex) {
@@ -495,7 +504,7 @@ public:
                const auto lineRight = std::min(
                   backgroundRect.x + backgroundRect.width, chunkRight);
                if (lineLeft < lineRight &&
-                   !append(makeHorizontalSegment(
+                   !appendSegment(makeHorizontalSegment(
                       static_cast<float>(lineLeft) + 0.5f,
                       static_cast<float>(lineRight) - 0.5f,
                       static_cast<float>(backgroundZeroLevelY),
@@ -530,13 +539,13 @@ public:
             if (params.ShowClipping && (column.min <= -MAX_AUDIO || column.max >= MAX_AUDIO)) {
                const auto clippingColor = selected
                   ? params.ClippingColors.Selected : params.ClippingColors.Normal;
-               if (!append(makeSegment(
+               if (!appendSegment(makeSegment(
                   x, 0.0f, static_cast<float>(params.Height - 1), clippingColor)))
                   return false;
                continue;
             }
 
-            if (!append(makeSegment(
+            if (!appendSegment(makeSegment(
                x,
                static_cast<float>(rowFromValue(column.max)),
                static_cast<float>(rowFromValue(column.min)),
@@ -549,7 +558,7 @@ public:
                if (rmsNegative >= rmsPositive) {
                   const auto rmsColor = selected
                      ? params.RMSColors.Selected : params.RMSColors.Normal;
-                  if (!append(makeSegment(
+                  if (!appendSegment(makeSegment(
                      x, static_cast<float>(rmsPositive),
                      static_cast<float>(rmsNegative), rmsColor)))
                      return false;
@@ -565,7 +574,7 @@ public:
                   return true;
                const auto edgeX = static_cast<float>(
                   drawX + static_cast<int>(edgePixel - visibleFirstPixel));
-               return append(makeSegment(
+               return appendSegment(makeSegment(
                   edgeX,
                   0.0f,
                   static_cast<float>(params.Height - 1),
@@ -576,8 +585,9 @@ public:
                return false;
          }
 
-         if (outputCount > 0 && !view.DrawWaveform(
-                dc, clip, segments.data(), outputCount))
+         if ((rectangleCount > 0 || segmentCount > 0) && !view.DrawWaveform(
+                dc, clip, rectangles.data(), rectangleCount,
+                segments.data(), segmentCount))
             return false;
 
          elementFirstPixel += CacheWidth;
