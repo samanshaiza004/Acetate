@@ -304,6 +304,13 @@ bool AlicornTimelineView::DrawWaveform(
 bool AlicornTimelineView::DrawVerticalIndicator(
    wxDC& dc, const wxRect& clip, int x, const wxColour& color)
 {
+   if (!mView || !ResizeWaveform(dc.GetSize()))
+      return false;
+
+   const auto rect = clip.Intersect(wxRect{wxPoint{0, 0}, dc.GetSize()});
+   if (rect.IsEmpty())
+      return true;
+
    const auto linear = ToLinearColor(color);
    const AudacityWaveformSegment line{
       static_cast<float>(x),
@@ -316,7 +323,19 @@ bool AlicornTimelineView::DrawVerticalIndicator(
       linear.b,
       linear.a
    };
-   return DrawWaveform(dc, clip, nullptr, 0, &line, 1);
+   if (audacity_alicorn_timeline_view_update_waveform_overlay(
+          mView, &line) < 0)
+      return false;
+
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = rect;
+   context.yOrigin = mRulerSize.y;
+   return audacity_alicorn_timeline_view_paint_waveform_overlay(
+      mView, &DrawGeometry, &context) >= 0;
 }
 
 bool AlicornTimelineView::DrawRulerIndicator(

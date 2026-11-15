@@ -55,6 +55,10 @@ int32_t audacity_alicorn_timeline_view_update_waveform(
    uint64_t rectangle_count,
    const AudacityWaveformSegment* segments,
    uint64_t segment_count);
+/* Transient playhead/caret geometry is retained separately from the waveform. */
+int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
+   AudacityAlicornTimelineView* view,
+   const AudacityWaveformSegment* segment);
 int32_t audacity_alicorn_timeline_view_update_ruler(
    AudacityAlicornTimelineView* view,
    const AudacityRulerTick* ticks,
@@ -80,6 +84,10 @@ int32_t audacity_alicorn_timeline_view_update_ruler_overlay(
  * Waveform bounds/clip are translated to track-panel local coordinates;
  * ruler commands remain ruler-panel local. */
 int32_t audacity_alicorn_timeline_view_paint_waveform(
+   AudacityAlicornTimelineView* view,
+   AudacityWaveformPaintCallback callback,
+   void* context);
+int32_t audacity_alicorn_timeline_view_paint_waveform_overlay(
    AudacityAlicornTimelineView* view,
    AudacityWaveformPaintCallback callback,
    void* context);

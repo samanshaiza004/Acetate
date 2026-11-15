@@ -55,6 +55,7 @@ Timeline_View :: struct {
 	ruler_geometry_id: alicorn.Node_ID,
 	ruler_overlay_geometry_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
+	waveform_overlay_geometry_id: alicorn.Node_ID,
 	width, ruler_height, waveform_height: f32,
 	runtime_initialized: bool,
 	callback_active: bool,
@@ -223,6 +224,20 @@ timeline_view_build_description :: proc(
 			align=.Stretch,
 		),
 	)
+	waveform_columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.width)}
+	waveform_rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.waveform_height)}
+	waveform_grid := alicorn.grid_begin(
+		&ui,
+		alicorn.key_string("audacity-alicorn-timeline-waveform-grid"),
+		waveform_columns[:],
+		waveform_rows[:],
+		style=alicorn.layout_style(
+			.Row,
+			width=view.width,
+			height=view.waveform_height,
+			align=.Stretch,
+		),
+	)
 	view.waveform_geometry_id = alicorn.gpu_geometry_surface(
 		&ui,
 		"audacity-alicorn-timeline-waveform",
@@ -230,11 +245,22 @@ timeline_view_build_description :: proc(
 		1,
 		.Pointer,
 	)
-	waveform_ok := view.waveform_geometry_id != 0
+	waveform_geometry_ok := view.waveform_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.waveform_geometry_id, 0, 0)
+	view.waveform_overlay_geometry_id = alicorn.gpu_geometry_surface(
+		&ui,
+		"audacity-alicorn-timeline-waveform-overlay",
+		alicorn.layout_style(.Row, width=view.width, height=view.waveform_height),
+		1,
+	)
+	waveform_overlay_ok := view.waveform_overlay_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.waveform_overlay_geometry_id, 0, 0)
+	alicorn.grid_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	return ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok && waveform_ok
+	return ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok &&
+		waveform_grid != 0 && waveform_geometry_ok && waveform_overlay_ok
 }
 
 @(export, link_name="audacity_alicorn_timeline_view_create")
@@ -570,11 +596,51 @@ audacity_alicorn_timeline_view_update_waveform :: proc "c" (
 	return 1
 }
 
-timeline_ruler_color_valid :: proc(color: AudacitySnapColor) -> bool {
+timeline_color_valid :: proc(color: AudacitySnapColor) -> bool {
 	return alicorn.number_is_finite(color.r) && alicorn.number_is_finite(color.g) &&
 		alicorn.number_is_finite(color.b) && alicorn.number_is_finite(color.a) &&
 		color.r >= 0 && color.r <= 1 && color.g >= 0 && color.g <= 1 &&
 		color.b >= 0 && color.b <= 1 && color.a >= 0 && color.a <= 1
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_update_waveform_overlay")
+audacity_alicorn_timeline_view_update_waveform_overlay :: proc "c" (
+	opaque_view: rawptr,
+	segment_input: ^AudacityWaveformSegment,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) { return -1 }
+	segments: [1]alicorn.GPU_Surface_Line_Segment
+	segment_count := 0
+	if segment_input != nil {
+		source := segment_input^
+		if !alicorn.number_is_finite(source.x0) || !alicorn.number_is_finite(source.y0) ||
+		   !alicorn.number_is_finite(source.x1) || !alicorn.number_is_finite(source.y1) ||
+		   !alicorn.number_is_finite(source.thickness) || source.thickness <= 0 ||
+		   !timeline_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
+			return -1
+		}
+		segments[0] = alicorn.GPU_Surface_Line_Segment{
+			start=alicorn.GPU_Surface_Point{source.x0, source.y0},
+			end=alicorn.GPU_Surface_Point{source.x1, source.y1},
+			thickness=source.thickness,
+			color=alicorn.Color{source.r, source.g, source.b, source.a},
+		}
+		segment_count = 1
+	}
+	if !alicorn.gpu_surface_update_geometry(
+		&view.runtime,
+		view.waveform_overlay_geometry_id,
+		segments[:segment_count],
+		nil,
+	) {
+		return -1
+	}
+	presentation, ready := alicorn.begin_presentation_frame(&view.runtime)
+	if !ready { return -1 }
+	alicorn.end_presentation_frame(&presentation)
+	return 1
 }
 
 @(export, link_name="audacity_alicorn_timeline_view_update_ruler")
@@ -597,7 +663,7 @@ audacity_alicorn_timeline_view_update_ruler :: proc "c" (
 	for tick in tick_input {
 		if !alicorn.number_is_finite(tick.x) || !alicorn.number_is_finite(tick.y0) ||
 		   !alicorn.number_is_finite(tick.y1) || !alicorn.number_is_finite(tick.thickness) ||
-		   tick.thickness <= 0 || !timeline_ruler_color_valid(tick.color) {
+		   tick.thickness <= 0 || !timeline_color_valid(tick.color) {
 			return -1
 		}
 	}
@@ -607,7 +673,7 @@ audacity_alicorn_timeline_view_update_ruler :: proc "c" (
 		   label.width < 0 || label.height < 0 ||
 		   !alicorn.number_is_finite(label.font_size) || !alicorn.number_is_finite(label.font_weight) ||
 		   label.font_size < 0 || label.font_size > 512 || label.font_weight < 1 || label.font_weight > 1000 ||
-		   !timeline_ruler_color_valid(label.color) {
+		   !timeline_color_valid(label.color) {
 			return -1
 		}
 	}
@@ -661,14 +727,14 @@ audacity_alicorn_timeline_view_update_ruler_geometry :: proc "c" (
 		if !alicorn.number_is_finite(rectangle.x) || !alicorn.number_is_finite(rectangle.y) ||
 		   !alicorn.number_is_finite(rectangle.width) || !alicorn.number_is_finite(rectangle.height) ||
 		   rectangle.width <= 0 || rectangle.height <= 0 ||
-		   !timeline_ruler_color_valid(AudacitySnapColor{rectangle.r, rectangle.g, rectangle.b, rectangle.a}) {
+		   !timeline_color_valid(AudacitySnapColor{rectangle.r, rectangle.g, rectangle.b, rectangle.a}) {
 			return -1
 		}
 	}
 	for tick in tick_input {
 		if !alicorn.number_is_finite(tick.x) || !alicorn.number_is_finite(tick.y0) ||
 		   !alicorn.number_is_finite(tick.y1) || !alicorn.number_is_finite(tick.thickness) ||
-		   tick.thickness <= 0 || !timeline_ruler_color_valid(tick.color) {
+		   tick.thickness <= 0 || !timeline_color_valid(tick.color) {
 			return -1
 		}
 	}
@@ -719,7 +785,7 @@ audacity_alicorn_timeline_view_update_ruler_overlay :: proc "c" (
 		if !alicorn.number_is_finite(source.x0) || !alicorn.number_is_finite(source.y0) ||
 		   !alicorn.number_is_finite(source.x1) || !alicorn.number_is_finite(source.y1) ||
 		   !alicorn.number_is_finite(source.thickness) || source.thickness <= 0 ||
-		   !timeline_ruler_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
+		   !timeline_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
 			return -1
 		}
 		segments[0] = alicorn.GPU_Surface_Line_Segment{
@@ -901,14 +967,12 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 	return delivered
 }
 
-@(export, link_name="audacity_alicorn_timeline_view_paint_ruler_overlay")
-audacity_alicorn_timeline_view_paint_ruler_overlay :: proc "c" (
-	opaque_view: rawptr,
+timeline_view_paint_single_segment_overlay :: proc(
+	view: ^Timeline_View,
+	owner: alicorn.Node_ID,
 	geometry_callback: AudacityWaveformPaintCallback,
 	callback_context: rawptr,
 ) -> i32 {
-	context = odin_runtime.default_context()
-	view := transmute(^Timeline_View)opaque_view
 	if !valid_timeline_view(view) || geometry_callback == nil { return -1 }
 	display, ok := alicorn.paint_display_list(&view.runtime)
 	if !ok { return -1 }
@@ -916,7 +980,7 @@ audacity_alicorn_timeline_view_paint_ruler_overlay :: proc "c" (
 	view.callback_active = true
 	delivered := i32(0)
 	for command in display.commands {
-		if command.owner != view.ruler_overlay_geometry_id { continue }
+		if command.owner != owner { continue }
 		geometry, geometry_ok := command.payload.(alicorn.Geometry_Paint)
 		if !geometry_ok { continue }
 		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
@@ -954,4 +1018,38 @@ audacity_alicorn_timeline_view_paint_ruler_overlay :: proc "c" (
 	}
 	view.callback_active = false
 	return delivered
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_paint_waveform_overlay")
+audacity_alicorn_timeline_view_paint_waveform_overlay :: proc "c" (
+	opaque_view: rawptr,
+	geometry_callback: AudacityWaveformPaintCallback,
+	callback_context: rawptr,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if view == nil { return -1 }
+	return timeline_view_paint_single_segment_overlay(
+		view,
+		view.waveform_overlay_geometry_id,
+		geometry_callback,
+		callback_context,
+	)
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_paint_ruler_overlay")
+audacity_alicorn_timeline_view_paint_ruler_overlay :: proc "c" (
+	opaque_view: rawptr,
+	geometry_callback: AudacityWaveformPaintCallback,
+	callback_context: rawptr,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if view == nil { return -1 }
+	return timeline_view_paint_single_segment_overlay(
+		view,
+		view.ruler_overlay_geometry_id,
+		geometry_callback,
+		callback_context,
+	)
 }
