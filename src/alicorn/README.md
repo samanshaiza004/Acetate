@@ -16,22 +16,30 @@ controls still use separate runtimes, so this is a timeline consolidation,
 not a window-wide Alicorn host.
 
 The waveform adapter reads Audacity's existing 256-column min/max/RMS cache.
-It adds selected-range edge strokes to that bounded segment batch and maps
-Alicorn geometry paint output synchronously through wx. The playback indicator
-uses the same retained geometry surface after the cached track backing bitmap
-is presented; Audacity's playback scroller remains authoritative. The ruler
-adapter copies Audacity's generated tick positions, formatted labels, fonts,
-and colors into the same retained tree. It does not reimplement ruler policy.
+At normal zoom, it also sends bounded per-column envelope/background fill,
+zero-line, selected-range edge, and waveform segments through the retained
+geometry surface. This uses thin segment strokes as a temporary fill encoding;
+the C++ paint callback still maps the retained geometry through wx
+`wxGraphicsContext`, so this is not yet a renderer migration. The native path
+remains the fallback for sync-lock patterns, envelope highlighting, high-zoom
+sample drawing, and any rejected geometry batch. Alicorn #200 tracks a
+first-class retained rectangle batch to replace the fill encoding. The playback
+indicator uses the same retained geometry surface after the cached track
+backing bitmap is presented; Audacity's playback scroller remains authoritative.
+The ruler adapter copies Audacity's generated tick positions, formatted labels,
+fonts, and colors into the same retained tree. It does not reimplement ruler
+policy.
 
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection
 mutation, undo history, and cancel rollback. Project selection is authoritative;
 Alicorn retains only the active pointer gesture. wx still owns ruler gestures,
-selection and play-region backgrounds, the track backing surface, envelope
-controls, clip decorations, high-zoom sample editing, accessibility host
-objects, and native audio services. The original wx waveform, ruler, and
-playhead drawing paths remain fallbacks. Repaint cost and native visual
-behavior have not yet passed the MVP acceptance gates.
+play-region and blank-track backgrounds, sync-lock selection patterns, the
+track backing surface, envelope controls, clip decorations, high-zoom sample
+editing, accessibility host objects, and native audio services. The original
+wx waveform, ruler, and playhead drawing paths remain fallbacks. The new
+normal-zoom fill path has passed a native compile only; pixel parity, repaint
+cost, and interaction behavior have not yet passed the MVP acceptance gates.
 
 All timeline calls are serialized on the wx UI thread. Painting is synchronous:
 paint payload and text pointers are borrowed from runtime storage and remain

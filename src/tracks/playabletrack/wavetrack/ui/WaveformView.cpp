@@ -315,7 +315,11 @@ public:
       double from,
       double to,
       int64_t selectedFirstPixel,
-      int64_t selectedLastPixel)
+      int64_t selectedLastPixel,
+      const wxRect& backgroundRect,
+      const double* backgroundEnvelope,
+      int backgroundZeroLevelY,
+      bool includeBackground)
    {
       if (channelIndex < 0 || static_cast<size_t>(channelIndex) >= mChannelCaches.size())
          return false;
@@ -328,7 +332,11 @@ public:
          return false;
 
       constexpr auto CacheWidth = GraphicsDataCacheBase::CacheElementWidth;
-      std::array<AudacityWaveformSegment, CacheWidth * 2 + 2> segments{};
+      // Up to three background strips (base + two envelope lobes), two
+      // waveform strokes (sample + RMS), a zero line, and two selection edges
+      // can be emitted per cache element. The pinned Alicorn geometry surface
+      // accepts 1365 segments; this bounded batch stays below that limit.
+      std::array<AudacityWaveformSegment, CacheWidth * 5 + 3> segments{};
       auto elementFirstPixel =
          zoomInfo.TimeToPosition(from) - static_cast<int64_t>(it.GetLeftOffset());
       auto drawX = targetRect.x + leftOffset;
@@ -357,6 +365,15 @@ public:
             static_cast<float>(color.GetAlpha()) / 255.0f
          };
       };
+      const auto makeHorizontalSegment = [&](float x0, float x1, float y, graphics::Color color) {
+         return AudacityWaveformSegment{
+            x0, y, x1, y, 1.0f,
+            toLinear(color.GetRed()),
+            toLinear(color.GetGreen()),
+            toLinear(color.GetBlue()),
+            static_cast<float>(color.GetAlpha()) / 255.0f
+         };
+      };
       const auto remapDB = [&](float value) {
          const auto sign = value >= 0.0f ? 1.0f : -1.0f;
          if (value == 0.0f)
@@ -372,6 +389,7 @@ public:
       const auto* envelope = params.AttachedEnvelope;
       const bool applyEnvelope = envelope != nullptr &&
          (envelope->GetNumberOfPoints() > 0 || envelope->GetDefaultValue() != 1.0);
+      auto nextBackgroundX = backgroundRect.x;
 
       for (; it != range.end(); ++it) {
          const auto left = it.GetLeftOffset();
@@ -390,6 +408,102 @@ public:
          }
 
          size_t outputCount = 0;
+         const auto append = [&](const AudacityWaveformSegment& segment) {
+            if (outputCount >= segments.size())
+               return false;
+            segments[outputCount++] = segment;
+            return true;
+         };
+
+         if (includeBackground) {
+            // The pinned geometry surface has no rectangle payload yet. A
+            // one-pixel vertical segment preserves bounded, paint-only updates;
+            // retain the wx fallback for any batch that cannot be represented.
+            if (!backgroundEnvelope || backgroundRect.width <= 0 ||
+                backgroundRect.height != params.Height ||
+                backgroundRect.y != targetRect.y)
+               return false;
+
+            const auto halfHeight = std::max(backgroundRect.height / 2, 1);
+            const auto fillRun = [&](int x, int top, int bottom, graphics::Color color) {
+               if (bottom <= top)
+                  return true;
+               const auto centerX = static_cast<float>(x) + 0.5f;
+               return append(makeSegment(
+                  centerX,
+                  static_cast<float>(top) + 0.5f,
+                  static_cast<float>(bottom) - 0.5f,
+                  color));
+            };
+
+            for (auto columnIndex = firstColumn; columnIndex < lastColumn; ++columnIndex) {
+               const auto screenX = drawX + static_cast<int>(columnIndex - left);
+               const auto envelopeIndex = screenX - backgroundRect.x;
+               if (envelopeIndex < 0 || envelopeIndex >= backgroundRect.width)
+                  continue;
+               if (screenX != nextBackgroundX)
+                  return false;
+               ++nextBackgroundX;
+
+               const auto x = static_cast<int>(screenX);
+               if (!fillRun(
+                      x, 0, backgroundRect.height,
+                      params.EnvelopeColors.Normal))
+                  return false;
+
+               auto maxTop = GetWaveYPos(
+                  static_cast<float>(backgroundEnvelope[envelopeIndex]),
+                  static_cast<float>(params.Min), static_cast<float>(params.Max),
+                  backgroundRect.height, params.DBScale, true, params.DBRange, true);
+               auto maxBottom = GetWaveYPos(
+                  static_cast<float>(backgroundEnvelope[envelopeIndex]),
+                  static_cast<float>(params.Min), static_cast<float>(params.Max),
+                  backgroundRect.height, params.DBScale, false, params.DBRange, true);
+               auto minTop = GetWaveYPos(
+                  static_cast<float>(-backgroundEnvelope[envelopeIndex]),
+                  static_cast<float>(params.Min), static_cast<float>(params.Max),
+                  backgroundRect.height, params.DBScale, false, params.DBRange, true) + 1;
+               auto minBottom = GetWaveYPos(
+                  static_cast<float>(-backgroundEnvelope[envelopeIndex]),
+                  static_cast<float>(params.Min), static_cast<float>(params.Max),
+                  backgroundRect.height, params.DBScale, true, params.DBRange, true) + 1;
+
+               if (!params.DrawEnvelope || maxBottom > minTop) {
+                  maxBottom = halfHeight;
+                  minTop = halfHeight;
+               }
+
+               const auto pixel = elementFirstPixel + static_cast<int64_t>(columnIndex);
+               const auto selected =
+                  pixel >= selectedFirstPixel && pixel < selectedLastPixel;
+               const auto fillColor = selected
+                  ? params.BackgroundColors.Selected : params.BackgroundColors.Normal;
+               if (maxBottom < minTop - 1) {
+                  if (!fillRun(x, maxTop, maxBottom, fillColor) ||
+                      !fillRun(x, minTop, minBottom, fillColor))
+                     return false;
+               }
+               else if (!fillRun(x, maxTop, minBottom, fillColor))
+                  return false;
+            }
+
+            if (backgroundZeroLevelY >= backgroundRect.GetTop() &&
+                backgroundZeroLevelY <= backgroundRect.GetBottom()) {
+               const auto chunkLeft = drawX;
+               const auto chunkRight = drawX + static_cast<int>(visibleWidth);
+               const auto lineLeft = std::max(backgroundRect.x, chunkLeft);
+               const auto lineRight = std::min(
+                  backgroundRect.x + backgroundRect.width, chunkRight);
+               if (lineLeft < lineRight &&
+                   !append(makeHorizontalSegment(
+                      static_cast<float>(lineLeft) + 0.5f,
+                      static_cast<float>(lineRight) - 0.5f,
+                      static_cast<float>(backgroundZeroLevelY),
+                      params.ZeroLineColor)))
+                  return false;
+            }
+         }
+
          for (auto columnIndex = firstColumn; columnIndex < lastColumn; ++columnIndex) {
             auto column = it->Data[columnIndex];
             if (params.DBScale) {
@@ -416,16 +530,18 @@ public:
             if (params.ShowClipping && (column.min <= -MAX_AUDIO || column.max >= MAX_AUDIO)) {
                const auto clippingColor = selected
                   ? params.ClippingColors.Selected : params.ClippingColors.Normal;
-               segments[outputCount++] = makeSegment(
-                  x, 0.0f, static_cast<float>(params.Height - 1), clippingColor);
+               if (!append(makeSegment(
+                  x, 0.0f, static_cast<float>(params.Height - 1), clippingColor)))
+                  return false;
                continue;
             }
 
-            segments[outputCount++] = makeSegment(
+            if (!append(makeSegment(
                x,
                static_cast<float>(rowFromValue(column.max)),
                static_cast<float>(rowFromValue(column.min)),
-               sampleColor);
+               sampleColor)))
+               return false;
 
             if (params.ShowRMS && std::isfinite(column.rms)) {
                const auto rmsPositive = rowFromValue(std::min(column.rms, column.max));
@@ -433,9 +549,10 @@ public:
                if (rmsNegative >= rmsPositive) {
                   const auto rmsColor = selected
                      ? params.RMSColors.Selected : params.RMSColors.Normal;
-                  segments[outputCount++] = makeSegment(
+                  if (!append(makeSegment(
                      x, static_cast<float>(rmsPositive),
-                     static_cast<float>(rmsNegative), rmsColor);
+                     static_cast<float>(rmsNegative), rmsColor)))
+                     return false;
                }
             }
          }
@@ -445,17 +562,18 @@ public:
             const auto visibleLastPixel = elementFirstPixel + static_cast<int64_t>(lastColumn);
             const auto appendSelectionEdge = [&](int64_t edgePixel) {
                if (edgePixel < visibleFirstPixel || edgePixel > visibleLastPixel)
-                  return;
+                  return true;
                const auto edgeX = static_cast<float>(
                   drawX + static_cast<int>(edgePixel - visibleFirstPixel));
-               segments[outputCount++] = makeSegment(
+               return append(makeSegment(
                   edgeX,
                   0.0f,
                   static_cast<float>(params.Height - 1),
-                  params.SampleColors.Selected);
+                  params.SampleColors.Selected));
             };
-            appendSelectionEdge(selectedFirstPixel);
-            appendSelectionEdge(selectedLastPixel);
+            if (!appendSelectionEdge(selectedFirstPixel) ||
+                !appendSelectionEdge(selectedLastPixel))
+               return false;
          }
 
          if (outputCount > 0 && !view.DrawWaveform(
@@ -465,6 +583,9 @@ public:
          elementFirstPixel += CacheWidth;
          drawX += static_cast<int>(visibleWidth);
       }
+      if (includeBackground &&
+          nextBackgroundX != backgroundRect.x + backgroundRect.width)
+         return false;
       return true;
    }
 #endif
@@ -510,11 +631,33 @@ private:
    std::atomic<bool> mChanged = false;
 };
 
+void DrawWaveformBackground(
+   TrackPanelDrawingContext& context,
+   int leftOffset,
+   const wxRect& rect,
+   const double env[],
+   float zoomMin,
+   float zoomMax,
+   int zeroLevelYCoordinate,
+   bool dB,
+   float dBRange,
+   double t0,
+   double t1,
+   bool bIsSyncLockSelected,
+   bool highlightEnvelope);
+
 void DrawWaveform(
    TrackPanelDrawingContext& context, const WaveTrack& track, const WaveChannelInterval& channelInterval,
    int leftOffset, double t0, double t1,
    const wxRect & rect, float zoomMin, float zoomMax, bool dB, float dBRange,
-   bool muted)
+   bool muted,
+   const wxRect& backgroundRect,
+   const double backgroundEnvelope[],
+   int backgroundZeroLevelY,
+   double backgroundSelectionT0,
+   double backgroundSelectionT1,
+   bool bIsSyncLockSelected,
+   bool highlightEnvelope)
 {
    auto& clip = channelInterval.GetClip();
    const auto channelIndex = channelInterval.GetChannelIndex();
@@ -560,6 +703,17 @@ void DrawWaveform(
       artist->pSelectedRegion->t1() - sequenceStartTime,
       SyncLock::IsSelectedOrSyncLockSelected(track));
 
+   const bool includeBackground =
+      !highlightEnvelope &&
+      !(bIsSyncLockSelected && backgroundSelectionT0 < backgroundSelectionT1);
+   if (!includeBackground) {
+      DrawWaveformBackground(
+         context, leftOffset, backgroundRect, backgroundEnvelope,
+         zoomMin, zoomMax, backgroundZeroLevelY, dB, dBRange,
+         backgroundSelectionT0, backgroundSelectionT1,
+         bIsSyncLockSelected, highlightEnvelope);
+   }
+
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    bool alicornDrawn = false;
    if (auto* view = artist->parent->GetAlicornTimelineView()) {
@@ -575,13 +729,32 @@ void DrawWaveform(
       alicornDrawn = clipPainter.DrawAlicorn(
          channelIndex, *view, context.dc, rect, paintParameters, zoomInfo, rect,
          leftOffset, t0 + trimLeft, t1 + trimLeft,
-         selectedFirst, selectedLast);
+         selectedFirst, selectedLast,
+         backgroundRect, backgroundEnvelope, backgroundZeroLevelY,
+         includeBackground);
    }
-   if (!alicornDrawn)
-#endif
+   if (!alicornDrawn) {
+      if (includeBackground) {
+         DrawWaveformBackground(
+            context, leftOffset, backgroundRect, backgroundEnvelope,
+            zoomMin, zoomMax, backgroundZeroLevelY, dB, dBRange,
+            backgroundSelectionT0, backgroundSelectionT1,
+            bIsSyncLockSelected, highlightEnvelope);
+      }
       clipPainter.Draw(
          channelIndex, context.dc, paintParameters, zoomInfo, rect, leftOffset,
          t0 + trimLeft, t1 + trimLeft);
+   }
+#else
+   DrawWaveformBackground(
+      context, leftOffset, backgroundRect, backgroundEnvelope,
+      zoomMin, zoomMax, backgroundZeroLevelY, dB, dBRange,
+      backgroundSelectionT0, backgroundSelectionT1,
+      bIsSyncLockSelected, highlightEnvelope);
+   clipPainter.Draw(
+      channelIndex, context.dc, paintParameters, zoomInfo, rect, leftOffset,
+      t0 + trimLeft, t1 + trimLeft);
+#endif
 }
 
 
@@ -1032,31 +1205,23 @@ void DrawClipWaveform(TrackPanelDrawingContext &context,
 
       env, mid.width, leftOffset, zoomInfo);
 
-   // Draw the background of the track, outlining the shape of
-   // the envelope and using a colored pen for the selected
-   // part of the waveform
-   {
-      double tt0, tt1;
-      const auto &track = channel.GetTrack();
-      if (SyncLock::IsSelectedOrSyncLockSelected(track)) {
-         tt0 = track.SnapToSample(selectedRegion.t0());
-         tt1 = track.SnapToSample(selectedRegion.t1());
-      }
-      else
-         tt0 = tt1 = 0.0;
-      DrawWaveformBackground(context, leftOffset, mid,
-         env,
-         zoomMin, zoomMax,
-         cache.ZeroLevelYCoordinate(mid),
-         dB, dBRange,
-         tt0, tt1,
-         !track.GetSelected(), highlightEnvelope);
-   }
-
    // Require at least 1/2 pixel per sample for drawing individual samples.
    const double threshold1 = 0.5 * sampleRate / stretchRatio;
    // Require at least 3 pixels per sample for drawing the draggable points.
    const double threshold2 = 3 * sampleRate / stretchRatio;
+   const bool showIndividualSamples = zoomInfo.GetZoom() > threshold1;
+
+   double backgroundSelectionT0 = 0.0;
+   double backgroundSelectionT1 = 0.0;
+   const auto& track = channel.GetTrack();
+   const bool selectionAppliesToTrack =
+      SyncLock::IsSelectedOrSyncLockSelected(track);
+   if (selectionAppliesToTrack) {
+      backgroundSelectionT0 = track.SnapToSample(selectedRegion.t0());
+      backgroundSelectionT1 = track.SnapToSample(selectedRegion.t1());
+   }
+   const bool bIsSyncLockSelected = !track.GetSelected();
+   const auto backgroundZeroLevelY = cache.ZeroLevelYCoordinate(mid);
 
    bool highlight = false;
 #ifdef EXPERIMENTAL_TRACK_PANEL_HIGHLIGHTING
@@ -1064,17 +1229,24 @@ void DrawClipWaveform(TrackPanelDrawingContext &context,
       highlight = target && target->FindChannel().get() == &track;
 #endif
 
-   const bool showIndividualSamples = zoomInfo.GetZoom() > threshold1;
    const bool showPoints = zoomInfo.GetZoom() > threshold2;
 
    if(!showIndividualSamples)
    {
       DrawWaveform(
          context, channel.GetTrack(), clip, leftOffset, t0, t1,
-         rect, zoomMin, zoomMax, dB, dBRange, muted);
+         rect, zoomMin, zoomMax, dB, dBRange, muted,
+         mid, env, backgroundZeroLevelY,
+         backgroundSelectionT0, backgroundSelectionT1,
+         bIsSyncLockSelected, highlightEnvelope);
    }
    else
    {
+      DrawWaveformBackground(
+         context, leftOffset, mid, env, zoomMin, zoomMax,
+         backgroundZeroLevelY, dB, dBRange,
+         backgroundSelectionT0, backgroundSelectionT1,
+         bIsSyncLockSelected, highlightEnvelope);
       std::vector<WavePortion> portions;
       FindWavePortions(portions, rect, zoomInfo, params);
       auto offset = leftOffset;
