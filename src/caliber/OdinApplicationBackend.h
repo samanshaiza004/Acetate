@@ -41,6 +41,11 @@ int32_t audacity_odin_effect_completion_plan(
    uint8_t tracks_added, uint8_t had_tracks, uint8_t clean_tracks,
    double selection_start, uint32_t* out_plan);
 
+// Returns whether this project may stop the process-wide audio stream.
+int32_t audacity_odin_can_stop_audio_stream(
+   uint8_t stream_active, uint8_t monitoring, uint8_t owned_by_project,
+   uint8_t* out_can_stop);
+
 // Resolves the anchor and inclusive range for a Shift-click. An index of -1
 // means that the corresponding anchor/selection endpoint is unavailable.
 int32_t audacity_odin_shift_selection_range(

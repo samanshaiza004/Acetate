@@ -18,6 +18,9 @@ Paul Licameli split from ProjectManager.cpp
 #include <numeric>
 
 #include "AudioIO.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "caliber/OdinApplicationBackend.h"
+#endif
 #include "BasicUI.h"
 #include "CommandManager.h"
 #include "CommonCommandFlags.h"
@@ -1189,9 +1192,17 @@ bool ProjectAudioManager::Recording() const
 bool ProjectAudioManager::CanStopAudioStream() const
 {
    auto gAudioIO = AudioIO::Get();
-   return (!gAudioIO->IsStreamActive() ||
-           gAudioIO->IsMonitoring() ||
-           gAudioIO->GetOwningProject().get() == &mProject );
+   const bool streamActive = gAudioIO->IsStreamActive();
+   const bool monitoring = gAudioIO->IsMonitoring();
+   const bool ownedByProject =
+      gAudioIO->GetOwningProject().get() == &mProject;
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   uint8_t canStop{};
+   if (audacity_odin_can_stop_audio_stream(
+          streamActive, monitoring, ownedByProject, &canStop) == 0)
+      return canStop != 0;
+#endif
+   return (!streamActive || monitoring || ownedByProject);
 }
 
 const ReservedCommandFlag&

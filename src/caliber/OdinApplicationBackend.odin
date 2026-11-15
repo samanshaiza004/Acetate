@@ -77,6 +77,26 @@ odin_effect_completion_plan :: proc "c" (
 	return i32(CALIBER_STATUS_OK)
 }
 
+@(export, link_name="audacity_odin_can_stop_audio_stream")
+odin_can_stop_audio_stream :: proc "c" (
+	stream_active: u8,
+	monitoring: u8,
+	owned_by_project: u8,
+	out_can_stop: ^u8,
+) -> i32 {
+	if stream_active > 1 || monitoring > 1 || owned_by_project > 1 ||
+		out_can_stop == nil {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	can_stop: u8 = 0
+	if stream_active == 0 || monitoring != 0 || owned_by_project != 0 {
+		can_stop = 1
+	}
+	out_can_stop^ = can_stop
+	return i32(CALIBER_STATUS_OK)
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,
