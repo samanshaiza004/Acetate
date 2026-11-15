@@ -68,6 +68,7 @@ file( GLOB_RECURSE alicorn_runtime_inputs CONFIGURE_DEPENDS
    "${AUDACITY_ALICORN_SOURCE}/assets/fonts/*.ttf" )
 add_custom_command(
    OUTPUT "${alicorn_odin_archive}"
+   COMMAND "${CMAKE_COMMAND}" -E rm -f "${alicorn_odin_archive}"
    COMMAND "${CMAKE_COMMAND}" -E make_directory "${alicorn_odin_dir}"
    COMMAND "${AUDACITY_ALICORN_ODIN}" build "${AUDACITY_ALICORN_ROOT}/src/alicorn"
       "-collection:alicorn=${AUDACITY_ALICORN_SOURCE}"
@@ -75,6 +76,7 @@ add_custom_command(
       "-out:${alicorn_odin_archive}"
    DEPENDS
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacitySnapView.odin"
+      "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityNumericTimeView.h"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacitySnapView.h"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityTimelineView.odin"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityTimelineView.h"

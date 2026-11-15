@@ -68,16 +68,16 @@ access to `SelectionBar`'s private state; the latter keeps preference updates,
 field labels, numeric formats, and layout in Audacity. The native mode menu
 remains in place for now: a control-sized wx surface clips Alicorn's anchored
 popup to its own bounds, and Acetate does not yet expose Alicorn popup semantics
-through the native accessibility tree. The existing
-`NumericTextCtrl` remains active because it supplies segmented time editing,
-format switching, native text behavior, and accessibility that the current
-Alicorn bridge does not yet replace. Keep it until the host can deliver
-committed text, preedit/cancel composition, editing and navigation keys, focus
-lifecycle, and accessible labels/values. Alicorn #196 delivered the hosted
-Runtime contract; native text-entry and accessibility validation remain
-Acetate integration work.
-This avoids replacing it with a plain text field that silently drops these
-behaviors. wx still owns the remaining ruler gestures and paints blank-track
+through the native accessibility tree. The Selection Toolbar's numeric-time
+values now use a retained Alicorn view for segmented digits, formatted labels,
+focused-digit appearance, and the format chevron. `NumericTextCtrl` remains the
+control and authoritative owner of editing, digit navigation, format changes,
+focus, the context menu, and its native accessibility object; wx retains its
+paint path as a fallback. This is a presentation migration only: native text
+input, IME handling, and accessibility have not moved to Alicorn, and visual
+parity has not yet been checked in a running application. Alicorn #196
+delivered the hosted Runtime contract; further editor and host integration
+remain Acetate work. wx still owns the remaining ruler gestures and paints blank-track
 backgrounds and sync-lock selection patterns. The track panel currently has no
 play-region shading; loop-region visualization is on the ruler. wx also paints
 the track backing surface, envelope controls,
@@ -135,5 +135,7 @@ wx adapter. See the repository [`BUILDING.md`](../../BUILDING.md) and root
 The Snap checkbox, Audio Setup button, Selection Toolbar mode-setup button,
 Edit toolbar buttons, Cut/Copy/Paste buttons, and Stop button use small opaque
 C ABI handles. Their existing contracts and public paint payloads are declared
-in [`AudacitySnapView.h`](AudacitySnapView.h). The wx host remains authoritative
-for control state and platform-facing accessibility objects.
+in [`AudacitySnapView.h`](AudacitySnapView.h). The Selection Toolbar's numeric
+time rendering adapter is declared in
+[`AudacityNumericTimeView.h`](AudacityNumericTimeView.h). The wx host remains
+authoritative for control state and platform-facing accessibility objects.

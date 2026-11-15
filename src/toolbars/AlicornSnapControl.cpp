@@ -258,6 +258,15 @@ void DrawPaintCommand(void* rawContext, const AudacitySnapDrawCommand* command)
                width, height);
          }
       }
+      else if (command->icon_id == AUDACITY_SNAP_ICON_CHEVRON_DOWN) {
+         graphics->SetPen(wxPen(fill, std::max(1.0f, bounds.height * 0.12f), wxPENSTYLE_SOLID));
+         graphics->SetBrush(*wxTRANSPARENT_BRUSH);
+         auto path = graphics->CreatePath();
+         path.MoveToPoint(bounds.x + bounds.width * 0.22, bounds.y + bounds.height * 0.38);
+         path.AddLineToPoint(bounds.x + bounds.width * 0.50, bounds.y + bounds.height * 0.65);
+         path.AddLineToPoint(bounds.x + bounds.width * 0.78, bounds.y + bounds.height * 0.38);
+         graphics->StrokePath(path);
+      }
       else if (command->icon_id >= AUDACITY_SNAP_ICON_CUT &&
                command->icon_id <= AUDACITY_SNAP_ICON_FAST_FORWARD) {
          teBmps image_id;
@@ -276,7 +285,10 @@ void DrawPaintCommand(void* rawContext, const AudacitySnapDrawCommand* command)
          const auto text = wxString::FromUTF8(
             reinterpret_cast<const char*>(command->text_utf8),
             static_cast<size_t>(command->text_length));
-         graphics->SetFont(context->font, ToWxColour(command->text_color, command->opacity));
+         auto font = context->font;
+         if (std::isfinite(command->font_size) && command->font_size > 0.0f)
+            font.SetPointSize(std::max(1, static_cast<int>(std::lround(command->font_size * 0.75f))));
+         graphics->SetFont(font, ToWxColour(command->text_color, command->opacity));
          graphics->DrawText(text, bounds.x, bounds.y);
       }
       break;

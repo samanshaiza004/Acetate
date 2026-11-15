@@ -22,9 +22,19 @@
 #include "wxWidgetsWindowPlacement.h"
 #include "NumericConverterRegistry.h"
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../alicorn/AudacityNumericTimeView.h"
+#include "../toolbars/AlicornPaint.h"
+#endif
+
 #include <algorithm>
+#include <cmath>
 #include <math.h>
 #include <limits>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include <wx/setup.h> // for wxUSE_* macros
 
@@ -35,6 +45,40 @@
 #include <wx/stattext.h>
 #include <wx/tooltip.h>
 #include <wx/toplevel.h>
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+namespace {
+std::unordered_map<NumericTextCtrl*, AudacityAlicornNumericTimeView*> gAlicornNumericTimeViews;
+std::unordered_set<NumericTextCtrl*> gAlicornNumericTimeViewFailures;
+
+float SrgbToLinear(unsigned char value)
+{
+   const auto srgb = static_cast<double>(value) / 255.0;
+   return static_cast<float>(srgb <= 0.04045
+      ? srgb / 12.92
+      : std::pow((srgb + 0.055) / 1.055, 2.4));
+}
+
+AudacitySnapColor ToAlicornColor(const wxColour& color)
+{
+   return AudacitySnapColor{
+      SrgbToLinear(color.Red()),
+      SrgbToLinear(color.Green()),
+      SrgbToLinear(color.Blue()),
+      static_cast<float>(color.Alpha()) / 255.0f};
+}
+
+void DestroyAlicornNumericTimeView(NumericTextCtrl* control)
+{
+   gAlicornNumericTimeViewFailures.erase(control);
+   const auto found = gAlicornNumericTimeViews.find(control);
+   if (found == gAlicornNumericTimeViews.end())
+      return;
+   audacity_alicorn_numeric_time_view_destroy(found->second);
+   gAlicornNumericTimeViews.erase(found);
+}
+}
+#endif
 
 #if wxUSE_ACCESSIBILITY
 #include "WindowAccessible.h"
@@ -207,6 +251,9 @@ NumericTextCtrl::NumericTextCtrl(
 
 NumericTextCtrl::~NumericTextCtrl()
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   DestroyAlicornNumericTimeView(this);
+#endif
 }
 
 void NumericTextCtrl::SetName( const TranslatableString &name )
@@ -519,7 +566,139 @@ void NumericTextCtrl::OnPaint(wxPaintEvent & WXUNUSED(event))
       return;
 
    wxBufferedPaintDC dc(this);
-   bool focused = (FindFocus() == this);
+   const bool focused = (FindFocus() == this);
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool alicornPainted = false;
+   if (gAlicornNumericTimeViewFailures.find(this) == gAlicornNumericTimeViewFailures.end() && mLabelFont && mDigitFont) {
+      auto viewIt = gAlicornNumericTimeViews.find(this);
+      if (viewIt == gAlicornNumericTimeViews.end()) {
+         const auto clientSize = GetClientSize();
+         const auto dpiScale = static_cast<float>(GetContentScaleFactor());
+         auto* view = audacity_alicorn_numeric_time_view_create(
+            static_cast<float>(clientSize.x),
+            static_cast<float>(clientSize.y),
+            static_cast<int32_t>(std::lround(clientSize.x * dpiScale)),
+            static_cast<int32_t>(std::lround(clientSize.y * dpiScale)),
+            dpiScale);
+         if (view)
+            viewIt = gAlicornNumericTimeViews.emplace(this, view).first;
+         else
+            gAlicornNumericTimeViewFailures.insert(this);
+      }
+
+      if (viewIt != gAlicornNumericTimeViews.end()) {
+         const auto clientSize = GetClientSize();
+         const auto dpiScale = static_cast<float>(GetContentScaleFactor());
+         const auto resizeResult = audacity_alicorn_numeric_time_view_resize(
+            viewIt->second,
+            static_cast<float>(clientSize.x),
+            static_cast<float>(clientSize.y),
+            static_cast<int32_t>(std::lround(clientSize.x * dpiScale)),
+            static_cast<int32_t>(std::lround(clientSize.y * dpiScale)),
+            dpiScale);
+
+         std::vector<std::string> segmentText;
+         std::vector<AudacityNumericTimeSegment> segments;
+         segmentText.reserve(mFormatter->GetDigitInfos().size() * 2 + 1);
+         segments.reserve(mFormatter->GetDigitInfos().size() * 2 + 1);
+         wxScreenDC measureDC;
+         measureDC.SetFont(*mLabelFont);
+
+         const auto appendLiteral = [&](size_t start, size_t length) {
+            if (length == 0)
+               return;
+            const auto text = mValueString.Mid(start, length);
+            const auto utf8 = text.utf8_str();
+            if (!utf8 || utf8.length() == 0)
+               return;
+            wxCoord width{}, height{};
+            measureDC.GetTextExtent(text, &width, &height);
+            segmentText.emplace_back(utf8.data(), utf8.length());
+            segments.push_back(AudacityNumericTimeSegment{
+               reinterpret_cast<const uint8_t*>(segmentText.back().data()),
+               static_cast<uint64_t>(segmentText.back().size()),
+               static_cast<float>(std::max<wxCoord>(0, width)),
+               -1});
+         };
+
+         size_t textStart = 0;
+         int32_t digitIndex = 0;
+         for (const auto& digit : mFormatter->GetDigitInfos()) {
+            if (digit.pos > textStart)
+               appendLiteral(textStart, digit.pos - textStart);
+            if (digit.pos < mValueString.length()) {
+               const auto text = mValueString.Mid(digit.pos, 1);
+               const auto utf8 = text.utf8_str();
+               if (utf8 && utf8.length() > 0) {
+                  segmentText.emplace_back(utf8.data(), utf8.length());
+                  segments.push_back(AudacityNumericTimeSegment{
+                     reinterpret_cast<const uint8_t*>(segmentText.back().data()),
+                     static_cast<uint64_t>(segmentText.back().size()),
+                     static_cast<float>(mDigitBoxW),
+                     digitIndex});
+               }
+               textStart = digit.pos + 1;
+            }
+            ++digitIndex;
+         }
+         if (textStart < mValueString.length())
+            appendLiteral(textStart, mValueString.length() - textStart);
+
+         const auto logicalFontSize = [](const wxFont& font) {
+            return static_cast<float>(font.GetPointSize()) * (96.0f / 72.0f);
+         };
+         const auto background = theTheme.Colour(clrTimeHours);
+         const auto digitBackground = theTheme.Colour(clrTimeBack);
+         const auto focusedDigitBackground = theTheme.Colour(clrTimeBackFocus);
+         const auto textColor = theTheme.Colour(clrTimeFont);
+         const auto focusedTextColor = theTheme.Colour(clrTimeFontFocus);
+         AudacityNumericTimeStyle style{};
+         style.background = ToAlicornColor(background);
+         style.digit_background = ToAlicornColor(digitBackground);
+         style.focused_digit_background = ToAlicornColor(focusedDigitBackground);
+         style.text_color = ToAlicornColor(textColor);
+         style.focused_digit_text_color = ToAlicornColor(focusedTextColor);
+         style.focus_border = ToAlicornColor(theTheme.Colour(clrTimeFontFocus));
+         style.menu_icon = ToAlicornColor(textColor);
+         style.width = static_cast<float>(clientSize.x);
+         style.height = static_cast<float>(clientSize.y);
+         style.content_width = static_cast<float>(std::min(mWidth, clientSize.x));
+         style.digit_height = static_cast<float>(mDigitBoxH - mBorderTop - mBorderBottom);
+         style.menu_width = static_cast<float>(mButtonWidth);
+         style.digit_font_size = logicalFontSize(*mDigitFont);
+         style.label_font_size = logicalFontSize(*mLabelFont);
+         style.focused_digit = mFocusedDigit;
+         style.focused = focused ? 1 : 0;
+         style.enabled = IsEnabled() ? 1 : 0;
+         style.menu_enabled = mMenuEnabled ? 1 : 0;
+
+         const auto updateResult = resizeResult < 0 ? -1 :
+            audacity_alicorn_numeric_time_view_update(
+               viewIt->second, segments.data(), segments.size(), &style);
+         if (updateResult >= 0) {
+            std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(dc) };
+            if (graphics) {
+               AudacityAlicorn::PaintContext paintContext{
+                  graphics.get(), *mDigitFont, IsEnabled()};
+               alicornPainted = audacity_alicorn_numeric_time_view_paint(
+                  viewIt->second,
+                  &AudacityAlicorn::DrawPaintCommand,
+                  &paintContext) >= 0;
+            }
+         }
+
+         if (!alicornPainted) {
+            DestroyAlicornNumericTimeView(this);
+            gAlicornNumericTimeViewFailures.insert(this);
+         }
+      }
+   }
+   if (alicornPainted)
+      return;
+   dc.SetBackground(wxBrush(theTheme.Colour(clrTimeHours)));
+   dc.Clear();
+#endif
 
    dc.DrawBitmap(*mBackgroundBitmap, 0, 0);
 

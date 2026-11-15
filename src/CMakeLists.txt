@@ -51,6 +51,7 @@ endif()
 if( audacity_use_alicorn_snap_ui )
    target_sources( ${TARGET} PRIVATE
       alicorn/AlicornTimelineView.cpp
+      alicorn/AudacityNumericTimeView.h
       alicorn/AlicornTimelineView.h
       alicorn/AudacityTimelineView.h
       alicorn/AudacityRulerView.h

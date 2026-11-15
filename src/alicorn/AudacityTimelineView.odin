@@ -1009,6 +1009,7 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 			if !run_ok { continue }
 			output := snap_view_command_base(command, AUDACITY_SNAP_DRAW_TEXT)
 			output.text_color = snap_color(payload.color)
+			output.font_size = run.size
 			output.text_length = u64(len(run.value))
 			if len(run.value) > 0 { output.text_utf8 = raw_data(run.value) }
 			draw_callback(callback_context, &output)

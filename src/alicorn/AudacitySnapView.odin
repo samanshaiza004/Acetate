@@ -1,6 +1,7 @@
 package audacity_alicorn_snap_view
 
 import alicorn "alicorn:runtime"
+import "core:mem"
 import odin_runtime "base:runtime"
 import "core:strings"
 import odin_time "core:time"
@@ -37,6 +38,7 @@ AudacitySnapDrawCommand :: struct {
 	icon_id: u32,
 	text_utf8: ^u8,
 	text_length: u64,
+	font_size: f32,
 }
 
 AudacitySnapDrawCallback :: #type proc "c" (
@@ -94,6 +96,7 @@ AUDACITY_SNAP_ICON_PLAY_SEEK :: u32(21)
 AUDACITY_SNAP_ICON_PAUSE :: u32(22)
 AUDACITY_SNAP_ICON_REWIND :: u32(23)
 AUDACITY_SNAP_ICON_FAST_FORWARD :: u32(24)
+AUDACITY_SNAP_ICON_CHEVRON_DOWN :: u32(25)
 AUDACITY_ACTION_ICON_NONE :: u32(0)
 AUDACITY_ACTION_ICON_SETTINGS :: u32(1)
 AUDACITY_ACTION_ICON_SETUP :: u32(2)
@@ -480,6 +483,7 @@ audacity_alicorn_snap_view_paint :: proc "c" (
 			if !run_ok { continue }
 			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_TEXT)
 			output.text_color = snap_color(payload.color)
+			output.font_size = run.size
 			output.text_length = u64(len(run.value))
 			if len(run.value) > 0 { output.text_utf8 = raw_data(run.value) }
 		case alicorn.Backdrop_Effect_Paint, alicorn.Image_Paint, alicorn.Geometry_Paint:
@@ -930,6 +934,410 @@ audacity_alicorn_action_view_paint :: proc "c" (
 			if !run_ok { continue }
 			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_TEXT)
 			output.text_color = snap_color(payload.color)
+			output.font_size = run.size
+			output.text_length = u64(len(run.value))
+			if len(run.value) > 0 { output.text_utf8 = raw_data(run.value) }
+		case alicorn.Backdrop_Effect_Paint, alicorn.Image_Paint, alicorn.Geometry_Paint:
+			continue
+		case:
+			continue
+		}
+		callback(callback_context, &output)
+		delivered += 1
+	}
+	view.callback_active = false
+	if alicorn.hosted_runtime_frame_submission_succeeded(&view.hosted) != .Ok { return -1 }
+	return delivered
+}
+
+AudacityNumericTimeSegment :: struct {
+	text_utf8: ^u8,
+	text_length: u64,
+	width: f32,
+	digit_index: i32,
+}
+
+AudacityNumericTimeStyle :: struct {
+	background: AudacitySnapColor,
+	digit_background: AudacitySnapColor,
+	focused_digit_background: AudacitySnapColor,
+	text_color: AudacitySnapColor,
+	focused_digit_text_color: AudacitySnapColor,
+	focus_border: AudacitySnapColor,
+	menu_icon: AudacitySnapColor,
+	width, height, content_width, digit_height, menu_width: f32,
+	digit_font_size, label_font_size: f32,
+	focused_digit: i32,
+	focused, enabled, menu_enabled, reserved: u8,
+}
+
+Numeric_Time_Segment :: struct {
+	text: string,
+	width: f32,
+	digit_index: i32,
+}
+
+Numeric_Time_View :: struct {
+	hosted: alicorn.Hosted_Runtime,
+	width, height: int,
+	pixel_width, pixel_height: int,
+	dpi_scale: f32,
+	segments: []Numeric_Time_Segment,
+	style: AudacityNumericTimeStyle,
+	style_initialized: bool,
+	fonts_initialized: bool,
+	callback_active: bool,
+	runtime_initialized: bool,
+}
+
+NUMERIC_TIME_MAX_SEGMENTS :: 128
+NUMERIC_TIME_MAX_TEXT_BYTES :: 4096
+
+valid_numeric_time_view :: proc(view: ^Numeric_Time_View) -> bool {
+	return view != nil && view.runtime_initialized && !view.callback_active
+}
+
+numeric_time_color_equal :: proc(a, b: AudacitySnapColor) -> bool {
+	return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+}
+
+numeric_time_color :: proc(color: AudacitySnapColor) -> alicorn.Color {
+	return alicorn.Color{r=color.r, g=color.g, b=color.b, a=color.a}
+}
+
+numeric_time_style_equal :: proc(a, b: AudacityNumericTimeStyle) -> bool {
+	return numeric_time_color_equal(a.background, b.background) &&
+		numeric_time_color_equal(a.digit_background, b.digit_background) &&
+		numeric_time_color_equal(a.focused_digit_background, b.focused_digit_background) &&
+		numeric_time_color_equal(a.text_color, b.text_color) &&
+		numeric_time_color_equal(a.focused_digit_text_color, b.focused_digit_text_color) &&
+		numeric_time_color_equal(a.focus_border, b.focus_border) &&
+		numeric_time_color_equal(a.menu_icon, b.menu_icon) &&
+		a.width == b.width && a.height == b.height && a.content_width == b.content_width &&
+		a.digit_height == b.digit_height && a.menu_width == b.menu_width &&
+		a.digit_font_size == b.digit_font_size && a.label_font_size == b.label_font_size &&
+		a.focused_digit == b.focused_digit && a.focused == b.focused &&
+		a.enabled == b.enabled && a.menu_enabled == b.menu_enabled
+}
+
+numeric_time_segments_equal :: proc(a, b: []Numeric_Time_Segment) -> bool {
+	if len(a) != len(b) { return false }
+	for i in 0..<len(a) {
+		if a[i].text != b[i].text || a[i].width != b[i].width || a[i].digit_index != b[i].digit_index {
+			return false
+		}
+	}
+	return true
+}
+
+numeric_time_segments_destroy :: proc(segments: []Numeric_Time_Segment, allocator: mem.Allocator) {
+	for segment in segments { delete(segment.text, allocator) }
+	delete(segments, allocator)
+}
+
+numeric_time_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, dpi_scale: f32) {
+	view := transmute(^Numeric_Time_View)state
+	if view == nil || ui == nil { return }
+	_ = dpi_scale
+	style := view.style
+	outer_stroke := alicorn.Paint_Stroke{}
+	if style.focused != 0 {
+		outer_stroke = alicorn.Paint_Stroke{color=numeric_time_color(style.focus_border), width=1}
+	}
+	root := alicorn.surface_begin(
+		ui,
+		alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("audacity-alicorn-numeric-time-root"),
+		style=alicorn.layout_style(.Row, width=f32(width), height=f32(height), align=.Baseline),
+		fill=numeric_time_color(style.background),
+		stroke=outer_stroke,
+		stroke_placement=.Inside,
+		label="Audacity time value",
+	)
+	if root == 0 { return }
+
+	content := alicorn.container_begin(
+		ui,
+		.Container,
+		key=alicorn.key_string("audacity-alicorn-numeric-time-content"),
+		style=alicorn.layout_style(.Row, width=style.content_width, height=f32(height), padding=1, align=.Baseline),
+	)
+	if content != 0 {
+		for index in 0..<len(view.segments) {
+			segment := view.segments[index]
+			if segment.digit_index >= 0 {
+				focused_digit := style.focused != 0 && segment.digit_index == style.focused_digit
+				fill := numeric_time_color(style.digit_background)
+				text_color := numeric_time_color(style.text_color)
+				if focused_digit {
+					fill = numeric_time_color(style.focused_digit_background)
+					text_color = numeric_time_color(style.focused_digit_text_color)
+				}
+				digit := alicorn.surface_begin(
+					ui,
+					alicorn.surface_core_color_role(.Surface),
+					key=alicorn.key_u64(u64(index+1)),
+					style=alicorn.layout_style(.Column, width=segment.width, height=style.digit_height, align=.Center, justify=.Center),
+					fill=fill,
+					label="Time digit",
+				)
+				if digit != 0 {
+					text_style := alicorn.Text_Style{font_size=style.digit_font_size, overflow=.Clip}
+					_ = alicorn.text(
+						ui,
+						segment.text,
+						key=alicorn.key_pair(u64(index+1), 0xD1617),
+						style=alicorn.layout_style(.Row, width=segment.width, height=style.digit_height, align=.Center, justify=.Center),
+						text_style=text_style,
+						color=text_color,
+					)
+					alicorn.surface_end(ui)
+				}
+			} else {
+				literal := alicorn.container_begin(
+					ui,
+					.Container,
+					key=alicorn.key_u64(u64(index+1) | 0x8000_0000_0000_0000),
+					style=alicorn.layout_style(.Column, width=segment.width, height=f32(height), align=.Center, justify=.Center),
+				)
+				if literal != 0 {
+					text_style := alicorn.Text_Style{font_size=style.label_font_size, overflow=.Clip}
+					_ = alicorn.text(
+						ui,
+						segment.text,
+						key=alicorn.key_pair(u64(index+1), 0x117E2A1),
+						style=alicorn.layout_style(.Row, width=segment.width, height=f32(height), align=.Center, justify=.Center),
+						text_style=text_style,
+						color=numeric_time_color(style.text_color),
+					)
+					alicorn.container_end(ui)
+				}
+			}
+		}
+		if style.menu_enabled != 0 && style.menu_width > 0 {
+			menu := alicorn.container_begin(
+				ui,
+				.Container,
+				key=alicorn.key_string("audacity-alicorn-numeric-time-menu"),
+				style=alicorn.layout_style(.Row, width=style.menu_width, height=f32(height), align=.Center, justify=.Center),
+			)
+			if menu != 0 {
+				_ = alicorn.icon(ui, .Chevron_Down, key=alicorn.key_string("audacity-alicorn-numeric-time-chevron"), size=min(10.0, f32(height)*0.45), color_role=.Muted_Text)
+				alicorn.container_end(ui)
+			}
+		}
+		alicorn.container_end(ui)
+	}
+	alicorn.surface_end(ui)
+}
+
+numeric_time_post_wake :: proc(data: rawptr) -> bool {
+	_ = data
+	return false
+}
+
+numeric_time_initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
+	view := transmute(^Numeric_Time_View)state
+	if view != nil && rt != nil {
+		view.fonts_initialized = alicorn.text_engine_load_default_fonts(rt)
+	}
+}
+
+numeric_time_now_ns :: proc() -> u64 {
+	return u64(odin_time.tick_diff(odin_time.Tick{}, odin_time.tick_now()))
+}
+
+numeric_time_step :: proc(view: ^Numeric_Time_View) -> alicorn.Hosted_Step_Result {
+	return alicorn.hosted_runtime_step(&view.hosted, numeric_time_now_ns())
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_create")
+audacity_alicorn_numeric_time_view_create :: proc "c" (
+	width, height: f32,
+	pixel_width, pixel_height: i32,
+	dpi_scale: f32,
+) -> rawptr {
+	context = odin_runtime.default_context()
+	if !alicorn.number_is_finite(width) || !alicorn.number_is_finite(height) ||
+		!alicorn.number_is_finite(dpi_scale) || width < 0 || height < 0 ||
+		pixel_width < 0 || pixel_height < 0 || dpi_scale <= 0 {
+		return nil
+	}
+	view := new(Numeric_Time_View)
+	view.width, view.height = int(width), int(height)
+	view.pixel_width, view.pixel_height = int(pixel_width), int(pixel_height)
+	view.dpi_scale = dpi_scale
+	status := alicorn.hosted_runtime_init(&view.hosted, alicorn.Hosted_Runtime_Config{
+		state=rawptr(view),
+		logical_width=view.width,
+		logical_height=view.height,
+		pixel_width=view.pixel_width,
+		pixel_height=view.pixel_height,
+		dpi_scale=dpi_scale,
+		render=numeric_time_render,
+		on_initialize=numeric_time_initialize,
+		post_wake=numeric_time_post_wake,
+	})
+	if status != .Ok || !view.fonts_initialized {
+		if status == .Ok { _ = alicorn.hosted_runtime_destroy(&view.hosted) }
+		free(view)
+		return nil
+	}
+	view.runtime_initialized = true
+	if numeric_time_step(view).status != .Ok {
+		_ = alicorn.hosted_runtime_destroy(&view.hosted)
+		view.runtime_initialized = false
+		free(view)
+		return nil
+	}
+	return rawptr(view)
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_destroy")
+audacity_alicorn_numeric_time_view_destroy :: proc "c" (opaque_view: rawptr) {
+	if opaque_view == nil { return }
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if view.callback_active { return }
+	if view.runtime_initialized {
+		_ = alicorn.hosted_runtime_destroy(&view.hosted)
+		view.runtime_initialized = false
+	}
+	numeric_time_segments_destroy(view.segments, context.allocator)
+	free(view)
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_resize")
+audacity_alicorn_numeric_time_view_resize :: proc "c" (
+	opaque_view: rawptr,
+	width, height: f32,
+	pixel_width, pixel_height: i32,
+	dpi_scale: f32,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if !valid_numeric_time_view(view) || !alicorn.number_is_finite(width) ||
+		!alicorn.number_is_finite(height) || !alicorn.number_is_finite(dpi_scale) ||
+		width < 0 || height < 0 || pixel_width < 0 || pixel_height < 0 || dpi_scale <= 0 {
+		return -1
+	}
+	if view.width == int(width) && view.height == int(height) &&
+		view.pixel_width == int(pixel_width) && view.pixel_height == int(pixel_height) &&
+		view.dpi_scale == dpi_scale {
+		return 0
+	}
+	status := alicorn.hosted_runtime_resize(
+		&view.hosted,
+		int(width), int(height), int(pixel_width), int(pixel_height), dpi_scale,
+	)
+	if status != .Ok { return -1 }
+	view.width, view.height = int(width), int(height)
+	view.pixel_width, view.pixel_height = int(pixel_width), int(pixel_height)
+	view.dpi_scale = dpi_scale
+	return 1 if numeric_time_step(view).status == .Ok else -1
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_update")
+audacity_alicorn_numeric_time_view_update :: proc "c" (
+	opaque_view: rawptr,
+	input_segments: ^AudacityNumericTimeSegment,
+	segment_count: u64,
+	input_style: ^AudacityNumericTimeStyle,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if !valid_numeric_time_view(view) || input_style == nil || segment_count > NUMERIC_TIME_MAX_SEGMENTS ||
+		(segment_count > 0 && input_segments == nil) {
+		return -1
+	}
+	style := input_style^
+	if !alicorn.number_is_finite(style.width) || !alicorn.number_is_finite(style.height) ||
+		!alicorn.number_is_finite(style.content_width) || !alicorn.number_is_finite(style.digit_height) ||
+		!alicorn.number_is_finite(style.menu_width) || !alicorn.number_is_finite(style.digit_font_size) ||
+		!alicorn.number_is_finite(style.label_font_size) || style.width < 0 || style.height < 0 ||
+		style.content_width < 0 || style.digit_height < 0 || style.menu_width < 0 ||
+		style.digit_font_size < 0 || style.label_font_size < 0 || style.digit_font_size > 256 ||
+		style.label_font_size > 256 || style.enabled > 1 || style.focused > 1 || style.menu_enabled > 1 {
+		return -1
+	}
+
+	candidate := make([]Numeric_Time_Segment, int(segment_count), allocator=context.allocator)
+	input := mem.slice_ptr(input_segments, int(segment_count))
+	total_bytes := 0
+	for i in 0..<len(input) {
+		segment := input[i]
+		if !alicorn.number_is_finite(segment.width) || segment.width < 0 || segment.width > 4096 ||
+			segment.text_length > 1024 || (segment.text_length > 0 && segment.text_utf8 == nil) ||
+			segment.digit_index < -1 {
+			numeric_time_segments_destroy(candidate, context.allocator)
+			return -1
+		}
+		total_bytes += int(segment.text_length)
+		if total_bytes > NUMERIC_TIME_MAX_TEXT_BYTES {
+			numeric_time_segments_destroy(candidate, context.allocator)
+			return -1
+		}
+		value := ""
+		if segment.text_length > 0 {
+			value = strings.clone(string(mem.slice_ptr(segment.text_utf8, int(segment.text_length))), context.allocator)
+		}
+		candidate[i] = Numeric_Time_Segment{text=value, width=segment.width, digit_index=segment.digit_index}
+	}
+
+	changed := !view.style_initialized || !numeric_time_style_equal(view.style, style) ||
+		!numeric_time_segments_equal(view.segments, candidate)
+	if changed {
+		numeric_time_segments_destroy(view.segments, context.allocator)
+		view.segments = candidate
+		view.style = style
+		view.style_initialized = true
+		rt, status := alicorn.hosted_runtime_borrow(&view.hosted)
+		if status != .Ok { return -1 }
+		alicorn.invalidate_root(rt, "Audacity numeric time presentation changed")
+	} else {
+		numeric_time_segments_destroy(candidate, context.allocator)
+	}
+	return 1 if numeric_time_step(view).status == .Ok else -1
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_paint")
+audacity_alicorn_numeric_time_view_paint :: proc "c" (
+	opaque_view: rawptr,
+	callback: AudacitySnapDrawCallback,
+	callback_context: rawptr,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if !valid_numeric_time_view(view) || callback == nil { return -1 }
+	display, status := alicorn.hosted_runtime_display_commands(&view.hosted)
+	if status != .Ok { return -1 }
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&view.hosted)
+	if borrow_status != .Ok { return -1 }
+
+	view.callback_active = true
+	delivered := i32(0)
+	for retained in display {
+		output := AudacitySnapDrawCommand{}
+		switch payload in retained.payload {
+		case alicorn.Surface_Paint:
+			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_SURFACE)
+			output.fill = snap_color(payload.fill)
+			output.stroke = snap_color(payload.stroke.color)
+			output.stroke_width = payload.stroke.width
+			output.radius = payload.shape.corner_radius
+			output.shape_kind = snap_shape_kind(payload.shape.kind)
+			output.material_id = u32(payload.material)
+		case alicorn.Icon_Paint:
+			if payload.id != .Chevron_Down { continue }
+			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_ICON)
+			output.icon_id = AUDACITY_SNAP_ICON_CHEVRON_DOWN
+			output.fill = snap_color(numeric_time_color(view.style.menu_icon))
+		case alicorn.Text_Paint:
+			run, run_ok := alicorn.paint_text_run_resolve(rt, payload.run)
+			if !run_ok { continue }
+			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_TEXT)
+			output.text_color = snap_color(payload.color)
+			output.font_size = run.size
 			output.text_length = u64(len(run.value))
 			if len(run.value) > 0 { output.text_utf8 = raw_data(run.value) }
 		case alicorn.Backdrop_Effect_Paint, alicorn.Image_Paint, alicorn.Geometry_Paint:

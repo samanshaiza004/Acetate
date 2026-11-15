@@ -48,6 +48,7 @@ typedef struct AudacitySnapDrawCommand {
     uint32_t icon_id;
     const uint8_t *text_utf8;
     uint64_t text_length;
+    float font_size;
 } AudacitySnapDrawCommand;
 
 /* Draw command kinds. Other Alicorn payloads are not emitted by this view. */
@@ -93,6 +94,7 @@ enum {
     AUDACITY_SNAP_ICON_PAUSE = 22,
     AUDACITY_SNAP_ICON_REWIND = 23,
     AUDACITY_SNAP_ICON_FAST_FORWARD = 24,
+    AUDACITY_SNAP_ICON_CHEVRON_DOWN = 25,
     AUDACITY_ACTION_ICON_NONE = 0,
     AUDACITY_ACTION_ICON_SETTINGS = 1,
     AUDACITY_ACTION_ICON_SETUP = 2,
