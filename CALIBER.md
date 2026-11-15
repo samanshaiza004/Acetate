@@ -73,9 +73,10 @@ snapped or pixel-based candidate time. Selection mutation, viewport scrolling,
 and history remain in C++. The keyboard boundary-move path reuses the same
 track/screen clamp without contraction constraints.
 
-The batch `SelectAllIfNoneAndAllowed` helper delegates its preserve/select/reject
-decision to Odin. C++ still reads preferences and project selection state, then
-performs the selection mutation and history update.
+Both `SelectAllIfNone` helpers delegate their preserve/select decision to Odin;
+the batch variant also passes the preference that can reject the selection.
+C++ still reads preferences and project selection state, then performs the
+selection mutation and history update.
 
 The shared effect application layer delegates its post-effect history,
 repeat-command, generator zoom, and added-track scroll policy to Odin. Plugin

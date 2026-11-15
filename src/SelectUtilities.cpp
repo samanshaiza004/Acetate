@@ -93,6 +93,20 @@ void SelectAllIfNone( AudacityProject &project )
 {
    auto &viewInfo = ViewInfo::Get( project );
    auto flags = CommandManager::Get( project ).GetUpdateFlags();
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   const auto selectionNeeded =
+      (flags & EditableTracksSelectedFlag()).none() ||
+      viewInfo.selectedRegion.isPoint();
+   switch (audacity_odin_select_all_if_none_action(selectionNeeded, 1)) {
+   case 0:
+      return;
+   case 1:
+      DoSelectAllAudio(project);
+      return;
+   default:
+      break;
+   }
+#endif
    if((flags & EditableTracksSelectedFlag()).none() ||
       viewInfo.selectedRegion.isPoint())
       DoSelectAllAudio( project );
