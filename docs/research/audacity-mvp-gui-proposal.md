@@ -74,7 +74,7 @@ This remains the host-architecture gate. The current control and editor-surface 
 
 ### 2. Deliver the read-only waveform workspace
 
-The first visual slices are now present: Alicorn renders normal-zoom waveform summaries from Audacity's bounded cache, time-ruler marks/labels from Audacity's generated ruler data, and the track-panel playback indicator from Audacity's playback-scroller position. The wx host still owns ruler gestures, selection and play-region backgrounds, other overlays, the backing surface, and high-zoom editing. Next, bring those pieces into one window-level Alicorn timeline with visible selection, scroll, and zoom. Continue using cached summaries rather than copying or scanning the whole audio buffer during pointer movement. Preserve the existing import and playback engines.
+The first visual slices are now present: Alicorn renders normal-zoom waveform summaries from Audacity's bounded cache, selected-range boundary strokes from Audacity's authoritative selection, time-ruler marks/labels from Audacity's generated ruler data, and the track-panel playback indicator from Audacity's playback-scroller position. The wx host still owns ruler gestures, selection and play-region backgrounds, other overlays, the backing surface, and high-zoom editing. Next, bring those pieces into one window-level Alicorn timeline with visible selection, scroll, and zoom. Continue using cached summaries rather than copying or scanning the whole audio buffer during pointer movement. Preserve the existing import and playback engines.
 
 ### 3. Complete the edit loop
 

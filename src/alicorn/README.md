@@ -16,10 +16,12 @@ selection. This adapter does not create an SDL window or renderer.
 
 The waveform path reads Audacity's existing 256-column min/max/RMS cache,
 updates one retained geometry surface owned by each TrackPanel, and translates
-geometry paint payloads synchronously through wxGraphicsContext. The same
-surface draws the playback indicator after the cached track backing bitmap is
-presented; Audacity's playback scroller remains authoritative for its position
-and scheduling. The wx indicator remains the fallback. The ruler
+geometry paint payloads synchronously through wxGraphicsContext. Audacity's
+selected pixel interval is used to append boundary strokes to that bounded
+geometry batch; the project selection and wx selection fill remain authoritative.
+The same surface draws the playback indicator after the cached track backing
+bitmap is presented; Audacity's playback scroller remains authoritative for its
+position and scheduling. The wx indicator remains the fallback. The ruler
 path takes an owned snapshot of Audacity's generated tick positions, labels,
 fonts, and colors, then renders those marks and labels through Alicorn in the
 existing wx paint pass. Ruler gestures, selection/play-region backgrounds,

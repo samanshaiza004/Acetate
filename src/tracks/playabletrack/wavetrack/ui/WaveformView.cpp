@@ -328,7 +328,7 @@ public:
          return false;
 
       constexpr auto CacheWidth = GraphicsDataCacheBase::CacheElementWidth;
-      std::array<AudacityWaveformSegment, CacheWidth * 2> segments{};
+      std::array<AudacityWaveformSegment, CacheWidth * 2 + 2> segments{};
       auto elementFirstPixel =
          zoomInfo.TimeToPosition(from) - static_cast<int64_t>(it.GetLeftOffset());
       auto drawX = targetRect.x + leftOffset;
@@ -438,6 +438,24 @@ public:
                      static_cast<float>(rmsNegative), rmsColor);
                }
             }
+         }
+
+         if (selectedLastPixel > selectedFirstPixel) {
+            const auto visibleFirstPixel = elementFirstPixel + static_cast<int64_t>(firstColumn);
+            const auto visibleLastPixel = elementFirstPixel + static_cast<int64_t>(lastColumn);
+            const auto appendSelectionEdge = [&](int64_t edgePixel) {
+               if (edgePixel < visibleFirstPixel || edgePixel > visibleLastPixel)
+                  return;
+               const auto edgeX = static_cast<float>(
+                  drawX + static_cast<int>(edgePixel - visibleFirstPixel));
+               segments[outputCount++] = makeSegment(
+                  edgeX,
+                  0.0f,
+                  static_cast<float>(params.Height - 1),
+                  params.SampleColors.Selected);
+            };
+            appendSelectionEdge(selectedFirstPixel);
+            appendSelectionEdge(selectedLastPixel);
          }
 
          if (outputCount > 0 && !view.Draw(
