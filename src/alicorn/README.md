@@ -6,16 +6,20 @@ through Alicorn-retained geometry, alongside the Snap checkbox, the Audio Setup
 toolbar button, the Selection Toolbar mode-setup button, the Edit toolbar
 buttons, and the Cut/Copy/Paste toolbar buttons. Audacity still owns the native
 window, event loop, accessibility bridge, menus, audio-device state, selection
-controls, command dispatch, and drawing surface; Alicorn supplies retained
-control descriptions and paint commands. This adapter does not create an SDL
-window or renderer. The waveform path reads Audacity's existing 256-column
-min/max/RMS cache, updates one retained geometry surface owned by each TrackPanel,
-and translates geometry paint payloads synchronously through wxGraphicsContext.
-The wx track panel still owns the backing surface, selection background, envelope
+model, command dispatch, and drawing surface; Alicorn supplies retained control
+descriptions, paint commands, and transient pointer-drag endpoints for plain
+audio-track range selection. This adapter does not create an SDL window or
+renderer. The waveform path reads Audacity's existing 256-column min/max/RMS
+cache, updates one retained geometry surface owned by each TrackPanel, and
+translates geometry paint payloads synchronously through wxGraphicsContext. The
+wx `SelectHandle` still applies track eligibility, snapping, time conversion,
+selection mutation, undo history, and cancel rollback. The project selection is
+the source of truth; Alicorn retains only the active pointer gesture. The wx
+track panel still owns the backing surface, selection background, envelope
 controls, clip decorations, and high-zoom sample editing. If the Alicorn runtime
-cannot render a geometry update, the bitmap waveform path remains available. The
-geometry bridge's repaint cost has not yet been benchmarked against that bitmap
-cache.
+cannot render a geometry update, the bitmap waveform path remains available.
+The geometry bridge's repaint cost has not yet been benchmarked against that
+bitmap cache.
 
 ## Build
 
@@ -69,9 +73,12 @@ name. The wx bridge synchronizes their state with `ProjectSnap` and the native
 audio menu. Native screen-reader behavior has not yet been manually validated.
 
 The waveform view is owned by `TrackPanel` and serializes create, resize, update,
-paint, and destroy on the wx UI thread. Update copies the caller's bounded segment
-array into retained Alicorn geometry. Paint visits the completed geometry
-payload synchronously; segment storage is borrowed only for the callback. This
-path does not create an Alicorn GPU renderer and does not replace Audacity's
-waveform background, envelope controls, clip decorations, or high-zoom sample
-editing.
+pointer, paint, and destroy on the wx UI thread. Its geometry surface opts into
+Alicorn pointer hit testing; pointer input returns a drag phase and panel-local
+anchor/current x coordinates. `SelectHandle` maps the current endpoint through
+Audacity's existing view and snap policy before updating the authoritative
+selection. Update copies the caller's bounded segment array into retained
+Alicorn geometry. Paint visits the completed geometry payload synchronously;
+segment storage is borrowed only for the callback. This path does not create an
+Alicorn GPU renderer and does not replace Audacity's waveform background,
+envelope controls, clip decorations, or high-zoom sample editing.

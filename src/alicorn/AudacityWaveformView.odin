@@ -10,6 +10,12 @@ AudacityWaveformSegment :: struct {
 	r, g, b, a: f32,
 }
 
+AudacityWaveformSelection :: struct {
+	phase: u32,
+	anchor_x: f32,
+	current_x: f32,
+}
+
 AudacityWaveformPaintCallback :: #type proc "c" (
 	ctx: rawptr,
 	segments: ^AudacityWaveformSegment,
@@ -24,6 +30,9 @@ Waveform_View :: struct {
 	geometry_id: alicorn.Node_ID,
 	runtime_initialized: bool,
 	callback_active: bool,
+	selection_drag_active: bool,
+	selection_anchor_x: f32,
+	selection_current_x: f32,
 }
 
 MAX_WAVEFORM_GEOMETRY_SEGMENTS :: alicorn.GPU_SURFACE_MAX_VERTICES / 6
@@ -54,6 +63,7 @@ waveform_view_build_description :: proc(view: ^Waveform_View) -> bool {
 		"audacity-alicorn-waveform-geometry",
 		alicorn.layout_style(.Row, width=viewport.w, height=viewport.h),
 		1,
+		.Pointer,
 	)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
@@ -113,6 +123,92 @@ audacity_alicorn_waveform_view_resize :: proc "c" (
 		return -1
 	}
 	return 1
+}
+
+waveform_view_pointer_callback :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	event: alicorn.Pointer_Event,
+	target: alicorn.Node_ID,
+) {
+	view := transmute(^Waveform_View)state
+	if view == nil || rt == nil { return }
+	switch event.kind {
+	case .Down:
+		if target != view.geometry_id || event.button != alicorn.POINTER_BUTTON_PRIMARY { return }
+		view.selection_drag_active = true
+		view.selection_anchor_x = event.x
+		view.selection_current_x = event.x
+	case .Move:
+		if view.selection_drag_active { view.selection_current_x = event.x }
+	case .Up:
+		if view.selection_drag_active {
+			view.selection_current_x = event.x
+			view.selection_drag_active = false
+		}
+	case .Cancel:
+		view.selection_drag_active = false
+	}
+}
+
+@(export, link_name="audacity_alicorn_waveform_view_pointer")
+audacity_alicorn_waveform_view_pointer :: proc "c" (
+	opaque_view: rawptr,
+	kind: u32,
+	x, y: f32,
+	button: u32,
+	selection: ^AudacityWaveformSelection,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Waveform_View)opaque_view
+	if !valid_waveform_view(view) || selection == nil ||
+	   !alicorn.number_is_finite(x) || !alicorn.number_is_finite(y) || button > 3 {
+		return -1
+	}
+	pointer_kind: alicorn.Pointer_Kind
+	switch kind {
+	case 0: pointer_kind = .Move
+	case 1: pointer_kind = .Down
+	case 2: pointer_kind = .Up
+	case 3: pointer_kind = .Cancel
+	case: return -1
+	}
+	if (kind == 1 || kind == 2) && button != alicorn.POINTER_BUTTON_PRIMARY { return 0 }
+	event := alicorn.Pointer_Event{
+		kind=pointer_kind,
+		x=x,
+		y=y,
+		button=int(button),
+	}
+	was_active := view.selection_drag_active
+	target := alicorn.process_pointer(&view.runtime, event)
+	_ = alicorn.application_dispatch_pointer(
+		&view.runtime,
+		rawptr(view),
+		waveform_view_pointer_callback,
+		event,
+		target,
+	)
+	phase: u32 = 0
+	switch kind {
+	case 1:
+		if view.selection_drag_active { phase = 1 }
+	case 0:
+		if view.selection_drag_active { phase = 2 }
+	case 2:
+		if was_active { phase = 3 }
+	case 3:
+		if was_active { phase = 4 }
+	}
+	selection^ = AudacityWaveformSelection{
+		phase=phase,
+		anchor_x=view.selection_anchor_x,
+		current_x=view.selection_current_x,
+	}
+	if kind == 1 || kind == 2 {
+		_ = waveform_view_build_description(view)
+	}
+	return i32(phase)
 }
 
 @(export, link_name="audacity_alicorn_waveform_view_update")

@@ -18,6 +18,12 @@ public:
 
    bool IsReady() const noexcept { return mView != nullptr; }
    bool Resize(const wxSize& size);
+   int32_t Pointer(
+      uint32_t kind,
+      float x,
+      float y,
+      uint32_t button,
+      AudacityWaveformSelection& selection);
    bool Draw(
       wxDC& dc,
       const wxRect& clip,

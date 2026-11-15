@@ -23,6 +23,20 @@ typedef struct AudacityWaveformSegment {
     float a;
 } AudacityWaveformSegment;
 
+typedef struct AudacityWaveformSelection {
+    uint32_t phase;
+    float anchor_x;
+    float current_x;
+} AudacityWaveformSelection;
+
+enum {
+    AUDACITY_WAVEFORM_SELECTION_NONE = 0,
+    AUDACITY_WAVEFORM_SELECTION_BEGAN = 1,
+    AUDACITY_WAVEFORM_SELECTION_UPDATED = 2,
+    AUDACITY_WAVEFORM_SELECTION_ENDED = 3,
+    AUDACITY_WAVEFORM_SELECTION_CANCELLED = 4
+};
+
 /*
  * Segment storage and paint placement are borrowed for the duration of the
  * callback. The callback must not reenter or destroy the view.
@@ -47,6 +61,15 @@ int32_t audacity_alicorn_waveform_view_resize(
     AudacityAlicornWaveformView *view,
     float width,
     float height);
+
+/* Pointer input is borrowed synchronously. Selection coordinates are panel-local. */
+int32_t audacity_alicorn_waveform_view_pointer(
+    AudacityAlicornWaveformView *view,
+    uint32_t kind,
+    float x,
+    float y,
+    uint32_t button,
+    AudacityWaveformSelection *selection);
 
 /*
  * Copies up to 1365 surface-local line segments into retained Alicorn geometry.

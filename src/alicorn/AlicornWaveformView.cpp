@@ -93,6 +93,20 @@ bool AlicornWaveformView::Resize(const wxSize& size)
       mView, static_cast<float>(size.x), static_cast<float>(size.y)) >= 0;
 }
 
+int32_t AlicornWaveformView::Pointer(
+   uint32_t kind,
+   float x,
+   float y,
+   uint32_t button,
+   AudacityWaveformSelection& selection)
+{
+   if (!mView)
+      return -1;
+   selection = {};
+   return audacity_alicorn_waveform_view_pointer(
+      mView, kind, x, y, button, &selection);
+}
+
 bool AlicornWaveformView::Draw(
    wxDC& dc,
    const wxRect& clip,

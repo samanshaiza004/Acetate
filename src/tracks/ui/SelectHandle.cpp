@@ -34,6 +34,9 @@ Paul Licameli split from TrackPanel.cpp
 #include "TrackFocus.h"
 #include "../../TrackPanel.h"
 #include "../../TrackPanelDrawingContext.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../alicorn/AlicornWaveformView.h"
+#endif
 #include "../../TrackPanelMouseEvent.h"
 #include "ViewInfo.h"
 #include "WaveChannelUtilities.h"
@@ -280,6 +283,23 @@ namespace
          ::MakeCursor(wxCURSOR_IBEAM, IBeamCursorXpm, 17, 16);
       return &*selectCursor;
    }
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool BeginAlicornWaveformSelection(
+      AudacityProject *project, int x, int y)
+   {
+      auto* view = TrackPanel::Get(*project).GetAlicornWaveformView();
+      if (!view)
+         return false;
+      AudacityWaveformSelection selection{};
+      return view->Pointer(
+         AUDACITY_SNAP_POINTER_DOWN,
+         static_cast<float>(x),
+         static_cast<float>(y),
+         AUDACITY_SNAP_BUTTON_PRIMARY,
+         selection) == AUDACITY_WAVEFORM_SELECTION_BEGAN;
+   }
+#endif
 
    wxCursor *EnvelopeCursor()
    {
@@ -657,6 +677,10 @@ UIHandle::Result SelectHandle::Click(
             mSelStartValid = true;
             mSelStart = value;
             mSnapStart = SnapResults{};
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+            mAlicornSelectionActive = BeginAlicornWaveformSelection(
+               pProject, event.m_x, event.m_y);
+#endif
             AdjustSelection(pProject, viewInfo, event.m_x, mRect.x, pTrack);
             break;
          }
@@ -751,6 +775,10 @@ UIHandle::Result SelectHandle::Click(
             mSelStartValid = true;
             mSelStart = value;
             mSnapStart = SnapResults{};
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+            mAlicornSelectionActive = BeginAlicornWaveformSelection(
+               pProject, event.m_x, event.m_y);
+#endif
             break;
          case SBBottom:
          case SBTop:
@@ -1013,6 +1041,27 @@ HitTestPreview SelectHandle::Preview
 UIHandle::Result SelectHandle::Release(
    const TrackPanelMouseEvent& event, AudacityProject* pProject, wxWindow*)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornSelectionActive) {
+      AudacityWaveformSelection selection{};
+      auto releaseX = event.event.GetX();
+      bool ended = false;
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornWaveformView()) {
+         ended = view->Pointer(
+            AUDACITY_SNAP_POINTER_UP,
+            static_cast<float>(event.event.GetX()),
+            static_cast<float>(event.event.GetY()),
+            AUDACITY_SNAP_BUTTON_PRIMARY,
+            selection) == AUDACITY_WAVEFORM_SELECTION_ENDED;
+         if (ended)
+            releaseX = static_cast<int>(selection.current_x);
+      }
+      mAlicornSelectionActive = false;
+      if (ended && mSelStartValid)
+         AdjustSelection(
+            pProject, ViewInfo::Get(*pProject), releaseX, mRect.x, FindTrack());
+   }
+#endif
    PitchAndSpeedDialog::Get(*pProject).TryRetarget(event);
    using namespace RefreshCode;
    ProjectHistory::Get( *pProject ).ModifyState(false);
@@ -1031,6 +1080,15 @@ UIHandle::Result SelectHandle::Release(
 
 UIHandle::Result SelectHandle::Cancel(AudacityProject *pProject)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornSelectionActive) {
+      AudacityWaveformSelection selection{};
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornWaveformView())
+         view->Pointer(
+            AUDACITY_SNAP_POINTER_CANCEL, 0.0f, 0.0f, 0, selection);
+      mAlicornSelectionActive = false;
+   }
+#endif
    mSelectionStateChanger.reset();
    ViewInfo::Get( *pProject ).selectedRegion = mInitialSelection;
 
@@ -1165,6 +1223,11 @@ void SelectHandle::StartSelection( AudacityProject *pProject )
    auto &viewInfo = ViewInfo::Get( *pProject );
    mSelStartValid = true;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mAlicornSelectionActive = BeginAlicornWaveformSelection(
+      pProject, mMostRecentX, mMostRecentY);
+#endif
+
    viewInfo.selectedRegion.setTimes(mSelStart, mSelStart);
 
    // PRL:  commented out the Sonify stuff with the TrackPanel refactor.
@@ -1182,6 +1245,21 @@ void SelectHandle::AdjustSelection(AudacityProject *pProject,
    if (!mSelStartValid)
       // Must be dragging frequency bounds only.
       return;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornSelectionActive) {
+      AudacityWaveformSelection selection{};
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornWaveformView()) {
+         if (view->Pointer(
+                AUDACITY_SNAP_POINTER_MOVE,
+                static_cast<float>(mouseXCoordinate),
+                static_cast<float>(mMostRecentY),
+                AUDACITY_SNAP_BUTTON_PRIMARY,
+                selection) == AUDACITY_WAVEFORM_SELECTION_UPDATED)
+            mouseXCoordinate = static_cast<int>(selection.current_x);
+      }
+   }
+#endif
 
    double selend =
       std::max(0.0, viewInfo.PositionToTime(mouseXCoordinate, trackLeftEdge));

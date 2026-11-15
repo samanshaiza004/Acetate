@@ -140,6 +140,7 @@ private:
    bool mUseSnap{ true };
 
    bool mSelStartValid{};
+   bool mAlicornSelectionActive{};
    double mSelStart{ 0.0 };
 
    int mSelectionBoundary{ 0 };
