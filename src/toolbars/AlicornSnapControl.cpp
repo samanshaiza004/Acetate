@@ -153,6 +153,15 @@ bool ActionThemeImage(uint32_t iconId, bool enabled, teBmps& imageId)
    case AUDACITY_SNAP_ICON_PLAY:
       imageId = enabled ? bmpPlay : bmpPlayDisabled;
       return true;
+   case AUDACITY_SNAP_ICON_PLAY_CUT_PREVIEW:
+      imageId = enabled ? bmpCutPreview : bmpCutPreviewDisabled;
+      return true;
+   case AUDACITY_SNAP_ICON_PLAY_SCRUB:
+      imageId = enabled ? bmpScrub : bmpScrubDisabled;
+      return true;
+   case AUDACITY_SNAP_ICON_PLAY_SEEK:
+      imageId = enabled ? bmpSeek : bmpSeekDisabled;
+      return true;
    case AUDACITY_SNAP_ICON_STOP:
       imageId = enabled ? bmpStop : bmpStopDisabled;
       return true;
@@ -241,7 +250,7 @@ void DrawPaintCommand(void* rawContext, const AudacitySnapDrawCommand* command)
          }
       }
       else if (command->icon_id >= AUDACITY_SNAP_ICON_CUT &&
-               command->icon_id <= AUDACITY_SNAP_ICON_STOP) {
+               command->icon_id <= AUDACITY_SNAP_ICON_PLAY_SEEK) {
          teBmps image_id;
          if (ActionThemeImage(command->icon_id, context->enabled, image_id)) {
             const auto image = theTheme.Image(image_id);

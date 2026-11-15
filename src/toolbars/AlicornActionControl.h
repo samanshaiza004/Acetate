@@ -18,13 +18,23 @@ public:
    ~AlicornActionControl() override;
 
    bool IsPressed() const noexcept { return mPressed; }
+   bool IsDown() const noexcept { return IsPressed(); }
    void SetPressed(bool pressed);
    void PushDown() { SetPressed(true); }
    void PopUp() { SetPressed(false); }
+   void SetIcon(uint32_t iconId);
+   void SetAlternateIdx(int index);
+   void SetShift(bool down) noexcept { mWasShiftDown = down; }
+   void SetControl(bool down) noexcept { mWasControlDown = down; }
+   bool WasShiftDown() const noexcept { return mWasShiftDown; }
+   bool WasControlDown() const noexcept { return mWasControlDown; }
    void SetAlicornEnabled(bool enabled);
    void SetEnabled(bool enabled) { SetAlicornEnabled(enabled); }
    bool Enable(bool enabled = true) override;
-   void Activate(uint32_t key = AUDACITY_SNAP_KEY_ACTIVATE);
+   void Activate(
+      uint32_t key = AUDACITY_SNAP_KEY_ACTIVATE,
+      bool shiftDown = false,
+      bool controlDown = false);
 
 private:
    void OnPaint(wxPaintEvent& event);
@@ -42,6 +52,10 @@ private:
    void SendActivation();
 
    AudacityAlicornActionView* mView{};
+   uint32_t mIconId{ AUDACITY_ACTION_ICON_NONE };
+   bool mSupportsPlayAlternates{};
+   bool mWasShiftDown{};
+   bool mWasControlDown{};
    bool mPressed{};
    bool mUpdating{};
 };

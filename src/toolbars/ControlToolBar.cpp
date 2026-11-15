@@ -191,6 +191,14 @@ void ControlToolBar::Populate()
       theTheme.Image(bmpPauseDisabled));
    mPause->SetButtonToggles(true);
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mPlay = safenew AlicornActionControl(
+      this,
+      ID_PLAY_BUTTON,
+      XO("Play").Translation(),
+      AUDACITY_ACTION_ICON_PLAY,
+      wxSize{ 52, 52 });
+#else
    mPlay = MakeControlToolBarButton(
       this,
       ID_PLAY_BUTTON,
@@ -213,6 +221,7 @@ void ControlToolBar::Populate()
       theTheme.Image(bmpSeek),
       wxNullImage,
       theTheme.Image(bmpSeekDisabled));
+#endif
 
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
@@ -293,7 +302,9 @@ void ControlToolBar::RegenerateTooltips()
 #if wxUSE_TOOLTIPS
    for (long iWinID = ID_PAUSE_BUTTON; iWinID < BUTTON_COUNT; iWinID++)
    {
-      auto pCtrl = static_cast<AButton*>(this->FindWindow(iWinID));
+      auto pCtrl = this->FindWindow(iWinID);
+      if (!pCtrl)
+         continue;
       CommandID name;
       switch (iWinID)
       {

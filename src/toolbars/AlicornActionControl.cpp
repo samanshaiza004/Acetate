@@ -28,6 +28,9 @@ uint32_t ActionIconForThemeBitmap(int bitmapId)
    if (bitmapId == bmpUndo) return AUDACITY_ACTION_ICON_UNDO;
    if (bitmapId == bmpRedo) return AUDACITY_ACTION_ICON_REDO;
    if (bitmapId == bmpPlay) return AUDACITY_ACTION_ICON_PLAY;
+   if (bitmapId == bmpCutPreview) return AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW;
+   if (bitmapId == bmpScrub) return AUDACITY_ACTION_ICON_PLAY_SCRUB;
+   if (bitmapId == bmpSeek) return AUDACITY_ACTION_ICON_PLAY_SEEK;
    if (bitmapId == bmpStop) return AUDACITY_ACTION_ICON_STOP;
    return AUDACITY_ACTION_ICON_NONE;
 }
@@ -105,6 +108,7 @@ AlicornActionControl::AlicornActionControl(
    SetMinSize(initialSize);
    SetBackgroundStyle(wxBG_STYLE_PAINT);
    SetName(label);
+   mSupportsPlayAlternates = iconId == AUDACITY_ACTION_ICON_PLAY;
    const auto utf8 = label.utf8_str();
    mView = audacity_alicorn_action_view_create(
       static_cast<float>(GetClientSize().x),
@@ -113,6 +117,7 @@ AlicornActionControl::AlicornActionControl(
       1,
       0,
       iconId);
+   mIconId = iconId;
    if (!mView)
       wxLogError(wxT("Could not initialize the Alicorn action button"));
 
@@ -145,6 +150,30 @@ void AlicornActionControl::SetPressed(bool pressed)
    UpdateView();
 }
 
+void AlicornActionControl::SetIcon(uint32_t iconId)
+{
+   if (mIconId == iconId)
+      return;
+   if (!mView || audacity_alicorn_action_view_set_icon(mView, iconId) < 0) {
+      wxLogWarning(wxT("Alicorn action button rejected its icon update"));
+      return;
+   }
+   mIconId = iconId;
+   Refresh(false);
+}
+
+void AlicornActionControl::SetAlternateIdx(int index)
+{
+   if (!mSupportsPlayAlternates)
+      return;
+   switch (index) {
+   case 2: SetIcon(AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW); break;
+   case 3: SetIcon(AUDACITY_ACTION_ICON_PLAY_SCRUB); break;
+   case 4: SetIcon(AUDACITY_ACTION_ICON_PLAY_SEEK); break;
+   default: SetIcon(AUDACITY_ACTION_ICON_PLAY); break;
+   }
+}
+
 void AlicornActionControl::SetAlicornEnabled(bool enabled)
 {
    Enable(enabled);
@@ -157,10 +186,13 @@ bool AlicornActionControl::Enable(bool enabled)
    return result;
 }
 
-void AlicornActionControl::Activate(uint32_t key)
+void AlicornActionControl::Activate(
+   uint32_t key, bool shiftDown, bool controlDown)
 {
    if (!mView || !IsEnabled())
       return;
+   mWasShiftDown = shiftDown;
+   mWasControlDown = controlDown;
    SetFocus();
    audacity_alicorn_action_view_key(mView, key);
    UpdateView();
@@ -239,6 +271,8 @@ void AlicornActionControl::OnSize(wxSizeEvent& event)
 
 void AlicornActionControl::OnLeftDown(wxMouseEvent& event)
 {
+   mWasShiftDown = event.ShiftDown();
+   mWasControlDown = event.ControlDown();
    SetFocus();
    if (!HasCapture())
       CaptureMouse();
@@ -261,6 +295,8 @@ void AlicornActionControl::OnLeftUp(wxMouseEvent& event)
 
 void AlicornActionControl::OnMotion(wxMouseEvent& event)
 {
+   if (mSupportsPlayAlternates && !mPressed)
+      SetAlternateIdx(event.ControlDown() ? 2 : event.ShiftDown() ? 1 : 0);
    SendPointer(AUDACITY_SNAP_POINTER_MOVE, event.GetX(), event.GetY(),
       AUDACITY_SNAP_BUTTON_PRIMARY);
 }
@@ -279,12 +315,14 @@ void AlicornActionControl::OnCaptureLost(wxMouseCaptureLostEvent&)
 
 void AlicornActionControl::OnKeyDown(wxKeyEvent& event)
 {
+   mWasShiftDown = event.ShiftDown();
+   mWasControlDown = event.ControlDown();
    if (event.GetKeyCode() == WXK_SPACE) {
-      Activate(AUDACITY_SNAP_KEY_SPACE);
+      Activate(AUDACITY_SNAP_KEY_SPACE, event.ShiftDown(), event.ControlDown());
       return;
    }
    if (event.GetKeyCode() == WXK_RETURN || event.GetKeyCode() == WXK_NUMPAD_ENTER) {
-      Activate(AUDACITY_SNAP_KEY_ACTIVATE);
+      Activate(AUDACITY_SNAP_KEY_ACTIVATE, event.ShiftDown(), event.ControlDown());
       return;
    }
    if (event.GetKeyCode() == WXK_TAB) {

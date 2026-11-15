@@ -87,6 +87,9 @@ enum {
     AUDACITY_SNAP_ICON_REDO = 16,
     AUDACITY_SNAP_ICON_PLAY = 17,
     AUDACITY_SNAP_ICON_STOP = 18,
+    AUDACITY_SNAP_ICON_PLAY_CUT_PREVIEW = 19,
+    AUDACITY_SNAP_ICON_PLAY_SCRUB = 20,
+    AUDACITY_SNAP_ICON_PLAY_SEEK = 21,
     AUDACITY_ACTION_ICON_NONE = 0,
     AUDACITY_ACTION_ICON_SETTINGS = 1,
     AUDACITY_ACTION_ICON_SETUP = 2,
@@ -104,7 +107,10 @@ enum {
     AUDACITY_ACTION_ICON_UNDO = 14,
     AUDACITY_ACTION_ICON_REDO = 15,
     AUDACITY_ACTION_ICON_PLAY = 16,
-    AUDACITY_ACTION_ICON_STOP = 17
+    AUDACITY_ACTION_ICON_STOP = 17,
+    AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW = 18,
+    AUDACITY_ACTION_ICON_PLAY_SCRUB = 19,
+    AUDACITY_ACTION_ICON_PLAY_SEEK = 20
 };
 
 /* Pointer kinds; button values use 1=primary, 2=middle, 3=secondary. */
@@ -216,6 +222,10 @@ int32_t audacity_alicorn_action_view_update(
     uint8_t enabled,
     uint8_t pressed,
     uint8_t *out_activated);
+/* Changes the native-host icon while keeping the retained button identity. */
+int32_t audacity_alicorn_action_view_set_icon(
+    AudacityAlicornActionView *view,
+    uint32_t icon_id);
 int32_t audacity_alicorn_action_view_paint(
     AudacityAlicornActionView *view,
     AudacitySnapDrawCallback callback,

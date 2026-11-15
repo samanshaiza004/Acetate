@@ -104,7 +104,11 @@ class AUDACITY_DLL_API ControlToolBar final : public ToolBar {
    };
 
    AButton *mRewind;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornActionControl *mPlay;
+#else
    AButton *mPlay;
+#endif
    AButton *mRecord;
    AButton *mPause;
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI

@@ -81,6 +81,9 @@ AUDACITY_SNAP_ICON_UNDO :: u32(15)
 AUDACITY_SNAP_ICON_REDO :: u32(16)
 AUDACITY_SNAP_ICON_PLAY :: u32(17)
 AUDACITY_SNAP_ICON_STOP :: u32(18)
+AUDACITY_SNAP_ICON_PLAY_CUT_PREVIEW :: u32(19)
+AUDACITY_SNAP_ICON_PLAY_SCRUB :: u32(20)
+AUDACITY_SNAP_ICON_PLAY_SEEK :: u32(21)
 AUDACITY_ACTION_ICON_NONE :: u32(0)
 AUDACITY_ACTION_ICON_SETTINGS :: u32(1)
 AUDACITY_ACTION_ICON_SETUP :: u32(2)
@@ -99,6 +102,9 @@ AUDACITY_ACTION_ICON_UNDO :: u32(14)
 AUDACITY_ACTION_ICON_REDO :: u32(15)
 AUDACITY_ACTION_ICON_PLAY :: u32(16)
 AUDACITY_ACTION_ICON_STOP :: u32(17)
+AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW :: u32(18)
+AUDACITY_ACTION_ICON_PLAY_SCRUB :: u32(19)
+AUDACITY_ACTION_ICON_PLAY_SEEK :: u32(20)
 
 AUDACITY_SNAP_POINTER_MOVE :: u32(0)
 AUDACITY_SNAP_POINTER_DOWN :: u32(1)
@@ -533,6 +539,15 @@ audacity_alicorn_action_view_create :: proc "c" (
 	case AUDACITY_ACTION_ICON_PLAY:
 		icon = .Settings
 		paint_icon_id = AUDACITY_SNAP_ICON_PLAY
+	case AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW:
+		icon = .Settings
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY_CUT_PREVIEW
+	case AUDACITY_ACTION_ICON_PLAY_SCRUB:
+		icon = .Settings
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY_SCRUB
+	case AUDACITY_ACTION_ICON_PLAY_SEEK:
+		icon = .Settings
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY_SEEK
 	case AUDACITY_ACTION_ICON_STOP:
 		icon = .Settings
 		paint_icon_id = AUDACITY_SNAP_ICON_STOP
@@ -558,6 +573,31 @@ audacity_alicorn_action_view_create :: proc "c" (
 		return nil
 	}
 	return rawptr(view)
+}
+
+@(export, link_name="audacity_alicorn_action_view_set_icon")
+audacity_alicorn_action_view_set_icon :: proc "c" (
+	opaque_view: rawptr,
+	icon_id: u32,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Action_View)opaque_view
+	if !valid_action_view(view) { return -1 }
+	paint_icon_id: u32
+	switch icon_id {
+	case AUDACITY_ACTION_ICON_PLAY:
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY
+	case AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW:
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY_CUT_PREVIEW
+	case AUDACITY_ACTION_ICON_PLAY_SCRUB:
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY_SCRUB
+	case AUDACITY_ACTION_ICON_PLAY_SEEK:
+		paint_icon_id = AUDACITY_SNAP_ICON_PLAY_SEEK
+	case:
+		return -1
+	}
+	view.paint_icon_id = paint_icon_id
+	return 1
 }
 
 @(export, link_name="audacity_alicorn_action_view_destroy")
