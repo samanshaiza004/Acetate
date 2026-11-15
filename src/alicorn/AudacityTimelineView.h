@@ -12,6 +12,12 @@ extern "C" {
 
 typedef struct AudacityAlicornTimelineView AudacityAlicornTimelineView;
 
+typedef enum AudacityWaveformIndicatorKind {
+   AUDACITY_WAVEFORM_INDICATOR_CARET = 0,
+   AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD = 1,
+   AUDACITY_WAVEFORM_INDICATOR_COUNT = 2,
+} AudacityWaveformIndicatorKind;
+
 /* One retained runtime contains both the ruler and track-panel regions. */
 AudacityAlicornTimelineView* audacity_alicorn_timeline_view_create(
    float ruler_width,
@@ -55,9 +61,10 @@ int32_t audacity_alicorn_timeline_view_update_waveform(
    uint64_t rectangle_count,
    const AudacityWaveformSegment* segments,
    uint64_t segment_count);
-/* Transient playhead/caret geometry is retained separately from the waveform. */
+/* Transient playhead and caret geometry have independent retained owners. */
 int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
    AudacityAlicornTimelineView* view,
+   uint32_t indicator_kind,
    const AudacityWaveformSegment* segment);
 int32_t audacity_alicorn_timeline_view_update_ruler(
    AudacityAlicornTimelineView* view,
@@ -89,6 +96,7 @@ int32_t audacity_alicorn_timeline_view_paint_waveform(
    void* context);
 int32_t audacity_alicorn_timeline_view_paint_waveform_overlay(
    AudacityAlicornTimelineView* view,
+   uint32_t indicator_kind,
    AudacityWaveformPaintCallback callback,
    void* context);
 /* Base ruler paint excludes the transient overlay geometry below. */

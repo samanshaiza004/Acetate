@@ -55,7 +55,8 @@ Timeline_View :: struct {
 	ruler_geometry_id: alicorn.Node_ID,
 	ruler_overlay_geometry_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
-	waveform_overlay_geometry_id: alicorn.Node_ID,
+	waveform_caret_overlay_geometry_id: alicorn.Node_ID,
+	waveform_playhead_overlay_geometry_id: alicorn.Node_ID,
 	width, ruler_height, waveform_height: f32,
 	runtime_initialized: bool,
 	callback_active: bool,
@@ -71,6 +72,8 @@ MAX_TIMELINE_GEOMETRY_SEGMENTS :: alicorn.GPU_SURFACE_MAX_VERTICES / 6
 MAX_TIMELINE_GEOMETRY_RECTANGLES :: alicorn.GPU_SURFACE_MAX_VERTICES / alicorn.GPU_SURFACE_RECTANGLE_VERTICES
 MAX_TIMELINE_LABELS :: 1024
 MAX_TIMELINE_LABEL_BYTES :: 4096
+AUDACITY_WAVEFORM_INDICATOR_CARET :: u32(0)
+AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD :: u32(1)
 
 valid_timeline_view :: proc(view: ^Timeline_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
@@ -247,20 +250,42 @@ timeline_view_build_description :: proc(
 	)
 	waveform_geometry_ok := view.waveform_geometry_id != 0 &&
 		alicorn.grid_cell(&ui, view.waveform_geometry_id, 0, 0)
-	view.waveform_overlay_geometry_id = alicorn.gpu_geometry_surface(
+	view.waveform_caret_overlay_geometry_id = alicorn.gpu_geometry_surface(
 		&ui,
-		"audacity-alicorn-timeline-waveform-overlay",
+		"audacity-alicorn-timeline-waveform-caret-overlay",
 		alicorn.layout_style(.Row, width=view.width, height=view.waveform_height),
 		1,
 	)
-	waveform_overlay_ok := view.waveform_overlay_geometry_id != 0 &&
-		alicorn.grid_cell(&ui, view.waveform_overlay_geometry_id, 0, 0)
+	waveform_caret_overlay_ok := view.waveform_caret_overlay_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.waveform_caret_overlay_geometry_id, 0, 0)
+	view.waveform_playhead_overlay_geometry_id = alicorn.gpu_geometry_surface(
+		&ui,
+		"audacity-alicorn-timeline-waveform-playhead-overlay",
+		alicorn.layout_style(.Row, width=view.width, height=view.waveform_height),
+		1,
+	)
+	waveform_playhead_overlay_ok := view.waveform_playhead_overlay_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.waveform_playhead_overlay_geometry_id, 0, 0)
 	alicorn.grid_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok &&
-		waveform_grid != 0 && waveform_geometry_ok && waveform_overlay_ok
+		waveform_grid != 0 && waveform_geometry_ok && waveform_caret_overlay_ok &&
+		waveform_playhead_overlay_ok
+}
+
+timeline_waveform_indicator_id :: proc(
+	view: ^Timeline_View,
+	indicator_kind: u32,
+) -> alicorn.Node_ID {
+	switch indicator_kind {
+	case AUDACITY_WAVEFORM_INDICATOR_CARET:
+		return view.waveform_caret_overlay_geometry_id
+	case AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD:
+		return view.waveform_playhead_overlay_geometry_id
+	}
+	return 0
 }
 
 @(export, link_name="audacity_alicorn_timeline_view_create")
@@ -606,11 +631,14 @@ timeline_color_valid :: proc(color: AudacitySnapColor) -> bool {
 @(export, link_name="audacity_alicorn_timeline_view_update_waveform_overlay")
 audacity_alicorn_timeline_view_update_waveform_overlay :: proc "c" (
 	opaque_view: rawptr,
+	indicator_kind: u32,
 	segment_input: ^AudacityWaveformSegment,
 ) -> i32 {
 	context = odin_runtime.default_context()
 	view := transmute(^Timeline_View)opaque_view
 	if !valid_timeline_view(view) { return -1 }
+	indicator_id := timeline_waveform_indicator_id(view, indicator_kind)
+	if indicator_id == 0 { return -1 }
 	segments: [1]alicorn.GPU_Surface_Line_Segment
 	segment_count := 0
 	if segment_input != nil {
@@ -631,7 +659,7 @@ audacity_alicorn_timeline_view_update_waveform_overlay :: proc "c" (
 	}
 	if !alicorn.gpu_surface_update_geometry(
 		&view.runtime,
-		view.waveform_overlay_geometry_id,
+		indicator_id,
 		segments[:segment_count],
 		nil,
 	) {
@@ -1023,15 +1051,18 @@ timeline_view_paint_single_segment_overlay :: proc(
 @(export, link_name="audacity_alicorn_timeline_view_paint_waveform_overlay")
 audacity_alicorn_timeline_view_paint_waveform_overlay :: proc "c" (
 	opaque_view: rawptr,
+	indicator_kind: u32,
 	geometry_callback: AudacityWaveformPaintCallback,
 	callback_context: rawptr,
 ) -> i32 {
 	context = odin_runtime.default_context()
 	view := transmute(^Timeline_View)opaque_view
 	if view == nil { return -1 }
+	indicator_id := timeline_waveform_indicator_id(view, indicator_kind)
+	if indicator_id == 0 { return -1 }
 	return timeline_view_paint_single_segment_overlay(
 		view,
-		view.waveform_overlay_geometry_id,
+		indicator_id,
 		geometry_callback,
 		callback_context,
 	)

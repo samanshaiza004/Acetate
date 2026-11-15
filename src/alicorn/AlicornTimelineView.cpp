@@ -302,9 +302,17 @@ bool AlicornTimelineView::DrawWaveform(
 }
 
 bool AlicornTimelineView::DrawVerticalIndicator(
-   wxDC& dc, const wxRect& clip, int x, const wxColour& color)
+   wxDC& dc,
+   const wxRect& clip,
+   AudacityWaveformIndicatorKind kind,
+   int x,
+   const wxColour& color)
 {
    if (!mView || !ResizeWaveform(dc.GetSize()))
+      return false;
+
+   const auto indicatorIndex = static_cast<size_t>(kind);
+   if (indicatorIndex >= mHasWaveformIndicators.size())
       return false;
 
    const auto rect = clip.Intersect(wxRect{wxPoint{0, 0}, dc.GetSize()});
@@ -324,8 +332,9 @@ bool AlicornTimelineView::DrawVerticalIndicator(
       linear.a
    };
    if (audacity_alicorn_timeline_view_update_waveform_overlay(
-          mView, &line) < 0)
+          mView, static_cast<uint32_t>(kind), &line) < 0)
       return false;
+   mHasWaveformIndicators[indicatorIndex] = true;
 
    std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
    if (!graphics)
@@ -335,7 +344,40 @@ bool AlicornTimelineView::DrawVerticalIndicator(
    context.clip = rect;
    context.yOrigin = mRulerSize.y;
    return audacity_alicorn_timeline_view_paint_waveform_overlay(
-      mView, &DrawGeometry, &context) >= 0;
+      mView, static_cast<uint32_t>(kind), &DrawGeometry, &context) >= 0;
+}
+
+bool AlicornTimelineView::ClearVerticalIndicator(
+   wxDC& dc,
+   const wxRect& clip,
+   AudacityWaveformIndicatorKind kind)
+{
+   const auto indicatorIndex = static_cast<size_t>(kind);
+   if (indicatorIndex >= mHasWaveformIndicators.size())
+      return false;
+   if (!mView || !mHasWaveformIndicators[indicatorIndex])
+      return true;
+   if (!ResizeWaveform(dc.GetSize()))
+      return false;
+
+   if (audacity_alicorn_timeline_view_update_waveform_overlay(
+          mView, static_cast<uint32_t>(kind), nullptr) < 0)
+      return false;
+   mHasWaveformIndicators[indicatorIndex] = false;
+
+   const auto rect = clip.Intersect(wxRect{wxPoint{0, 0}, dc.GetSize()});
+   if (rect.IsEmpty())
+      return true;
+
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = rect;
+   context.yOrigin = mRulerSize.y;
+   return audacity_alicorn_timeline_view_paint_waveform_overlay(
+      mView, static_cast<uint32_t>(kind), &DrawGeometry, &context) >= 0;
 }
 
 bool AlicornTimelineView::DrawRulerIndicator(

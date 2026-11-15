@@ -20,6 +20,7 @@
 #include "TrackArtist.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "alicorn/AlicornTimelineView.h"
+#include "ProjectWindow.h"
 #include "TrackPanel.h"
 #endif
 #include "TrackPanelDrawingContext.h"
@@ -775,14 +776,28 @@ void TrackArt::DrawCursor(TrackPanelDrawingContext& context,
           if (artist->parent) {
              if (auto* view = artist->parent->GetAlicornTimelineView()) {
                 if (view->DrawVerticalIndicator(
-                       *dc, rect, x, dc->GetPen().GetColour()))
+                       *dc, rect, AUDACITY_WAVEFORM_INDICATOR_CARET,
+                       x, dc->GetPen().GetColour()))
                    return;
              }
           }
 #endif
           AColor::Line(*dc, x, rect.GetTop(), x, rect.GetBottom());
+          return;
        }
    }
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // A point caret can disappear or leave the visible timeline while its
+   // retained overlay still has geometry. Clear only an already-created view.
+   if (artist->parent) {
+      if (auto* project = artist->parent->GetProject()) {
+         if (auto* view = ProjectWindow::Get(*project).FindAlicornTimelineView())
+            view->ClearVerticalIndicator(
+               *dc, rect, AUDACITY_WAVEFORM_INDICATOR_CARET);
+      }
+   }
+#endif
 }
 
 void TrackArt::DrawSnapLines(wxDC *dc, wxInt64 snap0, wxInt64 snap1)

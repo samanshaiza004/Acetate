@@ -54,8 +54,13 @@ public:
    bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,
+      AudacityWaveformIndicatorKind kind,
       int x,
       const wxColour& color);
+   bool ClearVerticalIndicator(
+      wxDC& dc,
+      const wxRect& clip,
+      AudacityWaveformIndicatorKind kind);
    bool DrawRulerIndicator(
       wxDC& dc,
       const wxRect& clip,
@@ -79,5 +84,6 @@ private:
    std::array<RulerFill, AUDACITY_RULER_MAX_FILLS> mLastRulerFills{};
    size_t mLastRulerFillCount{};
    bool mHasRulerFills{};
+   std::array<bool, AUDACITY_WAVEFORM_INDICATOR_COUNT> mHasWaveformIndicators{};
    bool mRulerNeedsUpdate{ true };
 };

@@ -28,14 +28,13 @@ that retained geometry through wx `wxGraphicsContext`, so this is not yet a
 renderer migration. wx remains the fallback for sync-lock patterns, envelope
 highlighting, high-zoom sample drawing, and any rejected geometry batch. The
 rectangle payload closes the API gap tracked by Alicorn #200; native pixel and
-repaint-cost acceptance remains open. The playback indicator uses a separate
-inert retained overlay after the cached track backing bitmap is presented;
-Audacity's playback scroller remains authoritative. The point-selection caret
-uses that same overlay after each selected channel's backing bitmap is drawn.
-Keeping both indicators separate from the waveform payload means moving a
-playhead or caret cannot replace the retained waveform geometry. Audacity's
-selected time remains authoritative and wx paints the caret if the retained
-path is unavailable. The ruler adapter copies
+repaint-cost acceptance remains open. The playback indicator and
+point-selection caret use independent inert retained overlays after the
+cached track backing bitmap is presented. Audacity's playback scroller and
+selected time remain authoritative. Keeping each indicator in its own owner
+means moving or clearing one cannot replace the other indicator or the
+retained waveform geometry. wx paints either indicator if the retained path is
+unavailable. The ruler adapter copies
 Audacity's generated tick positions, formatted labels, fonts, and colors into
 the same retained tree, and paints its selected-range and loop-range bands,
 loop-boundary markers, and point-selection caret through retained geometry.

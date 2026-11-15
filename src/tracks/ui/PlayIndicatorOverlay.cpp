@@ -118,25 +118,42 @@ void PlayIndicatorOverlayBase::Draw(OverlayPanel &panel, wxDC &dc)
    mLastIsCapturing = mNewIsCapturing;
 
    mLastIndicatorX = mNewIndicatorX;
-   if (!between_incexc(0, mLastIndicatorX, dc.GetSize().GetWidth()))
-      return;
-
    if(auto tp = dynamic_cast<TrackPanel*>(&panel)) {
       wxASSERT(mIsMaster);
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (!between_incexc(0, mLastIndicatorX, dc.GetSize().GetWidth())) {
+         if (auto* project = tp->GetProject()) {
+            if (auto* view = ProjectWindow::Get(*project).FindAlicornTimelineView()) {
+               const auto size = tp->GetClientSize();
+               view->ClearVerticalIndicator(
+                  dc,
+                  wxRect{0, 0, size.x, size.y},
+                  AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD);
+            }
+         }
+         return;
+      }
+
       if (auto* view = tp->GetAlicornTimelineView()) {
          const auto size = tp->GetClientSize();
          const wxRect clip{ 0, 0, size.x, size.y };
          if (view->DrawVerticalIndicator(
-                dc, clip, mLastIndicatorX, dc.GetPen().GetColour()))
+                dc, clip, AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD,
+                mLastIndicatorX, dc.GetPen().GetColour()))
             return;
       }
+#else
+      if (!between_incexc(0, mLastIndicatorX, dc.GetSize().GetWidth()))
+         return;
 #endif
       AColor::Line(dc, mLastIndicatorX, 0, mLastIndicatorX, tp->GetSize().GetHeight());
    }
    else if(auto ruler = dynamic_cast<AdornedRulerPanel*>(&panel)) {
       wxASSERT(!mIsMaster);
+
+      if (!between_incexc(0, mLastIndicatorX, dc.GetSize().GetWidth()))
+         return;
 
       auto pair = GetIndicatorBitmap( *mProject, mLastIndicatorX, !rec );
       dc.DrawBitmap( pair.second, pair.first.x, pair.first.y );
