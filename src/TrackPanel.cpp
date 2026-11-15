@@ -782,36 +782,45 @@ void TrackPanel::OnMouseEvent(wxMouseEvent & event)
       CaptureMouse();
    }
    else if (event.MiddleUp()) {
+      int dx = event.GetX() - mLastPanX;
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
       if (auto* view = GetAlicornTimelineView()) {
          AudacityWaveformSelection gesture{};
-         view->Pointer(
+         const auto phase = view->Pointer(
             AUDACITY_SNAP_POINTER_UP,
             static_cast<float>(event.GetX()),
             static_cast<float>(event.GetY()),
             AUDACITY_SNAP_BUTTON_MIDDLE,
             gesture);
+         if (phase == AUDACITY_WAVEFORM_SELECTION_ENDED)
+            dx = static_cast<int>(gesture.current_x - gesture.anchor_x);
       }
 #endif
+      if (dx != 0)
+         Viewport::Get(*GetProject()).ScrollHorizontalByPixels(-dx);
+      mLastPanX = event.GetX();
       mIsPanning = false;
       ReleaseMouse();
    }
    else if (event.Dragging() && mIsPanning) {
+      int dx = event.GetX() - mLastPanX;
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
       if (auto* view = GetAlicornTimelineView()) {
          AudacityWaveformSelection gesture{};
-         view->Pointer(
+         const auto phase = view->Pointer(
             AUDACITY_SNAP_POINTER_MOVE,
             static_cast<float>(event.GetX()),
             static_cast<float>(event.GetY()),
             AUDACITY_SNAP_BUTTON_MIDDLE,
             gesture);
+         if (phase == AUDACITY_WAVEFORM_SELECTION_UPDATED)
+            dx = static_cast<int>(gesture.current_x - gesture.anchor_x);
       }
 #endif
-      int dx = event.GetX() - mLastPanX;
       mLastPanX = event.GetX();
 
-      Viewport::Get(*GetProject()).ScrollHorizontalByPixels(-dx);
+      if (dx != 0)
+         Viewport::Get(*GetProject()).ScrollHorizontalByPixels(-dx);
    }
 
    if (event.ButtonUp()) {

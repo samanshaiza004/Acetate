@@ -332,6 +332,7 @@ timeline_view_pointer_callback :: proc(
 			view.selection_current_x = event.x
 		}
 		if view.pan_drag_active && event.button == alicorn.POINTER_BUTTON_MIDDLE {
+			view.pan_anchor_x = view.pan_current_x
 			view.pan_current_x = event.x
 		}
 	case .Up:
@@ -340,6 +341,7 @@ timeline_view_pointer_callback :: proc(
 			view.selection_drag_active = false
 		}
 		if view.pan_drag_active && event.button == alicorn.POINTER_BUTTON_MIDDLE {
+			view.pan_anchor_x = view.pan_current_x
 			view.pan_current_x = event.x
 			view.pan_drag_active = false
 		}

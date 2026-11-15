@@ -40,11 +40,12 @@ Alicorn also tracks empty-ruler drags that create loop regions; Audacity's
 `NewPlayRegionHandle` retains snapping, loop-region mutation, selection-sync,
 and rollback policy. Project selection and loop-region state remain
 authoritative; Alicorn retains only active pointer gestures. Middle-button
-horizontal pan gestures also pass through the timeline runtime; wx retains mouse
-capture and Audacity's `Viewport` applies the horizontal scroll. Selection-mode
-calculations are also exposed through `SelectionBar::ApplyTimeControlValue`, independent of the
-current wx numeric editor, so a future Alicorn editor can reuse Audacity's
-Start/End, Start/Length, Length/End, and Length/Center semantics. The existing
+horizontal pan deltas are derived from the retained pointer gesture; wx retains
+mouse capture and Audacity's `Viewport` applies the horizontal scroll.
+Selection-mode calculations are also exposed through
+`SelectionBar::ApplyTimeControlValue`, independent of the current wx numeric
+editor, so a future Alicorn editor can reuse Audacity's Start/End, Start/Length,
+Length/End, and Length/Center semantics. The existing
 `NumericTextCtrl` remains active because it supplies segmented time editing,
 format switching, native text behavior, and accessibility that the current
 Alicorn bridge does not yet replace. Keep it until the host can deliver
