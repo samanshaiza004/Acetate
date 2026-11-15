@@ -51,8 +51,6 @@ class EditToolBar final : public ToolBar {
       teBmps eEnabledUp, teBmps eEnabledDown, teBmps eDisabled,
       int id, const TranslatableString &label, bool toggle = false);
 
-   void AddSeparator();
-
    void RegenerateTooltips() override;
 
    ToolBarButtons mButtons;

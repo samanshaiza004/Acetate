@@ -68,6 +68,7 @@ enum {
 
    ETBTrimID,
    ETBSilenceID,
+   ETBDeleteID,
 
    // no sync-lock on/off button.
    // #define OPTION_SYNC_LOCK_BUTTON
@@ -97,6 +98,7 @@ static const ToolBarButtons::ButtonList EditToolbarButtonList = {
 
    { ETBTrimID,     wxT("Trim"),        XO("Trim audio outside selection")  },
    { ETBSilenceID,  wxT("Silence"),     XO("Silence audio selection")  },
+   { ETBDeleteID,   wxT("Delete"),      XO("Delete") },
 #ifdef OPTION_SYNC_LOCK_BUTTON
    { ETBSyncLockID, wxT("SyncLock"),    XO("Sync-Lock Tracks")  },
 #endif
@@ -149,11 +151,6 @@ void EditToolBar::Create(wxWindow * parent)
 {
    ToolBar::Create(parent);
    UpdatePrefs();
-}
-
-void EditToolBar::AddSeparator()
-{
-   mToolSizer->AddSpacer(0);
 }
 
 void EditToolBar::AddButton(
@@ -212,9 +209,9 @@ void EditToolBar::Populate()
 #ifdef OPTION_SYNC_LOCK_BUTTON
    AddButton(bmpSyncLockTracksUp, bmpSyncLockTracksDown, bmpSyncLockTracksUp, ETBSyncLockID,
       XO("Sync-Lock Tracks"), true);
-#else
-   AddSeparator();
 #endif
+   AddButton(bmpDelete, bmpDelete, bmpDeleteDisabled, ETBDeleteID,
+      XO("Delete"));
 
    AddButton(bmpUndo, bmpUndo, bmpUndoDisabled, ETBUndoID,
       XO("Undo"));
