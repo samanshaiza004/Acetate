@@ -254,6 +254,20 @@ int32_t AlicornTimelineView::Pointer(
       mView, kind, x, y, button, &selection);
 }
 
+int32_t AlicornTimelineView::RulerPointer(
+   uint32_t kind,
+   float x,
+   float y,
+   uint32_t button,
+   AudacityWaveformSelection& selection)
+{
+   if (!mView)
+      return -1;
+   selection = {};
+   return audacity_alicorn_timeline_view_ruler_pointer(
+      mView, kind, x, y, button, &selection);
+}
+
 bool AlicornTimelineView::DrawWaveform(
    wxDC& dc,
    const wxRect& clip,

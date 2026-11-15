@@ -65,6 +65,7 @@
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "alicorn/AlicornTimelineView.h"
+#include "TrackPanel.h"
 #endif
 
 #include <wx/dcclient.h>
@@ -155,6 +156,7 @@ protected:
    {
       mClicked = event.event.LeftIsDown() ? Button::Left : Button::Right;
       mClickedX = event.event.GetX();
+      mClickedY = event.event.GetY();
       return RefreshCode::DrawOverlays;
    }
 
@@ -210,6 +212,7 @@ protected:
 
    wxCoord mX;
    wxCoord mClickedX;
+   wxCoord mClickedY{};
 
    MenuChoice mChoice;
 
@@ -267,8 +270,13 @@ public:
          return result;
 
       auto &ruler = AdornedRulerPanel::Get(*pProject);
-      mX = event.event.m_x;
-      ruler.UpdateQuickPlayPos(event.event.m_x);
+      auto pointerX = event.event.m_x;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (mAlicornRulerPointerActive)
+         pointerX = MoveAlicornRulerPointer(*pProject, pointerX, event.event.m_y);
+#endif
+      mX = pointerX;
+      ruler.UpdateQuickPlayPos(pointerX);
 
       if (!mDragged) {
          if (fabs(mX - mClickedX) < SELECT_TOLERANCE_PIXEL)
@@ -278,6 +286,18 @@ public:
          const auto time = SnappedTime(*pProject, 0);
          DoStartAdjust(*pProject, time);
          mDragged = true;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         if (UsesAlicornRulerPointer()) {
+            mAlicornRulerPointerActive = BeginAlicornRulerPointer(
+               *pProject, mClickedX, mClickedY);
+            if (mAlicornRulerPointerActive) {
+               pointerX = MoveAlicornRulerPointer(
+                  *pProject, event.event.m_x, event.event.m_y);
+               mX = pointerX;
+               ruler.UpdateQuickPlayPos(pointerX);
+            }
+         }
+#endif
       }
       else
          DoAdjust(*pProject);
@@ -295,6 +315,22 @@ public:
    {
       using namespace RefreshCode;
       auto result = CommonRulerHandle::Release(event, pProject, pParent);
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (mAlicornRulerPointerActive) {
+         const auto releaseX = event.event.m_x;
+         auto finalX = releaseX;
+         if (EndAlicornRulerPointer(
+                *pProject, releaseX, event.event.m_y, finalX)) {
+            auto &ruler = AdornedRulerPanel::Get(*pProject);
+            ruler.UpdateQuickPlayPos(finalX);
+            DoAdjust(*pProject);
+            if (ruler.mPlayRegionDragsSelection)
+               DragSelection(*pProject);
+         }
+         mAlicornRulerPointerActive = false;
+      }
+#endif
 
       if (mClicked == Button::Left && !mDragged && !mParent->mIsRecording)
          StartPlay(*pProject, event.event);
@@ -314,6 +350,12 @@ public:
    {
       using namespace RefreshCode;
       auto result = CommonRulerHandle::Cancel(pProject);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (mAlicornRulerPointerActive) {
+         CancelAlicornRulerPointer(*pProject);
+         mAlicornRulerPointerActive = false;
+      }
+#endif
       if (!mSaved)
          return result;
 
@@ -348,6 +390,67 @@ public:
    }
 
 protected:
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   virtual bool UsesAlicornRulerPointer() const { return false; }
+
+   bool BeginAlicornRulerPointer(AudacityProject& project, int x, int y)
+   {
+      if (!UsesAlicornRulerPointer())
+         return false;
+      auto* view = TrackPanel::Get(project).GetAlicornTimelineView();
+      if (!view)
+         return false;
+      AudacityWaveformSelection selection{};
+      return view->RulerPointer(
+         AUDACITY_SNAP_POINTER_DOWN,
+         static_cast<float>(x), static_cast<float>(y),
+         AUDACITY_SNAP_BUTTON_PRIMARY, selection) ==
+         AUDACITY_WAVEFORM_SELECTION_BEGAN;
+   }
+
+   wxCoord MoveAlicornRulerPointer(
+      AudacityProject& project, wxCoord x, wxCoord y)
+   {
+      auto* view = TrackPanel::Get(project).GetAlicornTimelineView();
+      if (!view)
+         return x;
+      AudacityWaveformSelection selection{};
+      if (view->RulerPointer(
+             AUDACITY_SNAP_POINTER_MOVE,
+             static_cast<float>(x), static_cast<float>(y),
+             AUDACITY_SNAP_BUTTON_PRIMARY, selection) !=
+          AUDACITY_WAVEFORM_SELECTION_UPDATED)
+         return x;
+      return static_cast<wxCoord>(selection.current_x);
+   }
+
+   bool EndAlicornRulerPointer(
+      AudacityProject& project, wxCoord x, wxCoord y, wxCoord& resultX)
+   {
+      auto* view = TrackPanel::Get(project).GetAlicornTimelineView();
+      if (!view)
+         return false;
+      AudacityWaveformSelection selection{};
+      const auto result = view->RulerPointer(
+         AUDACITY_SNAP_POINTER_UP,
+         static_cast<float>(x), static_cast<float>(y),
+         AUDACITY_SNAP_BUTTON_PRIMARY, selection);
+      if (result != AUDACITY_WAVEFORM_SELECTION_ENDED)
+         return false;
+      resultX = static_cast<wxCoord>(selection.current_x);
+      return true;
+   }
+
+   void CancelAlicornRulerPointer(AudacityProject& project)
+   {
+      if (auto* view = TrackPanel::Get(project).GetAlicornTimelineView()) {
+         AudacityWaveformSelection selection{};
+         view->RulerPointer(
+            AUDACITY_SNAP_POINTER_CANCEL, 0.0f, 0.0f, 0, selection);
+      }
+   }
+#endif
 
    double SnappedTime( AudacityProject &project, size_t ii )
    {
@@ -411,6 +514,9 @@ private:
    bool mWasActive = false;
    bool mSaved = false;
    bool mDragged = false;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool mAlicornRulerPointerActive = false;
+#endif
 };
 
 /**********************************************************************
@@ -879,6 +985,10 @@ public:
    }
 
 private:
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool UsesAlicornRulerPointer() const override { return true; }
+#endif
+
    void DoStartAdjust(AudacityProject &project, double time) override
    {
       auto &playRegion = ViewInfo::Get(project).playRegion;
