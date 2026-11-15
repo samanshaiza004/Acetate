@@ -1,9 +1,10 @@
 # Alicorn-backed Audacity controls
 
 This directory contains opt-in Alicorn views hosted by Audacity 3. The
-integration renders selected toolbar controls (including Stop; modifier-aware
-Play remains native) and a timeline containing the normal-zoom waveform,
-time-ruler ticks and labels, selected-range edge strokes, and playback
+integration renders selected toolbar controls (including Stop and the
+Edit toolbar's Delete/Undo/Redo actions; modifier-aware Play remains native) and
+a timeline containing the normal-zoom waveform, time-ruler ticks and labels,
+selection/background fills, selected-range edge strokes, and playback
 indicator. It does not create an Alicorn window or GPU renderer.
 
 ## Timeline runtime and ownership
@@ -17,9 +18,9 @@ not a window-wide Alicorn host.
 
 The waveform adapter reads Audacity's existing 256-column min/max/RMS cache.
 At normal zoom, it also sends bounded per-column envelope/background fill,
-zero-line, selected-range edge, and waveform segments through the retained
-geometry surface. This uses thin segment strokes as a temporary fill encoding;
-the C++ paint callback still maps the retained geometry through wx
+zero-line, selected-range fill and edge, and waveform segments through the
+retained geometry surface. This uses thin segment strokes as a temporary fill
+encoding; the C++ paint callback still maps the retained geometry through wx
 `wxGraphicsContext`, so this is not yet a renderer migration. The native path
 remains the fallback for sync-lock patterns, envelope highlighting, high-zoom
 sample drawing, and any rejected geometry batch. Alicorn #200 tracks a
@@ -36,10 +37,12 @@ mutation, undo history, and cancel rollback. Project selection is authoritative;
 Alicorn retains only the active pointer gesture. wx still owns ruler gestures,
 play-region and blank-track backgrounds, sync-lock selection patterns, the
 track backing surface, envelope controls, clip decorations, high-zoom sample
-editing, accessibility host objects, and native audio services. The original
-wx waveform, ruler, and playhead drawing paths remain fallbacks. The new
-normal-zoom fill path has passed a native compile only; pixel parity, repaint
-cost, and interaction behavior have not yet passed the MVP acceptance gates.
+editing, accessibility host objects, and native audio services. Delete/Undo/Redo
+buttons dispatch through Audacity's existing command system; this does not yet
+prove the complete single-track editing workflow. The original wx waveform,
+ruler, and playhead drawing paths remain fallbacks. The normal-zoom fill path
+has passed a native compile only; pixel parity, repaint cost, and interaction
+behavior have not yet passed the MVP acceptance gates.
 
 All timeline calls are serialized on the wx UI thread. Painting is synchronous:
 paint payload and text pointers are borrowed from runtime storage and remain
