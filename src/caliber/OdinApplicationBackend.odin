@@ -37,6 +37,16 @@ odin_track_list_selection_action :: proc "c" (
 	return 0
 }
 
+@(export, link_name="audacity_odin_select_all_if_none_action")
+odin_select_all_if_none_action :: proc "c" (
+	selection_needed: u8,
+	selection_allowed: u8,
+) -> u8 {
+	if selection_needed == 0 do return 0
+	if selection_allowed != 0 do return 1
+	return 2
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,

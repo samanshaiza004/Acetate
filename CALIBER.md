@@ -72,6 +72,10 @@ clamping and endpoint crossing constraints to Odin after C++ resolves the
 snapped or pixel-based candidate time. Selection mutation, viewport scrolling,
 and history remain in C++.
 
+The batch `SelectAllIfNoneAndAllowed` helper delegates its preserve/select/reject
+decision to Odin. C++ still reads preferences and project selection state, then
+performs the selection mutation and history update.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

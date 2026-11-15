@@ -30,6 +30,9 @@
 #include "WaveTrack.h"
 
 #include "CommandManager.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "OdinApplicationBackend.h"
+#endif
 
 namespace {
 
@@ -103,6 +106,23 @@ bool SelectAllIfNoneAndAllowed( AudacityProject &project )
    auto &viewInfo = ViewInfo::Get( project );
    auto flags = CommandManager::Get( project ).GetUpdateFlags();
 
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   const auto selectionNeeded =
+      (flags & EditableTracksSelectedFlag()).none() ||
+      viewInfo.selectedRegion.isPoint();
+   switch (audacity_odin_select_all_if_none_action(
+      selectionNeeded, allowed)) {
+   case 0:
+      return true;
+   case 1:
+      DoSelectAllAudio(project);
+      return true;
+   case 2:
+      return false;
+   default:
+      break;
+   }
+#endif
    if((flags & EditableTracksSelectedFlag()).none() ||
       viewInfo.selectedRegion.isPoint()) {
       if (!allowed) {

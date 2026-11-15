@@ -16,6 +16,11 @@ uint8_t audacity_odin_track_selection_action(
 uint8_t audacity_odin_track_list_selection_action(
    uint8_t control_down, uint8_t shift_down, uint8_t has_anchor);
 
+// Returns 0 to preserve the current selection, 1 to select all audio, and 2
+// to reject the operation because the fallback selection is disallowed.
+uint8_t audacity_odin_select_all_if_none_action(
+   uint8_t selection_needed, uint8_t selection_allowed);
+
 // Resolves the anchor and inclusive range for a Shift-click. An index of -1
 // means that the corresponding anchor/selection endpoint is unavailable.
 int32_t audacity_odin_shift_selection_range(
