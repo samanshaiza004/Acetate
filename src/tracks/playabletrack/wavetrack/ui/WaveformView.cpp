@@ -656,6 +656,7 @@ void DrawWaveform(
    int backgroundZeroLevelY,
    double backgroundSelectionT0,
    double backgroundSelectionT1,
+   bool selectionAppliesToTrack,
    bool bIsSyncLockSelected,
    bool highlightEnvelope)
 {
@@ -705,7 +706,7 @@ void DrawWaveform(
 
    const bool includeBackground =
       !highlightEnvelope &&
-      !(bIsSyncLockSelected && backgroundSelectionT0 < backgroundSelectionT1);
+      !(bIsSyncLockSelected && selectionAppliesToTrack);
    if (!includeBackground) {
       DrawWaveformBackground(
          context, leftOffset, backgroundRect, backgroundEnvelope,
@@ -1238,6 +1239,7 @@ void DrawClipWaveform(TrackPanelDrawingContext &context,
          rect, zoomMin, zoomMax, dB, dBRange, muted,
          mid, env, backgroundZeroLevelY,
          backgroundSelectionT0, backgroundSelectionT1,
+         selectionAppliesToTrack,
          bIsSyncLockSelected, highlightEnvelope);
    }
    else
