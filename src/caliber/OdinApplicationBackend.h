@@ -46,6 +46,13 @@ int32_t audacity_odin_can_stop_audio_stream(
    uint8_t stream_active, uint8_t monitoring, uint8_t owned_by_project,
    uint8_t* out_can_stop);
 
+// Chooses ordered candidate indices for existing-track recording. Returns an
+// empty result when the candidates cannot satisfy the input-channel policy.
+int32_t audacity_odin_choose_recording_tracks(
+   const uint64_t* channel_counts, uint64_t candidate_count,
+   uint64_t recording_channels, uint64_t* out_indices,
+   uint64_t out_capacity, uint64_t* out_count);
+
 // Resolves the anchor and inclusive range for a Shift-click. An index of -1
 // means that the corresponding anchor/selection endpoint is unavailable.
 int32_t audacity_odin_shift_selection_range(

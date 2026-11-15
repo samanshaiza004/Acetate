@@ -88,6 +88,12 @@ stream activity, monitoring state, and project ownership from `AudioIO`. Odin
 returns only the permission result; stream control and project identity remain
 owned by C++.
 
+The existing-recording-track chooser also delegates its channel-count
+first-fit policy to Odin. C++ filters the real wave tracks by selection and
+sample rate, passes their ordered channel counts, and maps returned indices back
+to track references. Preferences, track traversal, recording setup, and all
+project mutations remain in Audacity.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

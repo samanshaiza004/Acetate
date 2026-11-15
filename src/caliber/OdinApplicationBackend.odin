@@ -97,6 +97,66 @@ odin_can_stop_audio_stream :: proc "c" (
 	return i32(CALIBER_STATUS_OK)
 }
 
+@(export, link_name="audacity_odin_choose_recording_tracks")
+odin_choose_recording_tracks :: proc "c" (
+	channel_counts: [^]u64,
+	candidate_count: u64,
+	recording_channels: u64,
+	out_indices: [^]u64,
+	out_capacity: u64,
+	out_count: ^u64,
+) -> i32 {
+	if out_count == nil || candidate_count > out_capacity ||
+		(candidate_count > 0 && (channel_counts == nil || out_indices == nil)) {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+	for i in 0..<candidate_count {
+		if channel_counts[i] == 0 {
+			return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+		}
+	}
+
+	selected_count: u64 = 0
+	strict_rules := recording_channels <= 2
+	if strict_rules {
+		window_start: u64 = 0
+		window_channels: u64 = 0
+		for i in 0..<candidate_count {
+			channels := channel_counts[i]
+			if channels > recording_channels {
+				window_start = i + 1
+				window_channels = 0
+				continue
+			}
+			for window_channels + channels > recording_channels {
+				window_channels -= channel_counts[window_start]
+				window_start += 1
+			}
+			window_channels += channels
+			if window_channels == recording_channels {
+				for j in window_start..=i {
+					out_indices[selected_count] = j
+					selected_count += 1
+				}
+				break
+			}
+		}
+	} else {
+		selected_channels: u64 = 0
+		for i in 0..<candidate_count {
+			out_indices[selected_count] = i
+			selected_count += 1
+			selected_channels += channel_counts[i]
+			if selected_channels >= recording_channels {
+				break
+			}
+		}
+	}
+
+	out_count^ = selected_count
+	return i32(CALIBER_STATUS_OK)
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,

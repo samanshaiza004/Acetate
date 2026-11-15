@@ -591,21 +591,52 @@ WritableSampleTrackArray ProjectAudioManager::ChooseExistingRecordingTracks(
 
    auto &trackList = TrackList::Get(*p);
    WritableSampleTrackArray candidates;
-   std::vector<unsigned> channelCounts;
-   size_t totalChannels = 0;
+   std::vector<uint64_t> channelCounts;
    const auto range = trackList.Any<WaveTrack>();
    for (auto candidate : selectedOnly ? range + &Track::IsSelected : range) {
       if (targetRate != RATE_NOT_SELECTED && candidate->GetRate() != targetRate)
          continue;
 
-      // count channels in this track
-      const auto nChannels = candidate->NChannels();
+      candidates.push_back(candidate->SharedPointer<WaveTrack>());
+      channelCounts.push_back(
+         static_cast<uint64_t>(candidate->NChannels()));
+   }
+
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   std::vector<uint64_t> selectedIndices(candidates.size());
+   uint64_t selectedCount{};
+   const auto status = audacity_odin_choose_recording_tracks(
+      channelCounts.data(), channelCounts.size(), recordingChannels,
+      selectedIndices.data(), selectedIndices.size(), &selectedCount);
+   if (status == 0 && selectedCount <= candidates.size()) {
+      WritableSampleTrackArray result;
+      result.reserve(selectedCount);
+      bool valid = true;
+      for (uint64_t i = 0; i < selectedCount; ++i) {
+         const auto index = selectedIndices[i];
+         if (index >= candidates.size()) {
+            valid = false;
+            break;
+         }
+         result.push_back(candidates[index]);
+      }
+      if (valid)
+         return result;
+   }
+#endif
+
+   // Keep a C++ fallback for the non-Odin build and invalid backend results.
+   WritableSampleTrackArray chosen;
+   std::vector<uint64_t> chosenChannelCounts;
+   size_t totalChannels = 0;
+   for (size_t i = 0; i < candidates.size(); ++i) {
+      const auto nChannels = channelCounts[i];
       if (strictRules && nChannels > recordingChannels) {
          // The recording would under-fill this track's channels
          // Can't use any partial accumulated results
          // either.  Keep looking.
-         candidates.clear();
-         channelCounts.clear();
+         chosen.clear();
+         chosenChannelCounts.clear();
          totalChannels = 0;
          continue;
       }
@@ -613,24 +644,24 @@ WritableSampleTrackArray ProjectAudioManager::ChooseExistingRecordingTracks(
          // Might use this but may have to discard some of the accumulated
          while(strictRules &&
                nChannels + totalChannels > recordingChannels) {
-            candidates.erase(candidates.begin());
-            auto nOldChannels = channelCounts[0];
+            chosen.erase(chosen.begin());
+            auto nOldChannels = chosenChannelCounts[0];
             assert(nOldChannels > 0);
-            channelCounts.erase(channelCounts.begin());
+            chosenChannelCounts.erase(chosenChannelCounts.begin());
             totalChannels -= nOldChannels;
          }
-         candidates.push_back(candidate->SharedPointer<WaveTrack>());
-         channelCounts.push_back(nChannels);
+         chosen.push_back(candidates[i]);
+         chosenChannelCounts.push_back(nChannels);
          totalChannels += nChannels;
          if (totalChannels >= recordingChannels)
             // Done!
-            return candidates;
+            return chosen;
       }
    }
 
-   if (!strictRules && !candidates.empty())
+   if (!strictRules && !chosen.empty())
       // good enough
-      return candidates;
+      return chosen;
 
    // If the loop didn't exit early, we could not find enough channels
    return {};
