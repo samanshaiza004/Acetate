@@ -25,6 +25,7 @@ selection range.
 #include "SelectionBar.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "ToolManager.h"
 
@@ -235,7 +236,9 @@ void SelectionBar::AddTime(int id, wxSizer * pSizer)
 
    pCtrl->Bind(
       wxEVT_TEXT,
-      [this, id](auto& evt) { ModifySelection(id, evt.GetInt() != 0); });
+      [this, id](auto& evt) {
+         ApplyTimeControlValue(id, mTimeControls[id]->GetValue(), evt.GetInt() != 0);
+      });
 
    pSizer->Add(pCtrl, 0, wxALIGN_TOP | wxRIGHT, 5);
 
@@ -389,11 +392,18 @@ void SelectionBar::OnSize(wxSizeEvent &evt)
 
 // When a control value is changed, this function is called.
 // It determines the values for the other controls.
-void SelectionBar::ModifySelection(int driver, bool done)
+bool SelectionBar::ApplyTimeControlValue(int driver, double value, bool done)
 {
-   // Only update a value if user typed something in.
-   // The reason is the controls may be less accurate than
-   // the values.
+   if (driver != 0 && driver != 1)
+   {
+      wxFAIL_MSG("Illegal selection driver");
+      return false;
+   }
+   if (!std::isfinite(value))
+      return false;
+
+   // Only update the value supplied by the edited field. The other values
+   // may be less accurate than the authoritative selection.
    double start = mStart;
    double end = mEnd;
    double center = mCenter;
@@ -404,11 +414,11 @@ void SelectionBar::ModifySelection(int driver, bool done)
       if (
          mSelectionMode == SelectionMode::StartEnd ||
          mSelectionMode == SelectionMode::StartLength)
-         start = mTimeControls[0]->GetValue();
+         start = value;
       else if (
          mSelectionMode == SelectionMode::LengthCenter ||
          mSelectionMode == SelectionMode::LengthEnd)
-         length = mTimeControls[0]->GetValue();
+         length = value;
       else
          wxFAIL_MSG("Unexpected selection mode");
    }
@@ -417,11 +427,11 @@ void SelectionBar::ModifySelection(int driver, bool done)
       if (
          mSelectionMode == SelectionMode::StartEnd ||
          mSelectionMode == SelectionMode::LengthEnd)
-         end = mTimeControls[1]->GetValue();
+         end = value;
       else if (mSelectionMode == SelectionMode::StartLength)
-         length = mTimeControls[1]->GetValue();
+         length = value;
       else if (mSelectionMode == SelectionMode::LengthCenter)
-         center = mTimeControls[1]->GetValue();
+         center = value;
       else
          wxFAIL_MSG("Unexpected selection mode");
    }
@@ -478,6 +488,7 @@ void SelectionBar::ModifySelection(int driver, bool done)
    // Places the start-end markers on the track panel.
    auto &manager = ProjectSelectionManager::Get(mProject);
    manager.ModifySelection(start, end, done);
+   return true;
 }
 
 // Called when one of the format drop downs is changed.

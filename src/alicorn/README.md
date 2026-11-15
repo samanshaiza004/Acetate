@@ -34,7 +34,13 @@ policy.
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection
 mutation, undo history, and cancel rollback. Project selection is authoritative;
-Alicorn retains only the active pointer gesture. wx still owns ruler gestures,
+Alicorn retains only the active pointer gesture. Selection-mode calculations are
+also exposed through `SelectionBar::ApplyTimeControlValue`, independent of the
+current wx numeric editor, so a future Alicorn editor can reuse Audacity's
+Start/End, Start/Length, Length/End, and Length/Center semantics. The existing
+`NumericTextCtrl` remains active because it supplies segmented time editing,
+format switching, native text behavior, and accessibility that the current
+Alicorn bridge does not yet replace. wx still owns ruler gestures,
 play-region and blank-track backgrounds, sync-lock selection patterns, the
 track backing surface, envelope controls, clip decorations, high-zoom sample
 editing, accessibility host objects, and native audio services. Delete/Undo/Redo

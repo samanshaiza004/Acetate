@@ -68,6 +68,11 @@ class AUDACITY_DLL_API SelectionBar final : public ToolBar {
 
    void SetTimes(double start, double end);
 
+   // Apply a value supplied by a selection-time editor. Keeping this entry
+   // point independent of NumericTextCtrl lets another UI adapter reuse the
+   // selection-mode semantics without duplicating them.
+   bool ApplyTimeControlValue(int driver, double value, bool done = false);
+
    void SetSelectionFormat(const NumericFormatID & format);
    void RegenerateTooltips() override;
 
@@ -92,7 +97,6 @@ class AUDACITY_DLL_API SelectionBar final : public ToolBar {
    void OnSize(wxSizeEvent &evt);
    void OnIdle( wxIdleEvent &evt );
 
-   void ModifySelection(int driver, bool done = false);
    void SelectionModeUpdated();
 
    void UpdateTimeControlsFormat(const NumericFormatID& format);
