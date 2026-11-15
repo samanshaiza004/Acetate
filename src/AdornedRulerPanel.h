@@ -105,6 +105,7 @@ private:
 
    void DoDrawBackground(wxDC * dc);
    void DoDrawEdge(wxDC *dc);
+   void UpdateRulerMarks(wxDC *dc);
    void DoDrawMarks(wxDC * dc, bool /*text */ );
    wxRect RegionRectangle(double t0, double t1) const;
    wxRect PlayRegionRectangle() const;

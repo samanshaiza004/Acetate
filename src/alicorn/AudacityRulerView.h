@@ -10,7 +10,10 @@
 extern "C" {
 #endif
 
-enum { AUDACITY_RULER_MAX_TICKS = 1365 };
+enum {
+   AUDACITY_RULER_MAX_TICKS = 1365,
+   AUDACITY_RULER_MAX_FILLS = 5
+};
 
 typedef struct AudacityRulerTick {
    float x;

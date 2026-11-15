@@ -2,16 +2,24 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <memory>
+#include <vector>
 
 #include <wx/dc.h>
 #include <wx/gdicmn.h>
+#include <wx/colour.h>
 
 #include "AudacityTimelineView.h"
 #include "widgets/Ruler.h"
 
 class AlicornTimelineView final {
 public:
+   struct RulerFill {
+      wxRect bounds;
+      wxColour color;
+   };
+
    AlicornTimelineView() = default;
    explicit AlicornTimelineView(const wxSize& rulerSize, const wxSize& waveformSize);
    ~AlicornTimelineView();
@@ -51,7 +59,9 @@ public:
    bool DrawRuler(
       wxDC& dc,
       const wxRect& clip,
-      const Ruler::DisplaySnapshot& snapshot);
+      const Ruler::DisplaySnapshot& snapshot,
+      const RulerFill* fills = nullptr,
+      size_t fillCount = 0);
 
 private:
    bool UpdateRuler(const Ruler::DisplaySnapshot& snapshot, bool force = false);
@@ -60,5 +70,9 @@ private:
    wxSize mRulerSize;
    wxSize mWaveformSize;
    std::unique_ptr<Ruler::DisplaySnapshot> mLastSnapshot;
+   std::vector<AudacityRulerTick> mRulerTicks;
+   std::array<RulerFill, AUDACITY_RULER_MAX_FILLS> mLastRulerFills{};
+   size_t mLastRulerFillCount{};
+   bool mHasRulerFills{};
    bool mRulerNeedsUpdate{ true };
 };

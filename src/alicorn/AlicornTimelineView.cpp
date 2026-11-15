@@ -2,9 +2,11 @@
 #include "AlicornTimelineView.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <wx/graphics.h>
@@ -382,7 +384,9 @@ bool AlicornTimelineView::UpdateRuler(
           labels.data(), static_cast<uint64_t>(labels.size())) < 0)
       return false;
 
+   mRulerTicks = std::move(ticks);
    mLastSnapshot = std::make_unique<Ruler::DisplaySnapshot>(snapshot);
+   mHasRulerFills = false;
    mRulerNeedsUpdate = false;
    return true;
 }
@@ -390,11 +394,48 @@ bool AlicornTimelineView::UpdateRuler(
 bool AlicornTimelineView::DrawRuler(
    wxDC& dc,
    const wxRect& clip,
-   const Ruler::DisplaySnapshot& snapshot)
+   const Ruler::DisplaySnapshot& snapshot,
+   const RulerFill* fills,
+   size_t fillCount)
 {
    if (!mView || !ResizeRuler(dc.GetSize()) ||
+       fillCount > AUDACITY_RULER_MAX_FILLS ||
+       (fillCount > 0 && !fills) ||
        !UpdateRuler(snapshot, mRulerNeedsUpdate))
       return false;
+
+   std::array<AudacityWaveformRectangle, AUDACITY_RULER_MAX_FILLS> rectangles{};
+   std::array<RulerFill, AUDACITY_RULER_MAX_FILLS> presentFills{};
+   size_t rectangleCount{};
+   for (size_t i = 0; i < fillCount; ++i) {
+      const auto& fill = fills[i];
+      if (fill.bounds.IsEmpty())
+         continue;
+      const auto color = ToLinearColor(fill.color);
+      presentFills[rectangleCount] = fill;
+      rectangles[rectangleCount++] = AudacityWaveformRectangle{
+         static_cast<float>(fill.bounds.x),
+         static_cast<float>(fill.bounds.y),
+         static_cast<float>(fill.bounds.width),
+         static_cast<float>(fill.bounds.height),
+         color.r, color.g, color.b, color.a
+      };
+   }
+
+   bool fillsChanged = !mHasRulerFills || rectangleCount != mLastRulerFillCount;
+   for (size_t i = 0; !fillsChanged && i < rectangleCount; ++i)
+      fillsChanged = presentFills[i].bounds != mLastRulerFills[i].bounds ||
+         presentFills[i].color != mLastRulerFills[i].color;
+   if (fillsChanged) {
+      if (audacity_alicorn_timeline_view_update_ruler_geometry(
+             mView,
+             rectangles.data(), static_cast<uint64_t>(rectangleCount),
+             mRulerTicks.data(), static_cast<uint64_t>(mRulerTicks.size())) < 0)
+         return false;
+      mLastRulerFills = presentFills;
+      mLastRulerFillCount = rectangleCount;
+      mHasRulerFills = true;
+   }
 
    std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
    if (!graphics)

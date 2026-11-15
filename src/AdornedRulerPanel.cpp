@@ -21,6 +21,8 @@
 
 #include "AdornedRulerPanel.h"
 
+#include <array>
+
 #include <wx/app.h>
 #include <wx/setup.h> // for wxUSE_* macros
 #include <wx/tooltip.h>
@@ -1660,6 +1662,46 @@ void AdornedRulerPanel::OnAudioStartStop(AudioIOEvent evt)
       DoSelectionChange( mViewInfo->selectedRegion );
 }
 
+using ColorId = decltype(clrTrackInfo);
+
+inline ColorId TimelineBackgroundColor()
+{
+   return clrTimelineRulerBackground;
+}
+
+inline ColorId TimelineTextColor()
+{
+   return clrTrackPanelText;
+}
+
+inline ColorId TimelineLimitsColor()
+{
+   return TimelineTextColor();
+}
+
+inline ColorId TimelineSelectionColor()
+{
+   return clrRulerSelected;
+}
+
+inline ColorId TimelineLoopRegionColor(bool isActive)
+{
+   return isActive ? clrLoopEnabled : clrLoopDisabled;
+}
+
+static inline wxColour AlphaBlend(ColorId fg, ColorId bg, double alpha)
+{
+   const auto &fgc = theTheme.Colour(fg);
+   const auto &bgc = theTheme.Colour(bg);
+   return wxColour{
+      wxColour::AlphaBlend(fgc.Red(), bgc.Red(), alpha),
+      wxColour::AlphaBlend(fgc.Green(), bgc.Green(), alpha),
+      wxColour::AlphaBlend(fgc.Blue(), bgc.Blue(), alpha)
+   };
+}
+
+constexpr double SelectionOpacity = 0.4;
+
 void AdornedRulerPanel::OnPaint(wxPaintEvent & WXUNUSED(evt))
 {
    const auto &viewInfo = ViewInfo::Get( *GetProject() );
@@ -1693,13 +1735,49 @@ void AdornedRulerPanel::OnPaint(wxPaintEvent & WXUNUSED(evt))
       rectL = { rectL.GetTopLeft(), wxPoint{ rectO.GetLeft() - 1, bottom } };
    }
 
-   DoDrawPlayRegion(&backDC, rectP, rectL, rectR);
-   DoDrawOverlap(&backDC, rectO);
-   DoDrawSelection(&backDC, rectS, rectL, rectR);
+   bool alicornRulerDrawn = false;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto* window = ProjectWindow::Find(mProject)) {
+      if (auto* view = window->FindAlicornTimelineView()) {
+         const auto& activePlayRegion = viewInfo.playRegion;
+         mLastPlayRegionActive = activePlayRegion.Active();
+         std::array<AlicornTimelineView::RulerFill, AUDACITY_RULER_MAX_FILLS> fills{};
+         size_t fillCount{};
+         const auto addFill = [&](const wxRect& bounds, const wxColour& color) {
+            if (!bounds.IsEmpty() && fillCount < fills.size())
+               fills[fillCount++] = { bounds, color };
+         };
+
+         if (!activePlayRegion.IsLastActiveRegionClear()) {
+            const auto loopColor = theTheme.Colour(
+               TimelineLoopRegionColor(mLastPlayRegionActive));
+            addFill(rectP.Intersect(rectL), loopColor);
+            addFill(rectP.Intersect(rectR), loopColor);
+            addFill(rectO, AlphaBlend(
+               TimelineSelectionColor(),
+               TimelineLoopRegionColor(mLastPlayRegionActive),
+               SelectionOpacity));
+         }
+         const auto selectionColor = AlphaBlend(
+            TimelineSelectionColor(), TimelineBackgroundColor(), SelectionOpacity);
+         addFill(rectS.Intersect(rectL), selectionColor);
+         addFill(rectS.Intersect(rectR), selectionColor);
+
+         UpdateRulerMarks(&backDC);
+         const auto snapshot = mRuler.GetDisplaySnapshot(backDC);
+         alicornRulerDrawn = view->DrawRuler(
+            backDC, mOuter, snapshot, fills.data(), fillCount);
+      }
+   }
+#endif
+   if (!alicornRulerDrawn) {
+      DoDrawPlayRegion(&backDC, rectP, rectL, rectR);
+      DoDrawOverlap(&backDC, rectO);
+      DoDrawSelection(&backDC, rectS, rectL, rectR);
+      DoDrawMarks(&backDC, true);
+   }
 
    DoDrawPlayRegionLimits(&backDC, rectP);
-
-   DoDrawMarks(&backDC, true);
 
    DoDrawEdge(&backDC);
 
@@ -2502,44 +2580,6 @@ void AdornedRulerPanel::ShowContextMenu(
    }
 }
 
-using ColorId = decltype(clrTrackInfo);
-
-inline ColorId TimelineBackgroundColor()
-{
-   return clrTimelineRulerBackground;
-}
-
-inline ColorId TimelineTextColor()
-{
-   return clrTrackPanelText;
-}
-
-inline ColorId TimelineLimitsColor()
-{
-   return TimelineTextColor();
-}
-
-inline ColorId TimelineSelectionColor()
-{
-   return clrRulerSelected;
-}
-
-inline ColorId TimelineLoopRegionColor(bool isActive)
-{
-   return isActive ? clrLoopEnabled : clrLoopDisabled;
-}
-
-static inline wxColour AlphaBlend(ColorId fg, ColorId bg, double alpha)
-{
-   const auto &fgc = theTheme.Colour(fg);
-   const auto &bgc = theTheme.Colour(bg);
-   return wxColour{
-      wxColour::AlphaBlend(fgc.Red(), bgc.Red(), alpha),
-      wxColour::AlphaBlend(fgc.Green(), bgc.Green(), alpha),
-      wxColour::AlphaBlend(fgc.Blue(), bgc.Blue(), alpha)
-   };
-}
-
 void AdornedRulerPanel::DoDrawBackground(wxDC * dc)
 {
    // Draw AdornedRulerPanel border
@@ -2566,7 +2606,7 @@ void AdornedRulerPanel::DoDrawEdge(wxDC *dc)
                 mOuter.y + mOuter.height - 1 );
 }
 
-void AdornedRulerPanel::DoDrawMarks(wxDC * dc, bool /*text */ )
+void AdornedRulerPanel::UpdateRulerMarks(wxDC * dc)
 {
    const double min = Pos2Time(mInner.x);
    const double hiddenMin = Pos2Time(mInner.x, true);
@@ -2583,15 +2623,11 @@ void AdornedRulerPanel::DoDrawMarks(wxDC * dc, bool /*text */ )
    {
       mRuler.SetTickLengths({ 4, 2, 2 });
    }
-#ifdef AUDACITY_USE_ALICORN_SNAP_UI
-   if (auto* window = ProjectWindow::Find(mProject)) {
-      if (auto* view = window->FindAlicornTimelineView()) {
-         const auto snapshot = mRuler.GetDisplaySnapshot(*dc);
-         if (view->DrawRuler(*dc, mOuter, snapshot))
-            return;
-      }
-   }
-#endif
+}
+
+void AdornedRulerPanel::DoDrawMarks(wxDC * dc, bool /*text */ )
+{
+   UpdateRulerMarks(dc);
    mRuler.Draw( *dc );
 }
 
@@ -2689,8 +2725,6 @@ void AdornedRulerPanel::DoDrawPlayRegionLimits(wxDC * dc, const wxRect &rect)
       dc->DrawPolygon( 4, points );
    }
 }
-
-constexpr double SelectionOpacity = 0.4;
 
 void AdornedRulerPanel::DoDrawOverlap(wxDC * dc, const wxRect &rect)
 {

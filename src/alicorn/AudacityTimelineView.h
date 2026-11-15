@@ -62,6 +62,15 @@ int32_t audacity_alicorn_timeline_view_update_ruler(
    const AudacityRulerLabel* labels,
    uint64_t label_count);
 
+/* Presentation-only update for ruler fills and ticks. This does not rebuild
+ * the retained description, so selection drags can update without layout. */
+int32_t audacity_alicorn_timeline_view_update_ruler_geometry(
+   AudacityAlicornTimelineView* view,
+   const AudacityWaveformRectangle* rectangles,
+   uint64_t rectangle_count,
+   const AudacityRulerTick* ticks,
+   uint64_t tick_count);
+
 /* Paint callbacks are synchronous and may not reenter or destroy the view.
  * Waveform bounds/clip are translated to track-panel local coordinates;
  * ruler commands remain ruler-panel local. */
