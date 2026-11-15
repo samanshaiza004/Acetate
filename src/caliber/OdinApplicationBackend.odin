@@ -187,6 +187,31 @@ odin_should_detect_import_tempo :: proc "c" (
 	return i32(CALIBER_STATUS_OK)
 }
 
+@(export, link_name="audacity_odin_transport_state")
+odin_transport_state :: proc "c" (
+	busy: u8,
+	can_stop: u8,
+	monitoring: u8,
+	has_capture_channels: u8,
+	out_state: ^u8,
+) -> i32 {
+	if busy > 1 || can_stop > 1 || monitoring > 1 ||
+		has_capture_channels > 1 || out_state == nil {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	state: u8 = 0
+	if busy != 0 && can_stop != 0 {
+		if has_capture_channels != 0 {
+			state = 2
+		} else if monitoring == 0 {
+			state = 1
+		}
+	}
+	out_state^ = state
+	return i32(CALIBER_STATUS_OK)
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,

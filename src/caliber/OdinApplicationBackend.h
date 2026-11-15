@@ -71,6 +71,17 @@ int32_t audacity_odin_should_detect_import_tempo(
    int32_t existing_project_choice, uint8_t is_beats_and_measures,
    uint8_t* out_should_detect);
 
+enum {
+   AUDACITY_ODIN_TRANSPORT_OTHER = 0,
+   AUDACITY_ODIN_TRANSPORT_PLAYING = 1,
+   AUDACITY_ODIN_TRANSPORT_RECORDING = 2,
+};
+
+// Classifies transport state without accessing AudioIO or project objects.
+int32_t audacity_odin_transport_state(
+   uint8_t busy, uint8_t can_stop, uint8_t monitoring,
+   uint8_t has_capture_channels, uint8_t* out_state);
+
 // Resolves the anchor and inclusive range for a Shift-click. An index of -1
 // means that the corresponding anchor/selection endpoint is unavailable.
 int32_t audacity_odin_shift_selection_range(

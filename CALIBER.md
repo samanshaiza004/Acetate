@@ -88,6 +88,11 @@ stream activity, monitoring state, and project ownership from `AudioIO`. Odin
 returns only the permission result; stream control and project identity remain
 owned by C++.
 
+The project transport classifier also runs in Odin after C++ reads busy,
+monitoring, capture-channel, and stop-permission state. It distinguishes
+playing, recording (including punch-and-roll), and neither; AudioIO reads and
+all transport actions remain in C++.
+
 The existing-recording-track chooser also delegates its channel-count
 first-fit policy to Odin. C++ filters the real wave tracks by selection and
 sample rate, passes their ordered channel counts, and maps returned indices back

@@ -1199,25 +1199,45 @@ void ProjectAudioManager::OnCheckpointFailure(ProjectFileIOMessage message)
       Stop();
 }
 
-bool ProjectAudioManager::Playing() const
+namespace {
+
+enum : uint8_t {
+   ProjectTransportOther = 0,
+   ProjectTransportPlaying = 1,
+   ProjectTransportRecording = 2,
+};
+
+uint8_t ProjectTransportState(const ProjectAudioManager& manager)
 {
    auto gAudioIO = AudioIO::Get();
-   return
-      gAudioIO->IsBusy() &&
-      CanStopAudioStream() &&
-      // ... and not merely monitoring
-      !gAudioIO->IsMonitoring() &&
-      // ... and not punch-and-roll recording
-      gAudioIO->GetNumCaptureChannels() == 0;
+   const bool busy = gAudioIO->IsBusy();
+   const bool canStop = manager.CanStopAudioStream();
+   const bool monitoring = gAudioIO->IsMonitoring();
+   const bool hasCaptureChannels = gAudioIO->GetNumCaptureChannels() > 0;
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   uint8_t state{};
+   if (audacity_odin_transport_state(
+          busy, canStop, monitoring, hasCaptureChannels, &state) == 0 &&
+       state <= AUDACITY_ODIN_TRANSPORT_RECORDING)
+      return state;
+#endif
+   if (!busy || !canStop)
+      return ProjectTransportOther;
+   if (hasCaptureChannels)
+      return ProjectTransportRecording;
+   return monitoring ? ProjectTransportOther : ProjectTransportPlaying;
+}
+
+}
+
+bool ProjectAudioManager::Playing() const
+{
+   return ProjectTransportState(*this) == ProjectTransportPlaying;
 }
 
 bool ProjectAudioManager::Recording() const
 {
-   auto gAudioIO = AudioIO::Get();
-   return
-      gAudioIO->IsBusy() &&
-      CanStopAudioStream() &&
-      gAudioIO->GetNumCaptureChannels() > 0;
+   return ProjectTransportState(*this) == ProjectTransportRecording;
 }
 
 bool ProjectAudioManager::CanStopAudioStream() const
