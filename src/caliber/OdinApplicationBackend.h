@@ -96,6 +96,33 @@ int32_t audacity_odin_selection_adjustment_clamp(
    uint8_t is_contract, uint8_t moves_start, double t0, double t1,
    double requested_time, double end_limit, double* out_time);
 
+// Owns the undo-history cursor and saved-state transition rules. Audacity
+// retains snapshot objects, translated descriptions, extension callbacks,
+// project restoration, and observer publication.
+uint8_t audacity_odin_undo_history_prepare_push(
+   uint8_t* may_consolidate, uint8_t consolidate_requested,
+   uint8_t descriptions_match);
+void audacity_odin_undo_history_finish_consolidated_push(
+   int32_t current, int32_t* saved);
+void audacity_odin_undo_history_abandon_redo(
+   int32_t current, int32_t* saved);
+void audacity_odin_undo_history_remove_one(
+   int32_t* current, int32_t* saved, uint64_t index);
+uint8_t audacity_odin_undo_history_target(
+   int32_t current, uint64_t state_count, int32_t delta,
+   int32_t* out_target);
+void audacity_odin_undo_history_commit_push(int32_t* current);
+void audacity_odin_undo_history_move(
+   int32_t* current, uint8_t* may_consolidate, int32_t delta);
+void audacity_odin_undo_history_set_current(
+   int32_t* current, uint8_t* may_consolidate, int32_t target);
+void audacity_odin_undo_history_stop_consolidating(uint8_t* may_consolidate);
+void audacity_odin_undo_history_mark_unsaved(int32_t* saved);
+void audacity_odin_undo_history_mark_saved(int32_t current, int32_t* saved);
+uint8_t audacity_odin_undo_history_has_unsaved_changes(
+   int32_t current, int32_t saved);
+void audacity_odin_undo_history_reset(int32_t* current, int32_t* saved);
+
 #ifdef __cplusplus
 }
 #endif

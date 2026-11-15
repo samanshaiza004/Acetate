@@ -28,6 +28,9 @@ UndoManager
 #include "BasicUI.h"
 #include "Project.h"
 #include "TransactionScope.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "OdinApplicationBackend.h"
+#endif
 //#include "NoteTrack.h"  // for Sonify* function declarations
 
 
@@ -137,10 +140,15 @@ void UndoManager::RemoveStates(size_t begin, size_t end)
    TransactionScope trans{mProject, "DiscardingUndoStates"};
 
    for (size_t ii = begin; ii < end; ++ii) {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+      audacity_odin_undo_history_remove_one(
+         &current, &saved, static_cast<uint64_t>(begin));
+#else
       if (current > begin)
         --current;
       if (saved > static_cast<int>(begin))
         --saved;
+#endif
 
       RemoveStateAt(begin);
    }
@@ -155,8 +163,12 @@ void UndoManager::RemoveStates(size_t begin, size_t end)
 void UndoManager::ClearStates()
 {
    RemoveStates(0, stack.size());
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_reset(&current, &saved);
+#else
    current = -1;
    saved = -1;
+#endif
 }
 
 unsigned int UndoManager::GetNumStates()
@@ -169,14 +181,37 @@ unsigned int UndoManager::GetCurrentState()
    return current;
 }
 
+void UndoManager::StopConsolidating()
+{
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_stop_consolidating(&mayConsolidate);
+#else
+   mayConsolidate = 0;
+#endif
+}
+
 bool UndoManager::UndoAvailable()
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   int32_t target = 0;
+   return audacity_odin_undo_history_target(
+      current, static_cast<uint64_t>(stack.size()), -1, &target) != 0 &&
+      CheckAvailable(target);
+#else
    return CheckAvailable(current - 1);
+#endif
 }
 
 bool UndoManager::RedoAvailable()
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   int32_t target = 0;
+   return audacity_odin_undo_history_target(
+      current, static_cast<uint64_t>(stack.size()), 1, &target) != 0 &&
+      CheckAvailable(target);
+#else
    return CheckAvailable(current + 1);
+#endif
 }
 
 bool UndoManager::CheckAvailable(int index)
@@ -223,20 +258,36 @@ void UndoManager::PushState(const TranslatableString &longDescription,
                             const TranslatableString &shortDescription,
                             UndoPush flags)
 {
-   if ( (flags & UndoPush::CONSOLIDATE) != UndoPush::NONE &&
-       // compare full translations not msgids!
-       lastAction.Translation() == longDescription.Translation() &&
-       mayConsolidate ) {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   const auto shouldConsolidate = audacity_odin_undo_history_prepare_push(
+      &mayConsolidate,
+      (flags & UndoPush::CONSOLIDATE) != UndoPush::NONE,
+      // Compare full translations, not message IDs.
+      lastAction.Translation() == longDescription.Translation());
+#else
+   const auto shouldConsolidate =
+      (flags & UndoPush::CONSOLIDATE) != UndoPush::NONE &&
+      // Compare full translations, not message IDs.
+      lastAction.Translation() == longDescription.Translation() &&
+      mayConsolidate;
+#endif
+   if (shouldConsolidate) {
       ModifyState();
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+      audacity_odin_undo_history_finish_consolidated_push(current, &saved);
+#else
       // MB: If the "saved" state was modified by ModifyState, reset
       //  it so that UnsavedChanges returns true.
       if (current == saved) {
          saved = -1;
       }
+#endif
       return;
    }
 
+#ifndef AUDACITY_USE_ODIN_CALIBER_BACKEND
    mayConsolidate = true;
+#endif
 
    AbandonRedo();
 
@@ -245,7 +296,11 @@ void UndoManager::PushState(const TranslatableString &longDescription,
          (GetExtensions(mProject), longDescription, shortDescription)
    );
 
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_commit_push(&current);
+#else
    current++;
+#endif
 
    lastAction = longDescription;
 
@@ -254,9 +309,13 @@ void UndoManager::PushState(const TranslatableString &longDescription,
 
 void UndoManager::AbandonRedo()
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_abandon_redo(current, &saved);
+#else
    if (saved > current) {
       saved = -1;
    }
+#endif
    RemoveStates( current + 1, stack.size() );
 }
 
@@ -264,10 +323,17 @@ void UndoManager::SetStateTo(unsigned int n, const Consumer &consumer)
 {
    wxASSERT(n < stack.size());
 
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_set_current(&current, &mayConsolidate, n);
+#else
    current = n;
+   mayConsolidate = false;
+#endif
 
    lastAction = {};
+#ifndef AUDACITY_USE_ODIN_CALIBER_BACKEND
    mayConsolidate = false;
+#endif
 
    consumer( *stack[current] );
 
@@ -278,10 +344,17 @@ void UndoManager::Undo(const Consumer &consumer)
 {
    wxASSERT(UndoAvailable());
 
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_move(&current, &mayConsolidate, -1);
+#else
    current--;
+   mayConsolidate = false;
+#endif
 
    lastAction = {};
+#ifndef AUDACITY_USE_ODIN_CALIBER_BACKEND
    mayConsolidate = false;
+#endif
 
    consumer( *stack[current] );
 
@@ -292,7 +365,12 @@ void UndoManager::Redo(const Consumer &consumer)
 {
    wxASSERT(RedoAvailable());
 
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_move(&current, &mayConsolidate, 1);
+#else
    current++;
+   mayConsolidate = false;
+#endif
 
    /*
    if (!RedoAvailable()) {
@@ -308,7 +386,9 @@ void UndoManager::Redo(const Consumer &consumer)
    */
 
    lastAction = {};
+#ifndef AUDACITY_USE_ODIN_CALIBER_BACKEND
    mayConsolidate = false;
+#endif
 
    consumer( *stack[current] );
 
@@ -344,17 +424,29 @@ void UndoManager::VisitStates(
 
 void UndoManager::MarkUnsaved()
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_mark_unsaved(&saved);
+#else
    saved = -1;
+#endif
 }
 
 bool UndoManager::UnsavedChanges() const
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   return audacity_odin_undo_history_has_unsaved_changes(current, saved) != 0;
+#else
    return (saved != current);
+#endif
 }
 
 void UndoManager::StateSaved()
 {
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   audacity_odin_undo_history_mark_saved(current, &saved);
+#else
    saved = current;
+#endif
 }
 
 int UndoManager::GetSavedState() const

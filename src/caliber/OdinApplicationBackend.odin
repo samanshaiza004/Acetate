@@ -291,3 +291,116 @@ odin_selection_adjustment_clamp :: proc "c" (
 	out_time^ = new_time
 	return i32(CALIBER_STATUS_OK)
 }
+
+// These routines own UndoManager's scalar history policy. C++ continues to
+// own snapshots, localized descriptions, extensions, and project callbacks.
+@(export, link_name="audacity_odin_undo_history_prepare_push")
+odin_undo_history_prepare_push :: proc "c" (
+	may_consolidate: ^u8,
+	consolidate_requested: u8,
+	descriptions_match: u8,
+) -> u8 {
+	if may_consolidate == nil do return 0
+
+	if consolidate_requested != 0 && descriptions_match != 0 && may_consolidate^ != 0 {
+		return 1
+	}
+
+	may_consolidate^ = 1
+	return 0
+}
+
+@(export, link_name="audacity_odin_undo_history_finish_consolidated_push")
+odin_undo_history_finish_consolidated_push :: proc "c" (current: i32, saved: ^i32) {
+	if saved != nil && current == saved^ do saved^ = -1
+}
+
+@(export, link_name="audacity_odin_undo_history_abandon_redo")
+odin_undo_history_abandon_redo :: proc "c" (current: i32, saved: ^i32) {
+	if saved == nil do return
+	if saved^ > current do saved^ = -1
+}
+
+@(export, link_name="audacity_odin_undo_history_remove_one")
+odin_undo_history_remove_one :: proc "c" (
+	current: ^i32,
+	saved: ^i32,
+	index: u64,
+) {
+	if current == nil || saved == nil do return
+	// This mirrors UndoManager's per-element index adjustment. Keep it paired
+	// with each C++ snapshot destruction so reentrant observers see a coherent
+	// stack and cursor.
+	if u64(current^) > index do current^ -= 1
+	if saved^ > i32(index) do saved^ -= 1
+}
+
+@(export, link_name="audacity_odin_undo_history_target")
+odin_undo_history_target :: proc "c" (
+	current: i32,
+	state_count: u64,
+	delta: i32,
+	out_target: ^i32,
+) -> u8 {
+	if out_target == nil || (delta != -1 && delta != 1) do return 0
+	candidate := i64(current) + i64(delta)
+	if candidate < 0 || u64(candidate) >= state_count || candidate > i64(2147483647) {
+		return 0
+	}
+	out_target^ = i32(candidate)
+	return 1
+}
+
+@(export, link_name="audacity_odin_undo_history_commit_push")
+odin_undo_history_commit_push :: proc "c" (current: ^i32) {
+	if current != nil do current^ += 1
+}
+
+@(export, link_name="audacity_odin_undo_history_move")
+odin_undo_history_move :: proc "c" (
+	current: ^i32,
+	may_consolidate: ^u8,
+	delta: i32,
+) {
+	if current == nil || may_consolidate == nil || (delta != -1 && delta != 1) do return
+	current^ += delta
+	may_consolidate^ = 0
+}
+
+@(export, link_name="audacity_odin_undo_history_set_current")
+odin_undo_history_set_current :: proc "c" (
+	current: ^i32,
+	may_consolidate: ^u8,
+	target: i32,
+) {
+	if current == nil || may_consolidate == nil do return
+	current^ = target
+	may_consolidate^ = 0
+}
+
+@(export, link_name="audacity_odin_undo_history_stop_consolidating")
+odin_undo_history_stop_consolidating :: proc "c" (may_consolidate: ^u8) {
+	if may_consolidate != nil do may_consolidate^ = 0
+}
+
+@(export, link_name="audacity_odin_undo_history_mark_unsaved")
+odin_undo_history_mark_unsaved :: proc "c" (saved: ^i32) {
+	if saved != nil do saved^ = -1
+}
+
+@(export, link_name="audacity_odin_undo_history_mark_saved")
+odin_undo_history_mark_saved :: proc "c" (current: i32, saved: ^i32) {
+	if saved != nil do saved^ = current
+}
+
+@(export, link_name="audacity_odin_undo_history_has_unsaved_changes")
+odin_undo_history_has_unsaved_changes :: proc "c" (current, saved: i32) -> u8 {
+	if saved != current do return 1
+	return 0
+}
+
+@(export, link_name="audacity_odin_undo_history_reset")
+odin_undo_history_reset :: proc "c" (current, saved: ^i32) {
+	if current != nil do current^ = -1
+	if saved != nil do saved^ = -1
+}

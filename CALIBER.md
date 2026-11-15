@@ -108,6 +108,13 @@ project's wave-track emptiness, normalized import preferences, and ruler mode.
 Import execution, prompting, audio analysis, and project updates remain in
 C++.
 
+The undo manager's scalar history policy also runs in Odin: push consolidation,
+redo abandonment, cursor and saved-state adjustment during purges, undo/redo
+target bounds, cursor movement, and dirty-state comparison. C++ continues to own
+the snapshot stack, translated descriptions, extension vetoes and restoration,
+autosave, purge transactions, and observer delivery. Odin calls are
+synchronous; snapshot destruction remains on the existing UI-thread path.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

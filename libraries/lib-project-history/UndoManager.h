@@ -45,6 +45,7 @@
 #define __AUDACITY_UNDOMANAGER__
 
 #include <functional>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include "ClientData.h"
@@ -179,7 +180,7 @@ class PROJECT_HISTORY_API UndoManager final
    unsigned int GetNumStates();
    unsigned int GetCurrentState();
 
-   void StopConsolidating() { mayConsolidate = false; }
+   void StopConsolidating();
 
    void GetShortDescription(unsigned int n, TranslatableString *desc);
    void SetLongDescription(unsigned int n, const TranslatableString &desc);
@@ -218,13 +219,13 @@ class PROJECT_HISTORY_API UndoManager final
 
    AudacityProject &mProject;
  
-   int current;
-   int saved;
+   int32_t current;
+   int32_t saved;
 
    UndoStack stack;
 
    TranslatableString lastAction;
-   bool mayConsolidate { false };
+   uint8_t mayConsolidate { 0 };
 };
 
 #endif
