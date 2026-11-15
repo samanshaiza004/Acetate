@@ -70,7 +70,8 @@ to Odin. C++ retains selection mutation and selected-time-range updates.
 Keyboard selection extension/contraction delegates track/screen boundary
 clamping and endpoint crossing constraints to Odin after C++ resolves the
 snapped or pixel-based candidate time. Selection mutation, viewport scrolling,
-and history remain in C++.
+and history remain in C++. The keyboard boundary-move path reuses the same
+track/screen clamp without contraction constraints.
 
 The batch `SelectAllIfNoneAndAllowed` helper delegates its preserve/select/reject
 decision to Odin. C++ still reads preferences and project selection state, then

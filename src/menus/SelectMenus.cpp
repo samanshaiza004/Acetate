@@ -433,9 +433,18 @@ void DoBoundaryMove(AudacityProject &project, int step, SeekInfo &info)
       tracks.GetEndTime(), viewInfo.GetScreenEndTime());
 
    double newT = viewInfo.OffsetTimeByPixels( bMoveT0 ? t0 : t1, pixels);
-   // constrain to be in the track/screen limits.
-   newT = std::max( 0.0, newT );
-   newT = std::min( newT, end);
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   double plannedT = newT;
+   if (audacity_odin_selection_adjustment_clamp(
+      0, bMoveT0, t0, t1, newT, end, &plannedT) == 0)
+      newT = plannedT;
+   else
+#endif
+   {
+      // Constrain to be in the track/screen limits.
+      newT = std::max( 0.0, newT );
+      newT = std::min( newT, end);
+   }
    // optionally constrain to be a contraction, i.e. so t0/t1 do not cross over
    //if( boundaryContract )
    //   newT = bMoveT0 ? std::min( t1, newT ) : std::max( t0, newT );
