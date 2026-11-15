@@ -19,6 +19,9 @@ Paul Licameli split from AudacityProject.cpp
 #include "AdornedRulerPanel.h"
 #include "AnalyzedWaveClip.h"
 #include "AudacityMessageBox.h"
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+#include "caliber/OdinApplicationBackend.h"
+#endif
 #include "AudacityMirProject.h"
 #include "BasicUI.h"
 #include "ClipMirAudioReader.h"
@@ -1361,18 +1364,46 @@ bool ProjectFileManager::Import(wxArrayString fileNames, bool addToHistory)
    const auto projectIsEmpty =
       TrackList::Get(mProject).Any<WaveTrack>().empty();
 
+   const auto& emptyProjectPrefs =
+      ImportExportPrefs::MusicFileImportSetting.Read();
    const auto& existingProjectPrefs =
       ImportExportPrefs::MusicFileImportOnExistingProjectSetting.Read();
 
    const auto isBeatsAndMeasures = AdornedRulerPanel::Get(mProject).GetTimeDisplayMode() ==
           TimeDisplayMode::BeatsAndMeasures;
 
-   const auto doTempoDetection =
+   auto doTempoDetection =
       projectIsEmpty ?
-         ImportExportPrefs::MusicFileImportSetting.Read() != wxString { "No" } :
+         emptyProjectPrefs != wxString { "No" } :
          existingProjectPrefs == wxString { "Match" } ||
             (existingProjectPrefs == wxString { "MatchIfBeatsAndMeasures" } &&
              isBeatsAndMeasures);
+
+#ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
+   int32_t emptyProjectChoice = -1;
+   if (emptyProjectPrefs == wxString { "Yes" })
+      emptyProjectChoice = AUDACITY_ODIN_EMPTY_IMPORT_TEMPO_YES;
+   else if (emptyProjectPrefs == wxString { "Ask" })
+      emptyProjectChoice = AUDACITY_ODIN_EMPTY_IMPORT_TEMPO_ASK;
+   else if (emptyProjectPrefs == wxString { "No" })
+      emptyProjectChoice = AUDACITY_ODIN_EMPTY_IMPORT_TEMPO_NO;
+
+   int32_t existingProjectChoice = -1;
+   if (existingProjectPrefs == wxString { "Match" })
+      existingProjectChoice = AUDACITY_ODIN_EXISTING_IMPORT_TEMPO_MATCH;
+   else if (existingProjectPrefs == wxString { "MatchIfBeatsAndMeasures" })
+      existingProjectChoice =
+         AUDACITY_ODIN_EXISTING_IMPORT_TEMPO_MATCH_IF_BEATS;
+   else if (existingProjectPrefs == wxString { "DoNothing" })
+      existingProjectChoice =
+         AUDACITY_ODIN_EXISTING_IMPORT_TEMPO_DO_NOTHING;
+
+   uint8_t odinShouldDetect{};
+   if (audacity_odin_should_detect_import_tempo(
+          projectIsEmpty, emptyProjectChoice, existingProjectChoice,
+          isBeatsAndMeasures, &odinShouldDetect) == 0)
+      doTempoDetection = odinShouldDetect != 0;
+#endif
 
    auto& pfm = ProjectFileManager::Get(mProject);
    const std::vector<wxString> fNameVector { fileNames.begin(),

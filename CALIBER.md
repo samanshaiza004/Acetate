@@ -94,6 +94,11 @@ sample rate, passes their ordered channel counts, and maps returned indices back
 to track references. Preferences, track traversal, recording setup, and all
 project mutations remain in Audacity.
 
+The music-import path choice for tempo detection is evaluated in Odin from the
+project's wave-track emptiness, normalized import preferences, and ruler mode.
+Import execution, prompting, audio analysis, and project updates remain in
+C++.
+
 The schema and command belong to Audacity. Caliber only transports bounded
 bytes, owns the command queue and publication, checks revisions, and exposes
 the C ABI. Session lifetime is bounded by the project toolbar. The adapter

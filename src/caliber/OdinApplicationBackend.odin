@@ -157,6 +157,36 @@ odin_choose_recording_tracks :: proc "c" (
 	return i32(CALIBER_STATUS_OK)
 }
 
+@(export, link_name="audacity_odin_should_detect_import_tempo")
+odin_should_detect_import_tempo :: proc "c" (
+	project_is_empty: u8,
+	empty_project_choice: i32,
+	existing_project_choice: i32,
+	is_beats_and_measures: u8,
+	out_should_detect: ^u8,
+) -> i32 {
+	if project_is_empty > 1 || is_beats_and_measures > 1 ||
+		empty_project_choice < 0 || empty_project_choice > 2 ||
+		existing_project_choice < 0 || existing_project_choice > 2 ||
+		out_should_detect == nil {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	should_detect := false
+	if project_is_empty != 0 {
+		should_detect = empty_project_choice != 2
+	} else {
+		should_detect = existing_project_choice == 0 ||
+			(existing_project_choice == 1 && is_beats_and_measures != 0)
+	}
+	if should_detect {
+		out_should_detect^ = 1
+	} else {
+		out_should_detect^ = 0
+	}
+	return i32(CALIBER_STATUS_OK)
+}
+
 @(export, link_name="audacity_odin_shift_selection_range")
 odin_shift_selection_range :: proc "c" (
 	track_count: i64,
