@@ -39,6 +39,8 @@ typedef struct AudacityWaveformSelection {
 } AudacityWaveformSelection;
 
 enum {
+   /* Alicorn's retained geometry surface accepts at most 8192 vertices. */
+   AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS = 8192 / 6,
    AUDACITY_WAVEFORM_SELECTION_NONE = 0,
    AUDACITY_WAVEFORM_SELECTION_BEGAN = 1,
    AUDACITY_WAVEFORM_SELECTION_UPDATED = 2,

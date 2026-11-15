@@ -23,12 +23,14 @@ At normal zoom, it also sends bounded per-column envelope/background fill,
 zero-line, selected-range fill and edge, and waveform segments through the
 retained geometry surface. Fill runs use bounded first-class rectangles rather
 than thin-line encoding; Alicorn owns and validates the complete paint payload
-and keeps it within one vertex budget. The C++ paint callback still presents
-that retained geometry through wx `wxGraphicsContext`, so this is not yet a
-renderer migration. wx remains the fallback for sync-lock patterns, envelope
-highlighting, high-zoom sample drawing, and any rejected geometry batch. The
-rectangle payload closes the API gap tracked by Alicorn #200; native pixel and
-repaint-cost acceptance remains open. The playback indicator and
+and keeps it within one vertex budget. At high zoom, connected sample lines
+and clipping marks also use retained geometry while draggable sample points
+remain hidden. The C++ paint callback still presents that geometry through wx
+`wxGraphicsContext`, so this is not yet a renderer migration. wx remains the
+fallback for sync-lock patterns, envelope highlighting, draggable high-zoom
+sample points, and geometry batches that exceed the surface budget or cannot
+be submitted. The rectangle payload closes the API gap tracked by Alicorn
+#200; native pixel and repaint-cost acceptance remains open. The playback indicator and
 point-selection caret use independent inert retained overlays after the
 cached track backing bitmap is presented. Audacity's playback scroller and
 selected time remain authoritative. Keeping each indicator in its own owner
