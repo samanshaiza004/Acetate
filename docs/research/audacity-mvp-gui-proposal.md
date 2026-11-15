@@ -8,7 +8,7 @@
 
 Build an **editing-first, single-track MVP** as an experimental Alicorn workspace inside the Audacity 3 application. Make one end-to-end audio-editing loop reliable before migrating the full multi-track workbench:
 
-> Open one supported audio file → view its waveform on a timeline → select a time range → play/stop → delete the selected range → undo/redo → save and reopen the project → export a WAV.
+> Open one supported audio file → view its waveform on a timeline → select a time range → play/pause/stop → delete the selected range → undo/redo → save and reopen the project → export a WAV.
 
 The MVP supports one mono or stereo audio track. Basic edits may split that track into clip segments and gaps, but the user cannot move, resize, or mix clips. There is no recording, multitrack mixing, effects, or plugin management in this first version.
 
@@ -22,7 +22,7 @@ This is deliberately smaller than Audacity's defining multitrack workflow. That 
 - Open/import one audio file through Audacity's existing importers. The MVP does not implement codecs; the importer remains the format authority.
 - A waveform overview, seconds ruler, horizontal scroll and zoom, playhead, and visible time selection.
 - Pointer drag selection with sample-accurate endpoints, plus keyboard-accessible selection controls and readable start/end values.
-- Play, play selection, and stop through Audacity's existing audio engine, using the current default output device.
+- Play, pause, and stop from the cursor or selection through Audacity's existing audio engine, using the current default output device.
 - Delete the selected range using Audacity's existing edit semantics; undo and redo through the project history.
 - Save/reopen as `.aup3` and export the complete one-track project as WAV.
 - Basic keyboard operation, focus visibility, and semantic names/values for transport, selection, zoom, and file actions.
@@ -66,7 +66,7 @@ The current migration should preserve an implementation seam: Alicorn consumes t
 
 ### 0. Freeze the support contract
 
-Document the one-track project eligibility rules and the exact edit semantics. Define the state and commands the workspace needs: open/import, read project summary, request a visible waveform window, set selection, play/stop, delete, undo/redo, save, and export WAV. Keep error, cancellation, progress, and stale-revision behavior explicit.
+Document the one-track project eligibility rules and the exact edit semantics. Define the state and commands the workspace needs: open/import, read project summary, request a visible waveform window, set selection, play/pause/stop, delete, undo/redo, save, and export WAV. Keep error, cancellation, progress, and stale-revision behavior explicit.
 
 ### 1. Establish the host boundary
 

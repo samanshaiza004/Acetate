@@ -1,7 +1,7 @@
 # Alicorn-backed Audacity controls
 
 This directory contains opt-in Alicorn views hosted by Audacity 3. The
-integration renders selected toolbar controls (including Play/Stop,
+integration renders selected toolbar controls (including Play/Pause/Stop,
 modifier-specific Play modes, and the Edit toolbar's Delete/Undo/Redo actions) and
 a timeline containing the normal-zoom waveform, time-ruler ticks and labels,
 selection/background fills, selected-range edge strokes, and playback

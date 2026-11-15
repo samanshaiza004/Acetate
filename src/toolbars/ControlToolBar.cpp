@@ -182,6 +182,14 @@ void ControlToolBar::Populate()
    SetBackgroundColour( theTheme.Colour( clrMedium  ) );
    MakeButtonBackgroundsLarge();
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mPause = safenew AlicornActionControl(
+      this,
+      ID_PAUSE_BUTTON,
+      XO("Pause").Translation(),
+      AUDACITY_ACTION_ICON_PAUSE,
+      wxSize{ 52, 52 });
+#else
    mPause = MakeControlToolBarButton(
       this,
       ID_PAUSE_BUTTON,
@@ -190,6 +198,7 @@ void ControlToolBar::Populate()
       wxNullImage,
       theTheme.Image(bmpPauseDisabled));
    mPause->SetButtonToggles(true);
+#endif
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    mPlay = safenew AlicornActionControl(

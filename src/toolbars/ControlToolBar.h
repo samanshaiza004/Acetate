@@ -110,7 +110,11 @@ class AUDACITY_DLL_API ControlToolBar final : public ToolBar {
    AButton *mPlay;
 #endif
    AButton *mRecord;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornActionControl *mPause;
+#else
    AButton *mPause;
+#endif
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    AlicornActionControl *mStop;
 #else

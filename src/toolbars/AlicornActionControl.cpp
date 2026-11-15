@@ -28,6 +28,7 @@ uint32_t ActionIconForThemeBitmap(int bitmapId)
    if (bitmapId == bmpUndo) return AUDACITY_ACTION_ICON_UNDO;
    if (bitmapId == bmpRedo) return AUDACITY_ACTION_ICON_REDO;
    if (bitmapId == bmpPlay) return AUDACITY_ACTION_ICON_PLAY;
+   if (bitmapId == bmpPause) return AUDACITY_ACTION_ICON_PAUSE;
    if (bitmapId == bmpCutPreview) return AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW;
    if (bitmapId == bmpScrub) return AUDACITY_ACTION_ICON_PLAY_SCRUB;
    if (bitmapId == bmpSeek) return AUDACITY_ACTION_ICON_PLAY_SEEK;
@@ -107,6 +108,7 @@ AlicornActionControl::AlicornActionControl(
    const auto initialSize = size == wxDefaultSize ? MinimumSize : size;
    SetMinSize(initialSize);
    SetBackgroundStyle(wxBG_STYLE_PAINT);
+   SetLabel(label);
    SetName(label);
    mSupportsPlayAlternates = iconId == AUDACITY_ACTION_ICON_PLAY;
    const auto utf8 = label.utf8_str();
