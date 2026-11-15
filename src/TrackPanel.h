@@ -42,6 +42,9 @@ class TrackList;
 struct TrackListEvent;
 class TrackPanel;
 class TrackArtist;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornWaveformView;
+#endif
 class Ruler;
 class AdornedRulerPanel;
 class LWSlider;
@@ -108,6 +111,9 @@ class AUDACITY_DLL_API TrackPanel final
    void HandlePageUpKey();
    void HandlePageDownKey();
    AudacityProject * GetProject() const override;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornWaveformView *GetAlicornWaveformView();
+#endif
 
    void OnTrackMenu(Track *t = NULL);
 
@@ -193,6 +199,9 @@ protected:
    AdornedRulerPanel *mRuler;
 
    std::unique_ptr<TrackArtist> mTrackArtist;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   std::unique_ptr<AlicornWaveformView> mAlicornWaveformView;
+#endif
 
    class AUDACITY_DLL_API AudacityTimer final : public wxTimer {
    public:

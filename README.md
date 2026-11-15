@@ -18,9 +18,9 @@ Multitrack editing, recording, effects and plugins, clip movement, and advanced 
 
 ## Current implementation status
 
-The current Alicorn path is an opt-in native-control prototype. It renders selected toolbar controls through Alicorn while Audacity still owns the main window, event loop, menus, project state, accessibility host objects, waveform/track editor, and audio services. The complete editing workflow above is not implemented yet. The wxWidgets workspace remains the functional fallback.
+The current Alicorn path is an opt-in native-control prototype hosted by wxWidgets. It renders selected toolbar controls through Alicorn and uses Alicorn-retained geometry for normal-zoom waveform summary strokes, reusing Audacity's visible-range min/max/RMS cache. wx still owns the main window, event loop, project state, accessibility host objects, track-panel background and selection fill, envelope controls, clip decorations, high-zoom sample editing, and audio services. The bitmap waveform renderer remains the fallback. The bridge's repaint cost has not yet been benchmarked against the bitmap cache. The complete editing workflow above is not implemented yet, and the wxWidgets workspace remains the functional fallback.
 
-The first broad UI milestone is one native host surface with a shared retained Alicorn runtime. The MVP then needs a waveform surface backed by Audacity's existing visible-range waveform summaries, followed by selection and transport. Do not copy project PCM into a second UI model.
+The first broad UI milestone is a native host surface with retained Alicorn state. The waveform work is an initial partial rendering slice, not a replacement of the track editor: selection interaction and transport remain future work. Do not copy project PCM into a second UI model.
 
 ## Architecture boundary
 

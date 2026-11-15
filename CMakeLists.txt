@@ -158,7 +158,7 @@ option( audacity_use_odin_caliber_backend
    "Enable experimental Odin application logic with Caliber transport" OFF )
 
 option( audacity_use_alicorn_snap_ui
-   "Enable the experimental Alicorn toolbar controls" OFF )
+   "Enable experimental Alicorn native controls and waveform rendering" OFF )
 
 if( APPLE )
    # XCode 14 no longer allows building unsigned binaries.

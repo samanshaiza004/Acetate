@@ -1,13 +1,21 @@
 # Alicorn-backed Audacity controls
 
 This directory contains small Alicorn-backed controls hosted by Audacity 3.
-The current opt-in integration replaces the Snap checkbox, the Audio Setup
+The current opt-in integration replaces normal-zoom waveform summary strokes
+through Alicorn-retained geometry, alongside the Snap checkbox, the Audio Setup
 toolbar button, the Selection Toolbar mode-setup button, the Edit toolbar
 buttons, and the Cut/Copy/Paste toolbar buttons. Audacity still owns the native
 window, event loop, accessibility bridge, menus, audio-device state, selection
 controls, command dispatch, and drawing surface; Alicorn supplies retained
 control descriptions and paint commands. This adapter does not create an SDL
-window or renderer.
+window or renderer. The waveform path reads Audacity's existing 256-column
+min/max/RMS cache, updates one retained geometry surface owned by each TrackPanel,
+and translates geometry paint payloads synchronously through wxGraphicsContext.
+The wx track panel still owns the backing surface, selection background, envelope
+controls, clip decorations, and high-zoom sample editing. If the Alicorn runtime
+cannot render a geometry update, the bitmap waveform path remains available. The
+geometry bridge's repaint cost has not yet been benchmarked against that bitmap
+cache.
 
 ## Build
 
@@ -59,3 +67,11 @@ wx host objects remain the platform-facing accessible objects: Snap exposes a
 checkbox role/value, while Audio Setup exposes a push-button role and localized
 name. The wx bridge synchronizes their state with `ProjectSnap` and the native
 audio menu. Native screen-reader behavior has not yet been manually validated.
+
+The waveform view is owned by `TrackPanel` and serializes create, resize, update,
+paint, and destroy on the wx UI thread. Update copies the caller's bounded segment
+array into retained Alicorn geometry. Paint visits the completed geometry
+payload synchronously; segment storage is borrowed only for the callback. This
+path does not create an Alicorn GPU renderer and does not replace Audacity's
+waveform background, envelope controls, clip decorations, or high-zoom sample
+editing.

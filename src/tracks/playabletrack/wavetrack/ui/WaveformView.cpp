@@ -30,6 +30,11 @@ Paul Licameli split from WaveChannelView.cpp
 #include "../../../../TrackArt.h"
 #include "../../../../TrackArtist.h"
 #include "../../../../TrackPanelDrawingContext.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../../../TrackPanel.h"
+#include "AlicornWaveformView.h"
+#include "AudacityWaveformView.h"
+#endif
 #include "../../../../TrackPanelMouseEvent.h"
 #include "ViewInfo.h"
 #include "WaveChannelUtilities.h"
@@ -50,8 +55,14 @@ Paul Licameli split from WaveChannelView.cpp
 #include "waveform/WaveBitmapCache.h"
 #include "waveform/WaveDataCache.h"
 #include "waveform/WavePaintParameters.h"
+#include "ZoomInfo.h"
+#include "Decibels.h"
+#include "Envelope.h"
 
 #include <atomic>
+#include <array>
+#include <cmath>
+#include <cstdint>
 
 #include "prefs/GUIPrefs.h"
 
@@ -291,6 +302,155 @@ public:
       }
    }
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool DrawAlicorn(
+      int channelIndex,
+      AlicornWaveformView& view,
+      wxDC& dc,
+      const wxRect& clip,
+      const WavePaintParameters& params,
+      const ZoomInfo& zoomInfo,
+      const wxRect& targetRect,
+      int leftOffset,
+      double from,
+      double to,
+      int64_t selectedFirstPixel,
+      int64_t selectedLastPixel)
+   {
+      if (channelIndex < 0 || static_cast<size_t>(channelIndex) >= mChannelCaches.size())
+         return false;
+
+      auto& dataCache = *mChannelCaches[channelIndex].DataCache;
+      dataCache.UpdateViewportWidth(targetRect.width);
+      auto range = dataCache.PerformLookup(zoomInfo, from, to);
+      auto it = range.begin();
+      if (it == range.end())
+         return false;
+
+      constexpr auto CacheWidth = GraphicsDataCacheBase::CacheElementWidth;
+      std::array<AudacityWaveformSegment, CacheWidth * 2> segments{};
+      auto elementFirstPixel =
+         zoomInfo.TimeToPosition(from) - static_cast<int64_t>(it.GetLeftOffset());
+      auto drawX = targetRect.x + leftOffset;
+      const auto minValue = static_cast<float>(params.Min);
+      const auto maxValue = static_cast<float>(params.Max);
+      if (params.Height <= 0 || !(maxValue > minValue))
+         return false;
+
+      const auto rowFromValue = [&](float value) {
+         value = (maxValue - value) / (maxValue - minValue);
+         return static_cast<int>(value * (params.Height - 1) + 0.5f);
+      };
+      const auto toLinear = [](uint8_t value) {
+         const auto srgb = static_cast<float>(value) / 255.0f;
+         return srgb <= 0.04045f ? srgb / 12.92f :
+            static_cast<float>(std::pow((srgb + 0.055f) / 1.055f, 2.4f));
+      };
+      const auto makeSegment = [&](float x, float y0, float y1, graphics::Color color) {
+         return AudacityWaveformSegment{
+            x, static_cast<float>(targetRect.y) + y0,
+            x, static_cast<float>(targetRect.y) + y1,
+            1.0f,
+            toLinear(color.GetRed()),
+            toLinear(color.GetGreen()),
+            toLinear(color.GetBlue()),
+            static_cast<float>(color.GetAlpha()) / 255.0f
+         };
+      };
+      const auto remapDB = [&](float value) {
+         const auto sign = value >= 0.0f ? 1.0f : -1.0f;
+         if (value == 0.0f)
+            return value;
+         value = static_cast<float>(
+            (LINEAR_TO_DB(std::fabs(value)) + params.DBRange) / params.DBRange);
+         if (value < 0.0f)
+            value = 0.0f;
+         return value * sign;
+      };
+
+      std::array<double, CacheWidth> envelopeValues{};
+      const auto* envelope = params.AttachedEnvelope;
+      const bool applyEnvelope = envelope != nullptr &&
+         (envelope->GetNumberOfPoints() > 0 || envelope->GetDefaultValue() != 1.0);
+
+      for (; it != range.end(); ++it) {
+         const auto left = it.GetLeftOffset();
+         const auto right = it.GetRightOffset();
+         const auto firstColumn = left;
+         const auto lastColumn = std::min<size_t>(
+            CacheWidth - right, it->AvailableColumns);
+         const auto visibleWidth = CacheWidth - left - right;
+
+         if (applyEnvelope) {
+            envelope->GetValues(
+               envelopeValues.data(),
+               static_cast<int>(envelopeValues.size()),
+               static_cast<double>(elementFirstPixel) / zoomInfo.GetZoom() + envelope->GetOffset(),
+               1.0 / zoomInfo.GetZoom());
+         }
+
+         size_t outputCount = 0;
+         for (auto columnIndex = firstColumn; columnIndex < lastColumn; ++columnIndex) {
+            auto column = it->Data[columnIndex];
+            if (params.DBScale) {
+               column.min = remapDB(column.min);
+               column.max = remapDB(column.max);
+               column.rms = remapDB(column.rms);
+            }
+            const auto envelopeValue = applyEnvelope
+               ? static_cast<float>(envelopeValues[columnIndex])
+               : 1.0f;
+            column.min *= envelopeValue;
+            column.max *= envelopeValue;
+            column.rms *= envelopeValue;
+
+            const auto pixel = elementFirstPixel + static_cast<int64_t>(columnIndex);
+            const bool selected = pixel >= selectedFirstPixel && pixel < selectedLastPixel;
+            const auto x = static_cast<float>(drawX + static_cast<int>(columnIndex - left)) + 0.5f;
+
+            if (!std::isfinite(column.min) || !std::isfinite(column.max))
+               continue;
+
+            const auto sampleColor = selected
+               ? params.SampleColors.Selected : params.SampleColors.Normal;
+            if (params.ShowClipping && (column.min <= -MAX_AUDIO || column.max >= MAX_AUDIO)) {
+               const auto clippingColor = selected
+                  ? params.ClippingColors.Selected : params.ClippingColors.Normal;
+               segments[outputCount++] = makeSegment(
+                  x, 0.0f, static_cast<float>(params.Height - 1), clippingColor);
+               continue;
+            }
+
+            segments[outputCount++] = makeSegment(
+               x,
+               static_cast<float>(rowFromValue(column.max)),
+               static_cast<float>(rowFromValue(column.min)),
+               sampleColor);
+
+            if (params.ShowRMS && std::isfinite(column.rms)) {
+               const auto rmsPositive = rowFromValue(std::min(column.rms, column.max));
+               const auto rmsNegative = rowFromValue(std::max(-column.rms, column.min));
+               if (rmsNegative >= rmsPositive) {
+                  const auto rmsColor = selected
+                     ? params.RMSColors.Selected : params.RMSColors.Normal;
+                  segments[outputCount++] = makeSegment(
+                     x, static_cast<float>(rmsPositive),
+                     static_cast<float>(rmsNegative), rmsColor);
+               }
+            }
+         }
+
+         if (outputCount > 0 && !view.Draw(
+                dc, clip, segments.data(), outputCount))
+            return false;
+
+         elementFirstPixel += CacheWidth;
+         drawX += static_cast<int>(visibleWidth);
+      }
+      return true;
+   }
+#endif
+
    void SwapChannels() override
    {
       //Wave data cache captures channel index which becomes
@@ -382,9 +542,28 @@ void DrawWaveform(
       artist->pSelectedRegion->t1() - sequenceStartTime,
       SyncLock::IsSelectedOrSyncLockSelected(track));
 
-   clipPainter.Draw(
-      channelIndex, context.dc, paintParameters, zoomInfo, rect, leftOffset,
-      t0 + trimLeft, t1 + trimLeft);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool alicornDrawn = false;
+   if (auto* view = artist->parent->GetAlicornWaveformView()) {
+      const auto* selected = artist->pSelectedRegion;
+      const auto selectedRangeActive =
+         selected && SyncLock::IsSelectedOrSyncLockSelected(track);
+      const auto selectedFirst = selectedRangeActive
+         ? zoomInfo.TimeToPosition(selected->t0() - sequenceStartTime)
+         : int64_t(-1);
+      const auto selectedLast = selectedRangeActive
+         ? std::max(zoomInfo.TimeToPosition(selected->t1() - sequenceStartTime), selectedFirst + 1)
+         : int64_t(-1);
+      alicornDrawn = clipPainter.DrawAlicorn(
+         channelIndex, *view, context.dc, rect, paintParameters, zoomInfo, rect,
+         leftOffset, t0 + trimLeft, t1 + trimLeft,
+         selectedFirst, selectedLast);
+   }
+   if (!alicornDrawn)
+#endif
+      clipPainter.Draw(
+         channelIndex, context.dc, paintParameters, zoomInfo, rect, leftOffset,
+         t0 + trimLeft, t1 + trimLeft);
 }
 
 

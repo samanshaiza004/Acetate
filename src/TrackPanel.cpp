@@ -45,6 +45,9 @@ is time to refresh some aspect of the screen.
 
 
 #include "TrackPanel.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "AlicornWaveformView.h"
+#endif
 #include "TrackPanelConstants.h"
 
 #include <wx/setup.h> // for wxUSE_* macros
@@ -371,6 +374,17 @@ void TrackPanel::UpdatePrefs()
 
 /// Gets the pointer to the AudacityProject that
 /// goes with this track panel.
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+AlicornWaveformView *TrackPanel::GetAlicornWaveformView()
+{
+   if (!mAlicornWaveformView)
+      mAlicornWaveformView = std::make_unique<AlicornWaveformView>(GetClientSize());
+   if (!mAlicornWaveformView->IsReady() || !mAlicornWaveformView->Resize(GetClientSize()))
+      return nullptr;
+   return mAlicornWaveformView.get();
+}
+#endif
+
 AudacityProject * TrackPanel::GetProject() const
 {
    auto window = GetParent();

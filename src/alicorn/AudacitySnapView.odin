@@ -125,6 +125,7 @@ snap_shape_kind :: proc(kind: alicorn.Surface_Shape_Kind) -> u32 {
 	case .Line: return AUDACITY_SNAP_SHAPE_LINE
 	case .Rounded_Rectangle_Per_Corner: return AUDACITY_SNAP_SHAPE_PER_CORNER_ROUNDED_RECTANGLE
 	case .Connected_Tab: return AUDACITY_SNAP_SHAPE_CONNECTED_TAB
+	case .Circle, .Arc, .Cubic_Bezier: return 0
 	}
 	return 0
 }
