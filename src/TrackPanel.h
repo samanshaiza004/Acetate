@@ -86,6 +86,7 @@ class AUDACITY_DLL_API TrackPanel final
 
    void OnPaint(wxPaintEvent & event);
    void OnMouseEvent(wxMouseEvent & event);
+   void OnMouseCaptureLost(wxMouseCaptureLostEvent & event);
    void OnKeyDown(wxKeyEvent & event);
 
    void OnTrackListResizing(const TrackListEvent &event);

@@ -177,6 +177,7 @@ template < class A, class B, class DIST > bool within(A a, B b, DIST d)
 
 BEGIN_EVENT_TABLE(TrackPanel, CellularPanel)
     EVT_MOUSE_EVENTS(TrackPanel::OnMouseEvent)
+    EVT_MOUSE_CAPTURE_LOST(TrackPanel::OnMouseCaptureLost)
     EVT_KEY_DOWN(TrackPanel::OnKeyDown)
 
     EVT_PAINT(TrackPanel::OnPaint)
@@ -765,15 +766,48 @@ void TrackPanel::OnMouseEvent(wxMouseEvent & event)
    }
 
    if (event.MiddleDown()) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto* view = GetAlicornTimelineView()) {
+         AudacityWaveformSelection gesture{};
+         view->Pointer(
+            AUDACITY_SNAP_POINTER_DOWN,
+            static_cast<float>(event.GetX()),
+            static_cast<float>(event.GetY()),
+            AUDACITY_SNAP_BUTTON_MIDDLE,
+            gesture);
+      }
+#endif
       mIsPanning = true;
       mLastPanX = event.GetX();
       CaptureMouse();
    }
    else if (event.MiddleUp()) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto* view = GetAlicornTimelineView()) {
+         AudacityWaveformSelection gesture{};
+         view->Pointer(
+            AUDACITY_SNAP_POINTER_UP,
+            static_cast<float>(event.GetX()),
+            static_cast<float>(event.GetY()),
+            AUDACITY_SNAP_BUTTON_MIDDLE,
+            gesture);
+      }
+#endif
       mIsPanning = false;
       ReleaseMouse();
    }
    else if (event.Dragging() && mIsPanning) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto* view = GetAlicornTimelineView()) {
+         AudacityWaveformSelection gesture{};
+         view->Pointer(
+            AUDACITY_SNAP_POINTER_MOVE,
+            static_cast<float>(event.GetX()),
+            static_cast<float>(event.GetY()),
+            AUDACITY_SNAP_BUTTON_MIDDLE,
+            gesture);
+      }
+#endif
       int dx = event.GetX() - mLastPanX;
       mLastPanX = event.GetX();
 
@@ -794,6 +828,26 @@ void TrackPanel::OnMouseEvent(wxMouseEvent & event)
    }
 
    // Must also fall through to base class handler
+   event.Skip();
+}
+
+void TrackPanel::OnMouseCaptureLost(wxMouseCaptureLostEvent &event)
+{
+   if (mIsPanning) {
+      mIsPanning = false;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto *project = GetProject()) {
+         auto &window = ProjectWindow::Get(*project);
+         if (auto *view = window.FindAlicornTimelineView()) {
+            AudacityWaveformSelection gesture{};
+            view->Pointer(
+               AUDACITY_SNAP_POINTER_CANCEL, 0.0f, 0.0f, 0, gesture);
+         }
+      }
+#endif
+   }
+
+   // Preserve CellularPanel's UI-handle cleanup for other captured gestures.
    event.Skip();
 }
 

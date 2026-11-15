@@ -59,6 +59,8 @@ Timeline_View :: struct {
 	callback_active: bool,
 	selection_drag_active: bool,
 	selection_anchor_x, selection_current_x: f32,
+	pan_drag_active: bool,
+	pan_anchor_x, pan_current_x: f32,
 	ruler_drag_active: bool,
 	ruler_anchor_x, ruler_current_x: f32,
 }
@@ -312,19 +314,38 @@ timeline_view_pointer_callback :: proc(
 	if view == nil || rt == nil { return }
 	switch event.kind {
 	case .Down:
-		if target != view.waveform_geometry_id || event.button != alicorn.POINTER_BUTTON_PRIMARY { return }
-		view.selection_drag_active = true
-		view.selection_anchor_x = event.x
-		view.selection_current_x = event.x
+		if event.button == alicorn.POINTER_BUTTON_PRIMARY {
+			view.pan_drag_active = false
+			view.selection_drag_active = target == view.waveform_geometry_id
+			if !view.selection_drag_active { return }
+			view.selection_anchor_x = event.x
+			view.selection_current_x = event.x
+		} else if event.button == alicorn.POINTER_BUTTON_MIDDLE {
+			view.selection_drag_active = false
+			view.pan_drag_active = target == view.waveform_geometry_id
+			if !view.pan_drag_active { return }
+			view.pan_anchor_x = event.x
+			view.pan_current_x = event.x
+		}
 	case .Move:
-		if view.selection_drag_active { view.selection_current_x = event.x }
+		if view.selection_drag_active && event.button == alicorn.POINTER_BUTTON_PRIMARY {
+			view.selection_current_x = event.x
+		}
+		if view.pan_drag_active && event.button == alicorn.POINTER_BUTTON_MIDDLE {
+			view.pan_current_x = event.x
+		}
 	case .Up:
-		if view.selection_drag_active {
+		if view.selection_drag_active && event.button == alicorn.POINTER_BUTTON_PRIMARY {
 			view.selection_current_x = event.x
 			view.selection_drag_active = false
 		}
+		if view.pan_drag_active && event.button == alicorn.POINTER_BUTTON_MIDDLE {
+			view.pan_current_x = event.x
+			view.pan_drag_active = false
+		}
 	case .Cancel:
 		view.selection_drag_active = false
+		view.pan_drag_active = false
 	}
 }
 
@@ -376,7 +397,11 @@ audacity_alicorn_timeline_view_pointer :: proc "c" (
 	case 3: pointer_kind = .Cancel
 	case: return -1
 	}
-	if (kind == 1 || kind == 2) && button != alicorn.POINTER_BUTTON_PRIMARY { return 0 }
+	if (kind == 1 || kind == 2) &&
+	   button != alicorn.POINTER_BUTTON_PRIMARY &&
+	   button != alicorn.POINTER_BUTTON_MIDDLE {
+		return 0
+	}
 	event := alicorn.Pointer_Event{
 		kind=pointer_kind,
 		x=x,
@@ -384,6 +409,9 @@ audacity_alicorn_timeline_view_pointer :: proc "c" (
 		button=int(button),
 	}
 	was_active := view.selection_drag_active
+	if button == alicorn.POINTER_BUTTON_MIDDLE {
+		was_active = view.pan_drag_active
+	}
 	target := alicorn.process_pointer(&view.runtime, event)
 	_ = alicorn.application_dispatch_pointer(
 		&view.runtime,
@@ -393,20 +421,30 @@ audacity_alicorn_timeline_view_pointer :: proc "c" (
 		target,
 	)
 	phase: u32 = 0
+	active := view.selection_drag_active
+	if button == alicorn.POINTER_BUTTON_MIDDLE {
+		active = view.pan_drag_active
+	}
 	switch kind {
 	case 1:
-		if view.selection_drag_active { phase = 1 }
+		if active { phase = 1 }
 	case 0:
-		if view.selection_drag_active { phase = 2 }
+		if active { phase = 2 }
 	case 2:
 		if was_active { phase = 3 }
 	case 3:
 		if was_active { phase = 4 }
 	}
+	anchor_x := view.selection_anchor_x
+	current_x := view.selection_current_x
+	if view.pan_drag_active || button == alicorn.POINTER_BUTTON_MIDDLE {
+		anchor_x = view.pan_anchor_x
+		current_x = view.pan_current_x
+	}
 	selection^ = AudacityWaveformSelection{
 		phase=phase,
-		anchor_x=view.selection_anchor_x,
-		current_x=view.selection_current_x,
+		anchor_x=anchor_x,
+		current_x=current_x,
 	}
 	return i32(phase)
 }
