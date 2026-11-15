@@ -24,7 +24,7 @@ The MVP target is: open one mono/stereo file, display a waveform and time ruler,
 6. Never save an unsupported project representation in a way that drops data. Route unsupported project content to the complete Audacity workspace.
 7. Preserve the Alicorn revision pin. If a temporary pin change is necessary for a local build, restore it before committing and record the actual tested revision.
 8. Don't add or run tests unless the task explicitly asks for tests. Build/compile checks are appropriate for implementation validation; report exactly what ran and its result.
-9. Before filing Alicorn issues, check existing issues, especially #196 (completed host-owned Runtime API), #162 (renderer-neutral presentation), #164 (custom GPU canvas/waveform), and #204 (swapchain-safe presenter failure recovery). File only concrete missing capabilities that are not already tracked.
+9. Before filing Alicorn issues, check existing issues, especially #196 (completed host-owned Runtime API), #162 (completed renderer-neutral presentation), #164 (completed retained-geometry/cache experiment; concluded no new GPU-canvas API is needed), and #204 (swapchain-safe presenter failure recovery). File only concrete missing capabilities that are not already tracked.
 10. Keep application changes in Acetate. Do not push changes to Audacity upstream or the original Audacity repository.
 
 ## Coordination
