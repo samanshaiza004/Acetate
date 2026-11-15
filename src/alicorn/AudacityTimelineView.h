@@ -83,9 +83,14 @@ int32_t audacity_alicorn_timeline_view_paint_waveform(
    AudacityAlicornTimelineView* view,
    AudacityWaveformPaintCallback callback,
    void* context);
+/* Base ruler paint excludes the transient overlay geometry below. */
 int32_t audacity_alicorn_timeline_view_paint_ruler(
    AudacityAlicornTimelineView* view,
    AudacityRulerDrawCallback draw_callback,
+   AudacityWaveformPaintCallback geometry_callback,
+   void* context);
+int32_t audacity_alicorn_timeline_view_paint_ruler_overlay(
+   AudacityAlicornTimelineView* view,
    AudacityWaveformPaintCallback geometry_callback,
    void* context);
 

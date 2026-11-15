@@ -843,8 +843,7 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 			draw_callback(callback_context, &output)
 			delivered += 1
 		case alicorn.Geometry_Paint:
-			if command.owner != view.ruler_geometry_id &&
-			   command.owner != view.ruler_overlay_geometry_id { continue }
+			if command.owner != view.ruler_geometry_id { continue }
 			geometry, geometry_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, payload.geometry)
 			if !geometry_ok || (len(geometry.rectangles) == 0 && len(geometry.segments) == 0) { continue }
 			output_rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]AudacityWaveformRectangle
@@ -897,6 +896,61 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 		case:
 			continue
 		}
+	}
+	view.callback_active = false
+	return delivered
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_paint_ruler_overlay")
+audacity_alicorn_timeline_view_paint_ruler_overlay :: proc "c" (
+	opaque_view: rawptr,
+	geometry_callback: AudacityWaveformPaintCallback,
+	callback_context: rawptr,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) || geometry_callback == nil { return -1 }
+	display, ok := alicorn.paint_display_list(&view.runtime)
+	if !ok { return -1 }
+
+	view.callback_active = true
+	delivered := i32(0)
+	for command in display.commands {
+		if command.owner != view.ruler_overlay_geometry_id { continue }
+		geometry, geometry_ok := command.payload.(alicorn.Geometry_Paint)
+		if !geometry_ok { continue }
+		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
+		if !payload_ok { continue }
+		if len(payload.rectangles) != 0 || len(payload.segments) > 1 {
+			view.callback_active = false
+			return -1
+		}
+		if len(payload.segments) == 0 { continue }
+
+		segment := payload.segments[0]
+		output := AudacityWaveformSegment{
+			x0=segment.start.x,
+			y0=segment.start.y,
+			x1=segment.end.x,
+			y1=segment.end.y,
+			thickness=segment.thickness,
+			r=segment.color.r,
+			g=segment.color.g,
+			b=segment.color.b,
+			a=segment.color.a,
+		}
+		geometry_callback(
+			callback_context,
+			nil,
+			0,
+			&output,
+			1,
+			snap_rect(command.bounds),
+			snap_rect(command.clip),
+			command.translation[0],
+			command.translation[1],
+		)
+		delivered += 1
 	}
 	view.callback_active = false
 	return delivered

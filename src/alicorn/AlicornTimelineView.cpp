@@ -322,9 +322,7 @@ bool AlicornTimelineView::DrawVerticalIndicator(
 bool AlicornTimelineView::DrawRulerIndicator(
    wxDC& dc, const wxRect& clip, int x, const wxColour& color)
 {
-   if (!mView || !ResizeRuler(dc.GetSize()) || mRulerNeedsUpdate ||
-       !mLastSnapshot || !mHasRulerFills ||
-       mLastRulerFillCount > mLastRulerFills.size())
+   if (!mView || !ResizeRuler(dc.GetSize()))
       return false;
 
    const auto rect = clip.Intersect(wxRect{wxPoint{0, 0}, dc.GetSize()});
@@ -352,12 +350,14 @@ bool AlicornTimelineView::DrawRulerIndicator(
           mView, linePointer) < 0)
       return false;
 
-   return DrawRuler(
-      dc,
-      rect,
-      *mLastSnapshot,
-      mLastRulerFills.data(),
-      mLastRulerFillCount);
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = rect;
+   return audacity_alicorn_timeline_view_paint_ruler_overlay(
+      mView, &DrawGeometry, &context) >= 0;
 }
 
 bool AlicornTimelineView::UpdateRuler(
