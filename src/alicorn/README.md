@@ -101,12 +101,15 @@ lifecycle for a host-owned event loop, and `Sdl_GPU_Presenter`, which consumes
 retained paint commands through a host-owned SDL_GPU command buffer and target.
 Hosted_Runtime covers input delivery, resize/DPI, one-shot deadlines, worker
 wakes, accessibility snapshots/actions, frame acknowledgement, and ordered
-teardown. Acetate now uses it for the single-surface Snap checkbox: wx still
-owns the window and event loop, and synchronously presents the checkbox's
-retained commands through `wxGraphicsContext`. This is a narrow lifecycle
-adoption, not proof of SDL surface interoperation or GPU presentation. The
-timeline still uses its existing runtime wrapper, and Acetate has not adopted
-`Sdl_GPU_Presenter`.
+teardown. Acetate uses it for the Snap checkbox and individual action controls,
+each hosted on its own wx surface. wx still owns the windows and event loop,
+forwards the native input and resize calls, and synchronously presents retained
+commands through `wxGraphicsContext`. This is a lifecycle adoption, not proof
+of SDL surface interoperation or GPU presentation. The combined ruler/waveform
+timeline still uses its existing runtime wrapper because it paints to two
+separate wx surfaces and needs a coordinated presentation acknowledgement.
+This multi-surface acknowledgement gap is tracked in Alicorn [#205](https://github.com/samanshaiza004/alicorn/issues/205).
+Acetate has not adopted `Sdl_GPU_Presenter`.
 
 Alicorn #196, which introduced the host-owned Runtime API, is complete. The
 remaining wx surface and renderer validation belongs to Acetate integration

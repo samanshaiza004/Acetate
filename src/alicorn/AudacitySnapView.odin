@@ -496,15 +496,18 @@ audacity_alicorn_snap_view_paint :: proc "c" (
 }
 
 Action_View :: struct {
-	runtime: alicorn.Runtime,
+	hosted: alicorn.Hosted_Runtime,
 	button_id: alicorn.Node_ID,
 	icon_node_id: alicorn.Node_ID,
+	width, height: int,
 	label: string,
 	icon_id: alicorn.Icon_ID,
 	paint_icon_id: u32,
 	last_enabled: bool,
 	last_pressed: bool,
 	state_initialized: bool,
+	pending_activation: bool,
+	fonts_initialized: bool,
 	callback_active: bool,
 	runtime_initialized: bool,
 }
@@ -513,23 +516,24 @@ valid_action_view :: proc(view: ^Action_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
 }
 
-action_view_build_description :: proc(view: ^Action_View, enabled, pressed: bool) -> (built, activated: bool) {
-	ui, should_build := alicorn.begin_frame(&view.runtime)
-	if !should_build { return false, false }
-
-	viewport := alicorn.viewport_bounds(&view.runtime)
-	root_style := alicorn.layout_style(.Row, width=viewport.w, height=viewport.h, padding=2, align=.Center)
+action_view_build_description :: proc(
+	view: ^Action_View,
+	ui: ^alicorn.UI,
+	width, height: int,
+	enabled, pressed: bool,
+) -> (built, activated: bool) {
+	root_style := alicorn.layout_style(.Row, width=f32(width), height=f32(height), padding=2, align=.Center)
 	_ = alicorn.container_begin(
-		&ui,
-		.Root,
+		ui,
+		.Container,
 		key=alicorn.key_string("audacity-alicorn-action-root"),
 		style=root_style,
 	)
-	button_style := alicorn.layout_style(.Row, width=max(0.0, viewport.w-4), height=max(0.0, viewport.h-4), align=.Center, justify=.Center)
+	button_style := alicorn.layout_style(.Row, width=max(0.0, f32(width)-4), height=max(0.0, f32(height)-4), align=.Center, justify=.Center)
 	icon_size := f32(16)
 	show_icon_label := view.paint_icon_id == AUDACITY_SNAP_ICON_AUDIO_SETUP
 	if show_icon_label {
-		button_style = alicorn.layout_style(.Column, width=max(0.0, viewport.w-4), height=max(0.0, viewport.h-4), align=.Center, justify=.Center, gap=1)
+		button_style = alicorn.layout_style(.Column, width=max(0.0, f32(width)-4), height=max(0.0, f32(height)-4), align=.Center, justify=.Center, gap=1)
 		icon_size = 24
 	} else if view.paint_icon_id >= AUDACITY_SNAP_ICON_CUT {
 		icon_size = 20
@@ -537,7 +541,7 @@ action_view_build_description :: proc(view: ^Action_View, enabled, pressed: bool
 	view.icon_node_id = 0
 	if view.icon_id != .None {
 		button_id, button_activated := alicorn.button_begin(
-			&ui,
+			ui,
 			"",
 			key=alicorn.key_string("audacity-alicorn-action-button"),
 			style=button_style,
@@ -552,30 +556,69 @@ action_view_build_description :: proc(view: ^Action_View, enabled, pressed: bool
 			if pressed { states = alicorn.semantic_states_add(states, .Selected) }
 			if !enabled { states = alicorn.semantic_states_add(states, .Disabled) }
 			if enabled { actions = alicorn.semantic_actions_add(actions, .Press) }
-			_ = alicorn.semantic_description(&ui, .Button, view.label, states=states, actions=actions)
-			view.icon_node_id = alicorn.icon(&ui, view.icon_id, key=alicorn.key_string("audacity-alicorn-action-icon"), size=icon_size, color_role=.Text)
+			_ = alicorn.semantic_description(ui, .Button, view.label, states=states, actions=actions)
+			view.icon_node_id = alicorn.icon(ui, view.icon_id, key=alicorn.key_string("audacity-alicorn-action-icon"), size=icon_size, color_role=.Text)
 			if show_icon_label {
-				_ = alicorn.text(&ui, view.label, key=alicorn.key_string("audacity-alicorn-action-label"))
+				_ = alicorn.text(ui, view.label, key=alicorn.key_string("audacity-alicorn-action-label"))
 			}
-			alicorn.button_end(&ui)
+			alicorn.button_end(ui)
 		}
 	} else {
 		activated = alicorn.button(
-			&ui,
+			ui,
 			view.label,
 			key=alicorn.key_string("audacity-alicorn-action-button"),
 			style=button_style,
 			state=alicorn.Button_State{selected=pressed, disabled=!enabled},
 		)
 	}
-	alicorn.container_end(&ui)
-	alicorn.end_frame(&ui)
+	alicorn.container_end(ui)
+	return true, activated
+}
+
+action_view_render :: proc(
+	state: rawptr,
+	ui: ^alicorn.UI,
+	logical_width, logical_height: int,
+	dpi_scale: f32,
+) {
+	view := transmute(^Action_View)state
+	if view == nil || ui == nil { return }
+	_ = dpi_scale
+	_, activated := action_view_build_description(
+		view,
+		ui,
+		logical_width,
+		logical_height,
+		view.last_enabled,
+		view.last_pressed,
+	)
+	view.pending_activation = view.pending_activation || activated
+}
+
+action_view_post_wake :: proc(data: rawptr) -> bool {
+	_ = data
+	return false
+}
+
+action_view_initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
+	view := transmute(^Action_View)state
+	if view != nil && rt != nil {
+		view.fonts_initialized = alicorn.text_engine_load_default_fonts(rt)
+	}
+}
+
+action_view_step :: proc(view: ^Action_View) -> (result: alicorn.Hosted_Step_Result) {
+	result = alicorn.hosted_runtime_step(&view.hosted, snap_view_now_ns())
+	if result.status != .Ok { return }
+	rt, status := alicorn.hosted_runtime_borrow(&view.hosted)
+	if status != .Ok { result.status = status; return }
 	view.button_id, _ = alicorn.node_by_key(
-		&view.runtime,
+		rt,
 		alicorn.key_string("audacity-alicorn-action-button"),
 		.Button,
 	)
-	return true, activated
+	return
 }
 
 @(export, link_name="audacity_alicorn_action_view_create")
@@ -670,16 +713,33 @@ audacity_alicorn_action_view_create :: proc "c" (
 	if clone_error != nil { return nil }
 
 	view := new(Action_View)
-	view.runtime = alicorn.new_runtime(alicorn.Rect{0, 0, width, height})
-	view.runtime_initialized = true
+	view.width, view.height = int(width), int(height)
 	view.label = owned_label
 	view.icon_id = icon
 	view.paint_icon_id = paint_icon_id
 	view.last_enabled = enabled != 0
 	view.last_pressed = pressed != 0
 	view.state_initialized = true
-	if !alicorn.text_engine_load_default_fonts(&view.runtime) {
-		alicorn.destroy_runtime(&view.runtime)
+	status := alicorn.hosted_runtime_init(&view.hosted, alicorn.Hosted_Runtime_Config{
+		state=rawptr(view),
+		logical_width=view.width,
+		logical_height=view.height,
+		pixel_width=view.width,
+		pixel_height=view.height,
+		dpi_scale=1,
+		render=action_view_render,
+		on_initialize=action_view_initialize,
+		post_wake=action_view_post_wake,
+	})
+	if status != .Ok {
+		delete(view.label, context.allocator)
+		free(view)
+		return nil
+	}
+	view.runtime_initialized = true
+	result := action_view_step(view)
+	if !view.fonts_initialized || result.status != .Ok || view.button_id == 0 {
+		_ = alicorn.hosted_runtime_destroy(&view.hosted)
 		view.runtime_initialized = false
 		delete(view.label, context.allocator)
 		free(view)
@@ -720,7 +780,7 @@ audacity_alicorn_action_view_destroy :: proc "c" (opaque_view: rawptr) {
 	view := transmute(^Action_View)opaque_view
 	if view.callback_active { return }
 	if view.runtime_initialized {
-		alicorn.destroy_runtime(&view.runtime)
+		if alicorn.hosted_runtime_destroy(&view.hosted) != .Ok { return }
 		view.runtime_initialized = false
 	}
 	delete(view.label, context.allocator)
@@ -734,9 +794,19 @@ audacity_alicorn_action_view_resize :: proc "c" (opaque_view: rawptr, width, hei
 	if !valid_action_view(view) || !alicorn.number_is_finite(width) || !alicorn.number_is_finite(height) || width < 0 || height < 0 {
 		return -1
 	}
-	previous := alicorn.viewport_bounds(&view.runtime)
-	if previous.x == 0 && previous.y == 0 && previous.w == width && previous.h == height { return 0 }
-	return 1 if alicorn.runtime_set_viewport(&view.runtime, alicorn.Rect{0, 0, width, height}) else -1
+	logical_width, logical_height := int(width), int(height)
+	if view.width == logical_width && view.height == logical_height { return 0 }
+	status := alicorn.hosted_runtime_resize(
+		&view.hosted,
+		logical_width,
+		logical_height,
+		logical_width,
+		logical_height,
+		1,
+	)
+	if status != .Ok { return -1 }
+	view.width, view.height = logical_width, logical_height
+	return 1 if action_view_step(view).status == .Ok else -1
 }
 
 @(export, link_name="audacity_alicorn_action_view_pointer")
@@ -757,12 +827,13 @@ audacity_alicorn_action_view_pointer :: proc "c" (
 	case AUDACITY_SNAP_POINTER_CANCEL: pointer_kind = .Cancel
 	case: return -1
 	}
-	target := alicorn.process_pointer(&view.runtime, alicorn.Pointer_Event{
+	target, status := alicorn.hosted_runtime_pointer(&view.hosted, alicorn.Pointer_Event{
 		kind=pointer_kind,
 		x=x,
 		y=y,
 		button=int(button),
 	})
+	if status != .Ok || action_view_step(view).status != .Ok { return -1 }
 	return 1 if target != 0 && target == view.button_id else 0
 }
 
@@ -773,13 +844,23 @@ audacity_alicorn_action_view_key :: proc "c" (opaque_view: rawptr, key: u32) -> 
 	if !valid_action_view(view) { return -1 }
 	switch key {
 	case AUDACITY_SNAP_KEY_TAB:
-		return 1 if alicorn.application_dispatch_tab_focus(&view.runtime, false) else 0
+		focused, status := alicorn.hosted_runtime_focus_traverse(&view.hosted, .Next)
+		if status != .Ok || action_view_step(view).status != .Ok { return -1 }
+		return 1 if focused != 0 else 0
 	case AUDACITY_SNAP_KEY_SHIFT_TAB:
-		return 1 if alicorn.application_dispatch_tab_focus(&view.runtime, true) else 0
+		focused, status := alicorn.hosted_runtime_focus_traverse(&view.hosted, .Previous)
+		if status != .Ok || action_view_step(view).status != .Ok { return -1 }
+		return 1 if focused != 0 else 0
 	case AUDACITY_SNAP_KEY_SPACE:
-		return 1 if alicorn.application_route_focused_control_key(&view.runtime, .Toggle) else 0
+		activated, status := alicorn.hosted_runtime_activate(&view.hosted, .Space)
+		if status != .Ok || action_view_step(view).status != .Ok { return -1 }
+		view.pending_activation = view.pending_activation || activated
+		return 1 if activated else 0
 	case AUDACITY_SNAP_KEY_ACTIVATE:
-		return 1 if alicorn.application_route_focused_control_key(&view.runtime, .Return) else 0
+		activated, status := alicorn.hosted_runtime_activate(&view.hosted, .Enter)
+		if status != .Ok || action_view_step(view).status != .Ok { return -1 }
+		view.pending_activation = view.pending_activation || activated
+		return 1 if activated else 0
 	case:
 		return -1
 	}
@@ -797,21 +878,19 @@ audacity_alicorn_action_view_update :: proc "c" (
 	enabled_value, pressed_value := enabled != 0, pressed != 0
 	if out_activated != nil { out_activated^ = 0 }
 	if view.state_initialized && (view.last_enabled != enabled_value || view.last_pressed != pressed_value) {
-		alicorn.invalidate_root(&view.runtime, "Audacity action button state changed")
+		rt, status := alicorn.hosted_runtime_borrow(&view.hosted)
+		if status != .Ok { return -1 }
+		alicorn.invalidate_root(rt, "Audacity action button state changed")
 	}
 	view.last_enabled, view.last_pressed = enabled_value, pressed_value
 	view.state_initialized = true
-	built, activated := action_view_build_description(view, enabled_value, pressed_value)
-	if built {
-		if activated && out_activated != nil { out_activated^ = 1 }
-		return 1
+	result := action_view_step(view)
+	if result.status != .Ok { return -1 }
+	if view.pending_activation {
+		if out_activated != nil { out_activated^ = 1 }
+		view.pending_activation = false
 	}
-	ui, ready := alicorn.begin_presentation_frame(&view.runtime)
-	if ready {
-		alicorn.end_presentation_frame(&ui)
-		return 1
-	}
-	return 0
+	return 1 if result.description_built || result.render_required else 0
 }
 
 @(export, link_name="audacity_alicorn_action_view_paint")
@@ -823,11 +902,13 @@ audacity_alicorn_action_view_paint :: proc "c" (
 	context = odin_runtime.default_context()
 	view := transmute(^Action_View)opaque_view
 	if !valid_action_view(view) || callback == nil { return -1 }
-	display, ok := alicorn.paint_display_list(&view.runtime)
-	if !ok { return -1 }
+	display, status := alicorn.hosted_runtime_display_commands(&view.hosted)
+	if status != .Ok { return -1 }
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&view.hosted)
+	if borrow_status != .Ok { return -1 }
 	view.callback_active = true
 	delivered := i32(0)
-	for retained in display.commands {
+	for retained in display {
 		if retained.owner != view.button_id && retained.owner != view.icon_node_id { continue }
 		output := AudacitySnapDrawCommand{}
 		switch payload in retained.payload {
@@ -845,7 +926,7 @@ audacity_alicorn_action_view_paint :: proc "c" (
 			output.icon_id = view.paint_icon_id
 			output.fill = snap_color(payload.color)
 		case alicorn.Text_Paint:
-			run, run_ok := alicorn.paint_text_run_resolve(&view.runtime, payload.run)
+			run, run_ok := alicorn.paint_text_run_resolve(rt, payload.run)
 			if !run_ok { continue }
 			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_TEXT)
 			output.text_color = snap_color(payload.color)
@@ -860,5 +941,6 @@ audacity_alicorn_action_view_paint :: proc "c" (
 		delivered += 1
 	}
 	view.callback_active = false
+	if alicorn.hosted_runtime_frame_submission_succeeded(&view.hosted) != .Ok { return -1 }
 	return delivered
 }
