@@ -25,11 +25,13 @@ retained geometry surface. Fill runs use bounded first-class rectangles rather
 than thin-line encoding; Alicorn owns and validates the complete paint payload
 and keeps it within one vertex budget. At high zoom, connected sample lines
 and clipping marks also use retained geometry while draggable sample points
-remain hidden. The C++ paint callback still presents that geometry through wx
+remain hidden. High-zoom waveform background, envelope, and selection fills
+also use bounded retained rectangles when the complete batch fits; the zero
+line remains a wx overlay. The C++ paint callback still presents that geometry through wx
 `wxGraphicsContext`, so this is not yet a renderer migration. wx remains the
-fallback for sync-lock patterns, envelope highlighting, draggable high-zoom
-sample points, and geometry batches that exceed the surface budget or cannot
-be submitted. Dense sample markers stay on wx because the pinned filled-circle
+fallback for sync-lock patterns, draggable high-zoom sample points, and
+geometry batches that exceed the surface budget or cannot be submitted.
+Dense sample markers stay on wx because the pinned filled-circle
 primitive uses 48 vertices per point; at ordinary sample-edit view widths, all
 visible markers plus waveform segments exceed the 8,192-vertex surface budget.
 Alicorn #201 tracks a compact bounded marker path. The rectangle payload closes

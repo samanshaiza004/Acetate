@@ -654,7 +654,8 @@ void DrawWaveformBackground(
    double t0,
    double t1,
    bool bIsSyncLockSelected,
-   bool highlightEnvelope);
+   bool highlightEnvelope,
+   bool tryAlicorn = false);
 
 void DrawWaveform(
    TrackPanelDrawingContext& context, const WaveTrack& track, const WaveChannelInterval& channelInterval,
@@ -778,7 +779,8 @@ void DrawWaveformBackground(TrackPanelDrawingContext &context,
                                          bool dB, float dBRange,
                                          double t0, double t1,
                                          bool bIsSyncLockSelected,
-                                         bool highlightEnvelope)
+                                         bool highlightEnvelope,
+                                         bool tryAlicorn)
 {
    auto &dc = context.dc;
    const auto artist = TrackArtist::Get( context );
@@ -807,6 +809,142 @@ void DrawWaveformBackground(TrackPanelDrawingContext &context,
    const auto &selectedBrush = artist->selectedBrush;
    const auto &unselectedBrush = artist->unselectedBrush;
    const auto &envelopeBackgroundBrush = artist->envelopeBackgroundBrush;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (tryAlicorn) {
+      if (auto* view = artist->parent->GetAlicornTimelineView()) {
+         std::array<AudacityWaveformRectangle,
+            AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS> rectangles{};
+         size_t rectangleCount = 0;
+         bool withinBudget = true;
+
+         const auto toLinear = [](unsigned char value) {
+            const auto srgb = static_cast<float>(value) / 255.0f;
+            return srgb <= 0.04045f ? srgb / 12.92f :
+               std::pow((srgb + 0.055f) / 1.055f, 2.4f);
+         };
+         const auto toSnapColor = [&](const wxColour& color) {
+            return AudacitySnapColor{
+               toLinear(color.Red()), toLinear(color.Green()),
+               toLinear(color.Blue()),
+               static_cast<float>(color.Alpha()) / 255.0f,
+            };
+         };
+         const auto addRectangle = [&](
+            int x, int y, int width, int height, const wxColour& color) {
+            if (width <= 0 || height <= 0)
+               return true;
+            if (rectangleCount == rectangles.size())
+               return false;
+            const auto snapColor = toSnapColor(color);
+            rectangles[rectangleCount++] = AudacityWaveformRectangle{
+               static_cast<float>(x), static_cast<float>(y),
+               static_cast<float>(width), static_cast<float>(height),
+               snapColor.r, snapColor.g, snapColor.b, snapColor.a,
+            };
+            return true;
+         };
+         const auto addRun = [&](
+            int x, int width, int top, int middleTop,
+            int middleBottom, int bottom, bool selected) {
+            const auto& brush = selected ? selectedBrush : unselectedBrush;
+            const auto color = brush.GetColour();
+            bool added = true;
+            if (middleBottom < middleTop - 1) {
+               added = addRectangle(
+                  x, rect.y + top, width, middleBottom - top, color) &&
+                  addRectangle(
+                     x, rect.y + middleTop, width, bottom - middleTop, color);
+            }
+            else {
+               added = addRectangle(
+                  x, rect.y + top, width, bottom - top, color);
+            }
+            if (added && highlightEnvelope &&
+                middleBottom < middleTop - 1)
+               added = addRectangle(
+                  x, rect.y + middleBottom, width,
+                  middleTop - middleBottom,
+                  AColor::uglyBrush.GetColour());
+            return added;
+         };
+
+         withinBudget = addRectangle(
+            rect.x, rect.y, rect.width, rect.height,
+            envelopeBackgroundBrush.GetColour());
+
+         if (withinBudget) {
+            int selectedX = zoomInfo.TimeToPosition(t0, -leftOffset);
+            double time = zoomInfo.PositionToTime(0, -leftOffset), nextTime;
+            for (xx = 0; xx < rect.width; ++xx, time = nextTime) {
+               nextTime = zoomInfo.PositionToTime(xx + 1, -leftOffset);
+               maxtop = GetWaveYPos(env[xx], zoomMin, zoomMax,
+                  h, dB, true, dBRange, true);
+               maxbot = GetWaveYPos(env[xx], zoomMin, zoomMax,
+                  h, dB, false, dBRange, true);
+               mintop = GetWaveYPos(-env[xx], zoomMin, zoomMax,
+                  h, dB, false, dBRange, true);
+               minbot = GetWaveYPos(-env[xx], zoomMin, zoomMax,
+                  h, dB, true, dBRange, true);
+               ++mintop;
+               ++minbot;
+
+               if (!artist->drawEnvelope || maxbot > mintop) {
+                  maxbot = halfHeight;
+                  mintop = halfHeight;
+               }
+
+               sel = (t0 <= time && nextTime < t1) || xx == selectedX;
+               sel = sel && !bIsSyncLockSelected;
+
+               if (lmaxtop == maxtop && lmintop == mintop &&
+                   lmaxbot == maxbot && lminbot == minbot && lsel == sel)
+                  continue;
+
+               withinBudget = addRun(
+                  rect.x + lx, xx - lx, lmaxtop, lmintop,
+                  lmaxbot, lminbot, lsel);
+               if (!withinBudget)
+                  break;
+
+               lmaxtop = maxtop;
+               lmintop = mintop;
+               lmaxbot = maxbot;
+               lminbot = minbot;
+               lsel = sel;
+               lx = xx;
+            }
+
+            if (withinBudget)
+               withinBudget = addRun(
+                  rect.x + lx, xx - lx, lmaxtop, lmintop,
+                  lmaxbot, lminbot, lsel);
+         }
+
+         if (withinBudget && view->DrawWaveform(
+                dc, rect, rectangles.data(), rectangleCount, nullptr, 0)) {
+            if (bIsSyncLockSelected && t0 < t1) {
+               const int begin = std::max(0, std::min(rect.width,
+                  static_cast<int>(zoomInfo.TimeToPosition(t0, -leftOffset))));
+               const int end = std::max(0, std::min(rect.width,
+                  static_cast<int>(zoomInfo.TimeToPosition(t1, -leftOffset))));
+               TrackArt::DrawSyncLockTiles(context,
+                  {rect.x + begin, rect.y, end - 1 - begin, rect.height});
+            }
+
+            if (zeroLevelYCoordinate >= rect.GetTop() &&
+                zeroLevelYCoordinate <= rect.GetBottom()) {
+               dc.SetPen(*wxBLACK_PEN);
+               AColor::Line(dc, rect.x, zeroLevelYCoordinate,
+                  rect.x + rect.width - 1, zeroLevelYCoordinate);
+            }
+            return;
+         }
+      }
+   }
+#else
+   (void)tryAlicorn;
+#endif
 
    dc.SetPen(*wxTRANSPARENT_PEN);
    dc.SetBrush(envelopeBackgroundBrush);
@@ -1325,7 +1463,7 @@ void DrawClipWaveform(TrackPanelDrawingContext &context,
          context, leftOffset, mid, env, zoomMin, zoomMax,
          backgroundZeroLevelY, dB, dBRange,
          backgroundSelectionT0, backgroundSelectionT1,
-         bIsSyncLockSelected, highlightEnvelope);
+         bIsSyncLockSelected, highlightEnvelope, true);
       std::vector<WavePortion> portions;
       FindWavePortions(portions, rect, zoomInfo, params);
       auto offset = leftOffset;
