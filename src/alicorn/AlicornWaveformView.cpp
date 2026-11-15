@@ -13,6 +13,23 @@ struct PaintContext {
    wxRect clip;
 };
 
+float SrgbToLinear(unsigned char value)
+{
+   const auto srgb = static_cast<float>(value) / 255.0f;
+   return srgb <= 0.04045f ? srgb / 12.92f :
+      std::pow((srgb + 0.055f) / 1.055f, 2.4f);
+}
+
+AudacitySnapColor ToLinearColor(const wxColour& color)
+{
+   return {
+      SrgbToLinear(color.Red()),
+      SrgbToLinear(color.Green()),
+      SrgbToLinear(color.Blue()),
+      static_cast<float>(color.Alpha()) / 255.0f
+   };
+}
+
 double LinearToSrgb(float value)
 {
    const auto linear = std::clamp(static_cast<double>(value), 0.0, 1.0);
@@ -128,4 +145,22 @@ bool AlicornWaveformView::Draw(
    PaintContext context{ graphics.get(), clip };
    return audacity_alicorn_waveform_view_paint(
       mView, &DrawGeometry, &context) >= 0;
+}
+
+bool AlicornWaveformView::DrawPlayhead(
+   wxDC& dc, const wxRect& clip, int x, const wxColour& color)
+{
+   const auto linear = ToLinearColor(color);
+   const AudacityWaveformSegment line{
+      static_cast<float>(x),
+      0.0f,
+      static_cast<float>(x),
+      static_cast<float>(dc.GetSize().GetHeight()),
+      1.0f,
+      linear.r,
+      linear.g,
+      linear.b,
+      linear.a
+   };
+   return Draw(dc, clip, &line, 1);
 }

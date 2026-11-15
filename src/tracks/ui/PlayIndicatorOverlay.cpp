@@ -27,6 +27,10 @@ Paul Licameli split from TrackPanel.cpp
 #include "Scrubbing.h"
 #include "ChannelView.h"
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../alicorn/AlicornWaveformView.h"
+#endif
+
 #include <wx/dc.h>
 
 #include <algorithm>
@@ -120,6 +124,15 @@ void PlayIndicatorOverlayBase::Draw(OverlayPanel &panel, wxDC &dc)
    if(auto tp = dynamic_cast<TrackPanel*>(&panel)) {
       wxASSERT(mIsMaster);
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto* view = tp->GetAlicornWaveformView()) {
+         const auto size = tp->GetClientSize();
+         const wxRect clip{ 0, 0, size.x, size.y };
+         if (view->DrawPlayhead(
+                dc, clip, mLastIndicatorX, dc.GetPen().GetColour()))
+            return;
+      }
+#endif
       AColor::Line(dc, mLastIndicatorX, 0, mLastIndicatorX, tp->GetSize().GetHeight());
    }
    else if(auto ruler = dynamic_cast<AdornedRulerPanel*>(&panel)) {

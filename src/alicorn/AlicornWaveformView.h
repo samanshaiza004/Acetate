@@ -29,6 +29,11 @@ public:
       const wxRect& clip,
       const AudacityWaveformSegment* segments,
       size_t count);
+   bool DrawPlayhead(
+      wxDC& dc,
+      const wxRect& clip,
+      int x,
+      const wxColour& color);
 
 private:
    AudacityAlicornWaveformView* mView{};

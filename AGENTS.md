@@ -12,7 +12,7 @@ The MVP target is: open one mono/stereo file, display a waveform and time ruler,
 - Caliber carries bounded, versioned application commands and revision-tagged state where the Odin backend has taken over. Do not duplicate policy in the UI or claim that the full backend rewrite is complete.
 - Alicorn owns UI description, layout, interaction, semantics, transient viewport state, and paint.
 - wxWidgets remains the native host/platform adapter during migration. Do not start a nested event loop or run UI work on an audio/worker thread.
-- The current opt-in Alicorn integration replaces a small set of toolbar controls. The waveform editor and MVP end-to-end flow are not yet implemented.
+- The current opt-in Alicorn integration covers selected toolbar controls, bounded waveform geometry and range-drag routing, ruler ticks/labels, and the track-panel playhead. wx still owns the window/event loop, ruler gestures, backgrounds, and most editor presentation; these view slices use separate Alicorn runtimes. The shared project-window runtime and MVP end-to-end flow are not yet implemented.
 
 ## Implementation rules
 

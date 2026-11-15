@@ -1,8 +1,9 @@
 # Alicorn-backed Audacity controls
 
 This directory contains small Alicorn-backed controls hosted by Audacity 3.
-The opt-in integration renders normal-zoom waveform summary strokes and
-time-ruler marks/labels through Alicorn-retained geometry and text, alongside
+The opt-in integration renders normal-zoom waveform summary strokes, the
+track-panel playback indicator, and time-ruler marks/labels through
+Alicorn-retained geometry and text, alongside
 the Snap checkbox, Audio Setup toolbar button, Selection Toolbar mode-setup
 button, Edit toolbar buttons, Cut/Copy/Paste toolbar buttons, and momentary Stop
 transport button. Play remains native because its Shift/Ctrl modifier modes
@@ -15,7 +16,10 @@ selection. This adapter does not create an SDL window or renderer.
 
 The waveform path reads Audacity's existing 256-column min/max/RMS cache,
 updates one retained geometry surface owned by each TrackPanel, and translates
-geometry paint payloads synchronously through wxGraphicsContext. The ruler
+geometry paint payloads synchronously through wxGraphicsContext. The same
+surface draws the playback indicator after the cached track backing bitmap is
+presented; Audacity's playback scroller remains authoritative for its position
+and scheduling. The wx indicator remains the fallback. The ruler
 path takes an owned snapshot of Audacity's generated tick positions, labels,
 fonts, and colors, then renders those marks and labels through Alicorn in the
 existing wx paint pass. Ruler gestures, selection/play-region backgrounds,
