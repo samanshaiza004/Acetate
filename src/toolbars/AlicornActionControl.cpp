@@ -277,6 +277,10 @@ void AlicornActionControl::OnLeftDown(wxMouseEvent& event)
 {
    mWasShiftDown = event.ShiftDown();
    mWasControlDown = event.ControlDown();
+   if (!mView) {
+      event.Skip();
+      return;
+   }
    SetFocus();
    if (!HasCapture())
       CaptureMouse();
@@ -286,8 +290,13 @@ void AlicornActionControl::OnLeftDown(wxMouseEvent& event)
 
 void AlicornActionControl::OnLeftUp(wxMouseEvent& event)
 {
-   if (!mView)
+   if (!mView) {
+      // A failed view initialization must not leave native mouse capture held.
+      if (HasCapture())
+         ReleaseMouse();
+      event.Skip();
       return;
+   }
    const auto result = audacity_alicorn_action_view_pointer(
       mView, AUDACITY_SNAP_POINTER_UP, event.GetX(), event.GetY(),
       AUDACITY_SNAP_BUTTON_PRIMARY);
