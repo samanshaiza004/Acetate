@@ -687,7 +687,14 @@ void CellularPanel::OnKeyUp(wxKeyEvent & event)
 void CellularPanel::OnCaptureLost(wxMouseCaptureLostEvent & WXUNUSED(event))
 {
    auto &state = *mState;
-   state.mUIHandle.reset();
+   if (state.mUIHandle) {
+      // Losing capture interrupts the gesture. Let the active handle roll back
+      // its state and release any retained input ownership before it is
+      // destroyed. Resetting the handle directly bypasses Cancel().
+      CancelDragging(false);
+      return;
+   }
+
    Leave();
 
    // This is bad.  We are lying abou the event by saying it is a mouse up.
