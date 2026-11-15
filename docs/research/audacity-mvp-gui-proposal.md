@@ -95,8 +95,9 @@ These are already tracked by Alicorn and should be advanced instead of duplicate
 - [#196 — Integrate Alicorn with an existing desktop event loop](https://github.com/samanshaiza004/alicorn/issues/196): needed for one host-owned event loop and a shared retained runtime.
 - [#162 — Host-owned renderer-neutral presentation boundary](https://github.com/samanshaiza004/alicorn/issues/162): relevant if the desktop host must own presentation independently of an Alicorn-created window.
 - [#164 — Custom GPU canvas and waveform dogfood](https://github.com/samanshaiza004/alicorn/issues/164): relevant for a retained waveform surface and native rendering evidence.
+- [#200 — Bounded filled-rectangle batches for retained geometry](https://github.com/samanshaiza004/alicorn/issues/200): needed to move the envelope-shaped waveform background and selection fill off wx without rebuilding layout nodes during selection drags.
 
-The Acetate bridge now carries surface, icon, text, and retained geometry payloads through wx; waveform and ruler output are synchronously mapped to the existing host drawing context. Do not create a parallel renderer inside the editor. The remaining shared-host work is tracked by Alicorn #196 and #162, and retained canvas work by #164; no duplicate issue is needed for this slice.
+The Acetate bridge now carries surface, icon, text, and retained geometry payloads through wx; waveform and ruler output are synchronously mapped to the existing host drawing context. Do not create a parallel renderer inside the editor. Shared-host work remains tracked by Alicorn #196 and #162; canvas dogfood by #164; and paint-only filled rectangles by #200.
 
 ## Acceptance gates
 
