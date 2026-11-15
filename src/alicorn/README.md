@@ -29,8 +29,12 @@ remain hidden. The C++ paint callback still presents that geometry through wx
 `wxGraphicsContext`, so this is not yet a renderer migration. wx remains the
 fallback for sync-lock patterns, envelope highlighting, draggable high-zoom
 sample points, and geometry batches that exceed the surface budget or cannot
-be submitted. The rectangle payload closes the API gap tracked by Alicorn
-#200; native pixel and repaint-cost acceptance remains open. The playback indicator and
+be submitted. Dense sample markers stay on wx because the pinned filled-circle
+primitive uses 48 vertices per point; at ordinary sample-edit view widths, all
+visible markers plus waveform segments exceed the 8,192-vertex surface budget.
+Alicorn #201 tracks a compact bounded marker path. The rectangle payload closes
+the API gap tracked by Alicorn #200; native pixel and repaint-cost acceptance
+remains open. The playback indicator and
 point-selection caret use independent inert retained overlays after the
 cached track backing bitmap is presented. Audacity's playback scroller and
 selected time remain authoritative. Keeping each indicator in its own owner
