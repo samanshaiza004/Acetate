@@ -32,9 +32,10 @@ retained geometry surface after the cached track backing bitmap is presented;
 Audacity's playback scroller remains authoritative. The ruler adapter copies
 Audacity's generated tick positions, formatted labels, fonts, and colors into
 the same retained tree, and paints its selected-range and loop-range bands
-through retained rectangles. Audacity remains authoritative for those ranges
-and their pixel/time mapping. Range-only repaint updates geometry without
-rebuilding the ruler description. It does not reimplement ruler policy.
+and loop-boundary markers through retained rectangles. Audacity remains
+authoritative for those ranges and their pixel/time mapping. Range-only repaint
+updates geometry without rebuilding the ruler description. It does not
+reimplement ruler policy.
 
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection
@@ -55,9 +56,9 @@ Alicorn bridge does not yet replace. Keep it until the host can deliver
 committed text, preedit/cancel composition, editing and navigation keys, focus
 lifecycle, and accessible labels/values; Alicorn #196 tracks that host contract.
 This avoids replacing it with a plain text field that silently drops these
-behaviors. wx still owns the remaining ruler gestures and play-region limit
-markers, and paints track-panel play-region and blank-track backgrounds,
-sync-lock selection patterns, the track backing surface, envelope controls,
+behaviors. wx still owns the remaining ruler gestures and paints track-panel
+play-region and blank-track backgrounds, sync-lock selection patterns, the
+track backing surface, envelope controls,
 clip decorations, high-zoom sample editing, accessibility host objects, and
 native audio services. Delete/Undo/Redo
 buttons dispatch through Audacity's existing command system; this does not yet

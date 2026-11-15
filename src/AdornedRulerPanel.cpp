@@ -1763,6 +1763,28 @@ void AdornedRulerPanel::OnPaint(wxPaintEvent & WXUNUSED(evt))
          addFill(rectS.Intersect(rectL), selectionColor);
          addFill(rectS.Intersect(rectR), selectionColor);
 
+         // Keep the loop range's edge strokes and triangles in the retained
+         // batch, after the range fills and before ruler ticks and labels.
+         const auto edgeColor = theTheme.Colour(TimelineLimitsColor());
+         constexpr int side = 7;
+         constexpr int sideLessOne = side - 1;
+         const auto left = rectP.GetLeft();
+         const auto right = rectP.GetRight();
+         const auto top = rectP.GetTop();
+         const auto bottom = rectP.GetBottom();
+         const auto markerBottom = bottom - sideLessOne;
+         if (markerBottom >= top) {
+            addFill(
+               wxRect{left, top, 1, markerBottom - top + 1}, edgeColor);
+            addFill(
+               wxRect{right, top, 1, markerBottom - top + 1}, edgeColor);
+         }
+         for (int row = 0; row < side; ++row) {
+            const auto y = markerBottom + row;
+            addFill(wxRect{left - row, y, row + 1, 1}, edgeColor);
+            addFill(wxRect{right, y, row + 1, 1}, edgeColor);
+         }
+
          UpdateRulerMarks(&backDC);
          const auto snapshot = mRuler.GetDisplaySnapshot(backDC);
          alicornRulerDrawn = view->DrawRuler(
@@ -1774,10 +1796,9 @@ void AdornedRulerPanel::OnPaint(wxPaintEvent & WXUNUSED(evt))
       DoDrawPlayRegion(&backDC, rectP, rectL, rectR);
       DoDrawOverlap(&backDC, rectO);
       DoDrawSelection(&backDC, rectS, rectL, rectR);
+      DoDrawPlayRegionLimits(&backDC, rectP);
       DoDrawMarks(&backDC, true);
    }
-
-   DoDrawPlayRegionLimits(&backDC, rectP);
 
    DoDrawEdge(&backDC);
 
