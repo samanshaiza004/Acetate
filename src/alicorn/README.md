@@ -45,11 +45,12 @@ It does not reimplement ruler policy.
 
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection
-mutation, undo history, and cancel rollback. Project selection is authoritative;
-Alicorn also tracks empty-ruler drags that create loop regions; Audacity's
-`NewPlayRegionHandle` retains snapping, loop-region mutation, selection-sync,
-and rollback policy. Project selection and loop-region state remain
-authoritative; Alicorn retains only active pointer gestures. Middle-button
+mutation, undo history, and cancel rollback. Project selection is authoritative.
+Alicorn routes ruler pointer gestures that create, resize, and move loop regions;
+Audacity's `PlayRegionAdjustingHandle` subclasses retain hit-target priority,
+snapping, loop-region mutation, selection-sync, and rollback policy. Project
+selection and loop-region state remain authoritative; Alicorn retains only active
+pointer gestures. Middle-button
 horizontal pan deltas are derived from the retained pointer gesture; wx retains
 mouse capture and Audacity's `Viewport` applies the horizontal scroll.
 Selection-mode calculations are also exposed through

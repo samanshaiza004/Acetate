@@ -927,6 +927,10 @@ public:
    }
 
 private:
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool UsesAlicornRulerPointer() const override { return true; }
+#endif
+
    void DoStartAdjust(AudacityProject &project, double) override
    {
       // Ignore the snapping of the time at the mouse
@@ -957,6 +961,10 @@ public:
    }
 
 private:
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool UsesAlicornRulerPointer() const override { return true; }
+#endif
+
    void DoStartAdjust(AudacityProject &project, double time) override
    {
    }
