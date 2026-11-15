@@ -151,6 +151,9 @@ typedef void (*AudacitySnapDrawCallback)(
 AudacityAlicornSnapView *audacity_alicorn_snap_view_create(
     float width,
     float height,
+    int32_t pixel_width,
+    int32_t pixel_height,
+    float dpi_scale,
     uint8_t checked);
 
 /* The caller owns the opaque view and must destroy it exactly once. */
@@ -160,7 +163,10 @@ void audacity_alicorn_snap_view_destroy(AudacityAlicornSnapView *view);
 int32_t audacity_alicorn_snap_view_resize(
     AudacityAlicornSnapView *view,
     float width,
-    float height);
+    float height,
+    int32_t pixel_width,
+    int32_t pixel_height,
+    float dpi_scale);
 
 /*
  * pointer: 1 if the checkbox consumed/hit the event, 0 if not, -1 on invalid
@@ -177,6 +183,12 @@ int32_t audacity_alicorn_snap_view_pointer(
 int32_t audacity_alicorn_snap_view_key(
     AudacityAlicornSnapView *view,
     uint32_t key);
+
+/* focused/focus_visible are nonzero when the native surface has/visibly has keyboard focus. */
+int32_t audacity_alicorn_snap_view_focus_changed(
+    AudacityAlicornSnapView *view,
+    uint8_t focused,
+    uint8_t focus_visible);
 
 /*
  * update: 1 if a description/presentation frame was processed, 0 if idle,

@@ -3,6 +3,7 @@ package audacity_alicorn_snap_view
 import alicorn "alicorn:runtime"
 import odin_runtime "base:runtime"
 import "core:strings"
+import odin_time "core:time"
 
 AudacitySnapRect :: struct {
 	x, y, width, height: f32,
@@ -44,10 +45,16 @@ AudacitySnapDrawCallback :: #type proc "c" (
 )
 
 View :: struct {
-	runtime: alicorn.Runtime,
+	hosted: alicorn.Hosted_Runtime,
 	checkbox_id: alicorn.Node_ID,
+	width, height: int,
+	pixel_width, pixel_height: int,
+	dpi_scale: f32,
+	checked: bool,
 	last_checked: bool,
 	checked_initialized: bool,
+	fonts_initialized: bool,
+	pending_change: bool,
 	callback_active: bool,
 	runtime_initialized: bool,
 }
@@ -146,64 +153,105 @@ snap_shape_kind :: proc(kind: alicorn.Surface_Shape_Kind) -> u32 {
 	return 0
 }
 
-snap_view_build_description :: proc(view: ^View, checked: bool) -> (built: bool, effective_checked: bool, changed: bool) {
-	ui, should_build := alicorn.begin_frame(&view.runtime)
-	if !should_build {
-		return false, checked, false
-	}
-
-	viewport := alicorn.viewport_bounds(&view.runtime)
+snap_view_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, dpi_scale: f32) {
+	view := transmute(^View)state
+	if view == nil || ui == nil { return }
 	root_style := alicorn.layout_style(
 		.Row,
-		width=viewport.w,
-		height=viewport.h,
+		width=f32(width),
+		height=f32(height),
 		padding=2,
 		align=.Start,
 	)
 	_ = alicorn.container_begin(
-		&ui,
-		.Root,
+		ui,
+		.Container,
 		key=alicorn.key_string("audacity-alicorn-snap-root"),
 		style=root_style,
 	)
 	control := alicorn.checkbox(
-		&ui,
+		ui,
 		"Snap",
-		checked,
+		view.checked,
 		key=alicorn.key_string("audacity-alicorn-snap-checkbox"),
 	)
-	alicorn.container_end(&ui)
-	alicorn.end_frame(&ui)
+	alicorn.container_end(ui)
+	view.checked = control.value
+	if control.changed { view.pending_change = true }
+}
 
+snap_view_post_wake :: proc(data: rawptr) -> bool {
+	// This control starts no workers and never retains a Hosted_Waker.
+	return false
+}
+
+snap_view_initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
+	view := transmute(^View)state
+	if view != nil && rt != nil {
+		view.fonts_initialized = alicorn.text_engine_load_default_fonts(rt)
+	}
+}
+
+snap_view_now_ns :: proc() -> u64 {
+	return u64(odin_time.tick_diff(odin_time.Tick{}, odin_time.tick_now()))
+}
+
+snap_view_step :: proc(view: ^View) -> alicorn.Hosted_Step_Result {
+	result := alicorn.hosted_runtime_step(&view.hosted, snap_view_now_ns())
+	if result.status != .Ok { return result }
+	rt, status := alicorn.hosted_runtime_borrow(&view.hosted)
+	if status != .Ok { result.status = status; return result }
 	view.checkbox_id, _ = alicorn.node_by_key(
-		&view.runtime,
+		rt,
 		alicorn.key_string("audacity-alicorn-snap-checkbox"),
 		.Checkbox,
 	)
-	return true, control.value, control.changed
-}
-
-snap_view_flush_presentation :: proc(view: ^View) -> bool {
-	ui, ready := alicorn.begin_presentation_frame(&view.runtime)
-	if !ready { return false }
-	alicorn.end_presentation_frame(&ui)
-	return true
+	return result
 }
 
 @(export, link_name="audacity_alicorn_snap_view_create")
-audacity_alicorn_snap_view_create :: proc "c" (width, height: f32, checked: u8) -> rawptr {
+audacity_alicorn_snap_view_create :: proc "c" (
+	width, height: f32,
+	pixel_width, pixel_height: i32,
+	dpi_scale: f32,
+	checked: u8,
+) -> rawptr {
 	context = odin_runtime.default_context()
-	if !alicorn.number_is_finite(width) || !alicorn.number_is_finite(height) || width < 0 || height < 0 {
+	if !alicorn.number_is_finite(width) || !alicorn.number_is_finite(height) ||
+		!alicorn.number_is_finite(dpi_scale) || width < 0 || height < 0 ||
+		pixel_width < 0 || pixel_height < 0 || dpi_scale <= 0 {
 		return nil
 	}
 
 	view := new(View)
-	view.runtime = alicorn.new_runtime(alicorn.Rect{0, 0, width, height})
-	view.runtime_initialized = true
+	view.width = int(width)
+	view.height = int(height)
+	view.pixel_width = int(pixel_width)
+	view.pixel_height = int(pixel_height)
+	view.dpi_scale = dpi_scale
 	view.last_checked = checked != 0
 	view.checked_initialized = true
-	if !alicorn.text_engine_load_default_fonts(&view.runtime) {
-		alicorn.destroy_runtime(&view.runtime)
+	view.checked = view.last_checked
+	status := alicorn.hosted_runtime_init(&view.hosted, alicorn.Hosted_Runtime_Config{
+		state=rawptr(view),
+		logical_width=view.width,
+		logical_height=view.height,
+		pixel_width=int(pixel_width),
+		pixel_height=int(pixel_height),
+		dpi_scale=dpi_scale,
+		render=snap_view_render,
+		on_initialize=snap_view_initialize,
+		post_wake=snap_view_post_wake,
+	})
+	if status != .Ok || !view.fonts_initialized {
+		if status == .Ok { _ = alicorn.hosted_runtime_destroy(&view.hosted) }
+		free(view)
+		return nil
+	}
+	view.runtime_initialized = true
+	result := snap_view_step(view)
+	if result.status != .Ok {
+		_ = alicorn.hosted_runtime_destroy(&view.hosted)
 		view.runtime_initialized = false
 		free(view)
 		return nil
@@ -221,27 +269,45 @@ audacity_alicorn_snap_view_destroy :: proc "c" (opaque_view: rawptr) {
 	// normally after the callback returns.
 	if view.callback_active { return }
 	if view.runtime_initialized {
-		alicorn.destroy_runtime(&view.runtime)
+		status := alicorn.hosted_runtime_destroy(&view.hosted)
+		if status != .Ok { return }
 		view.runtime_initialized = false
 	}
 	free(view)
 }
 
 @(export, link_name="audacity_alicorn_snap_view_resize")
-audacity_alicorn_snap_view_resize :: proc "c" (opaque_view: rawptr, width, height: f32) -> i32 {
+audacity_alicorn_snap_view_resize :: proc "c" (
+	opaque_view: rawptr,
+	width, height: f32,
+	pixel_width, pixel_height: i32,
+	dpi_scale: f32,
+) -> i32 {
 	context = odin_runtime.default_context()
 	view := transmute(^View)opaque_view
-	if !valid_view(view) || !alicorn.number_is_finite(width) || !alicorn.number_is_finite(height) || width < 0 || height < 0 {
+	if !valid_view(view) || !alicorn.number_is_finite(width) || !alicorn.number_is_finite(height) ||
+		!alicorn.number_is_finite(dpi_scale) || width < 0 || height < 0 ||
+		pixel_width < 0 || pixel_height < 0 || dpi_scale <= 0 {
 		return -1
 	}
-	previous := alicorn.viewport_bounds(&view.runtime)
-	if previous.x == 0 && previous.y == 0 && previous.w == width && previous.h == height {
+	logical_width, logical_height := int(width), int(height)
+	if view.width == logical_width && view.height == logical_height &&
+		view.pixel_width == int(pixel_width) && view.pixel_height == int(pixel_height) &&
+		view.dpi_scale == dpi_scale {
 		return 0
 	}
-	if alicorn.runtime_set_viewport(&view.runtime, alicorn.Rect{0, 0, width, height}) {
-		return 1
-	}
-	return -1
+	status := alicorn.hosted_runtime_resize(
+		&view.hosted,
+		logical_width,
+		logical_height,
+		int(pixel_width),
+		int(pixel_height),
+		dpi_scale,
+	)
+	if status != .Ok { return -1 }
+	view.width, view.height, view.dpi_scale = logical_width, logical_height, dpi_scale
+	view.pixel_width, view.pixel_height = int(pixel_width), int(pixel_height)
+	return 1 if snap_view_step(view).status == .Ok else -1
 }
 
 @(export, link_name="audacity_alicorn_snap_view_pointer")
@@ -269,12 +335,13 @@ audacity_alicorn_snap_view_pointer :: proc "c" (
 	} else if button > 3 {
 		return -1
 	}
-	target := alicorn.process_pointer(&view.runtime, alicorn.Pointer_Event{
+	target, status := alicorn.hosted_runtime_pointer(&view.hosted, alicorn.Pointer_Event{
 		kind=pointer_kind,
 		x=x,
 		y=y,
 		button=int(button),
 	})
+	if status != .Ok || snap_view_step(view).status != .Ok { return -1 }
 	if target != 0 && target == view.checkbox_id { return 1 }
 	return 0
 }
@@ -286,14 +353,41 @@ audacity_alicorn_snap_view_key :: proc "c" (opaque_view: rawptr, key: u32) -> i3
 	if !valid_view(view) { return -1 }
 	switch key {
 	case AUDACITY_SNAP_KEY_TAB:
-		return 1 if alicorn.application_dispatch_tab_focus(&view.runtime, false) else 0
+		focused, status := alicorn.hosted_runtime_focus_traverse(&view.hosted, .Next)
+		if status != .Ok || snap_view_step(view).status != .Ok { return -1 }
+		return 1 if focused != 0 else 0
 	case AUDACITY_SNAP_KEY_SHIFT_TAB:
-		return 1 if alicorn.application_dispatch_tab_focus(&view.runtime, true) else 0
+		focused, status := alicorn.hosted_runtime_focus_traverse(&view.hosted, .Previous)
+		if status != .Ok || snap_view_step(view).status != .Ok { return -1 }
+		return 1 if focused != 0 else 0
 	case AUDACITY_SNAP_KEY_SPACE:
-		return 1 if alicorn.application_route_focused_control_key(&view.runtime, .Toggle) else 0
+		activated, status := alicorn.hosted_runtime_activate(&view.hosted, .Space)
+		if status != .Ok || snap_view_step(view).status != .Ok { return -1 }
+		return 1 if activated else 0
+	case AUDACITY_SNAP_KEY_ACTIVATE:
+		activated, status := alicorn.hosted_runtime_activate(&view.hosted, .Enter)
+		if status != .Ok || snap_view_step(view).status != .Ok { return -1 }
+		return 1 if activated else 0
 	case:
 		return -1
 	}
+}
+
+@(export, link_name="audacity_alicorn_snap_view_focus_changed")
+audacity_alicorn_snap_view_focus_changed :: proc "c" (
+	opaque_view: rawptr,
+	focused, focus_visible: u8,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^View)opaque_view
+	if !valid_view(view) { return -1 }
+	status := alicorn.hosted_runtime_focus_changed(
+		&view.hosted,
+		focused != 0,
+		focus_visible != 0,
+	)
+	if status != .Ok || snap_view_step(view).status != .Ok { return -1 }
+	return 1
 }
 
 @(export, link_name="audacity_alicorn_snap_view_update")
@@ -309,22 +403,23 @@ audacity_alicorn_snap_view_update :: proc "c" (
 	checked_value := checked != 0
 	if out_checked != nil { out_checked^ = checked }
 	if out_changed != nil { out_changed^ = 0 }
-	if view.checked_initialized && view.last_checked != checked_value {
-		alicorn.invalidate_root(&view.runtime, "Audacity Snap state changed")
+	if !view.pending_change && view.checked_initialized && view.last_checked != checked_value {
+		view.checked = checked_value
+		rt, status := alicorn.hosted_runtime_borrow(&view.hosted)
+		if status != .Ok { return -1 }
+		alicorn.invalidate_root(rt, "Audacity Snap state changed")
 	}
-	view.last_checked = checked_value
+	if !view.pending_change { view.checked = checked_value }
+	view.last_checked = view.checked
 	view.checked_initialized = true
-
-	built, effective_checked, changed := snap_view_build_description(view, checked_value)
-	if built {
-		if changed {
-			if out_checked != nil { out_checked^ = 1 if effective_checked else 0 }
-			if out_changed != nil { out_changed^ = 1 }
-		}
-		return 1
+	result := snap_view_step(view)
+	if result.status != .Ok { return -1 }
+	if out_checked != nil { out_checked^ = 1 if view.checked else 0 }
+	if view.pending_change {
+		if out_changed != nil { out_changed^ = 1 }
+		view.pending_change = false
 	}
-	if snap_view_flush_presentation(view) { return 1 }
-	return 0
+	return 1 if result.description_built || result.render_required else 0
 }
 
 snap_view_command_base :: proc(command: alicorn.Paint_Command, kind: u32) -> AudacitySnapDrawCommand {
@@ -349,12 +444,14 @@ audacity_alicorn_snap_view_paint :: proc "c" (
 	context = odin_runtime.default_context()
 	view := transmute(^View)opaque_view
 	if !valid_view(view) || callback == nil { return -1 }
-	display, ok := alicorn.paint_display_list(&view.runtime)
-	if !ok { return -1 }
+	display, status := alicorn.hosted_runtime_display_commands(&view.hosted)
+	if status != .Ok { return -1 }
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&view.hosted)
+	if borrow_status != .Ok { return -1 }
 
 	view.callback_active = true
 	delivered := i32(0)
-	for retained in display.commands {
+	for retained in display {
 		if retained.owner != view.checkbox_id { continue }
 		output := AudacitySnapDrawCommand{}
 		switch payload in retained.payload {
@@ -366,7 +463,7 @@ audacity_alicorn_snap_view_paint :: proc "c" (
 			output.radius = payload.shape.corner_radius
 			output.shape_kind = snap_shape_kind(payload.shape.kind)
 			output.material_id = u32(payload.material)
-			if shape, shape_ok := alicorn.surface_paint_shape_resolve(&view.runtime, retained.owner, payload.shape); shape_ok {
+			if shape, shape_ok := alicorn.surface_paint_shape_resolve(rt, retained.owner, payload.shape); shape_ok {
 				radii := alicorn.surface_shape_corner_radii(shape)
 				output.radius_top_left = radii.top_left
 				output.radius_top_right = radii.top_right
@@ -379,7 +476,7 @@ audacity_alicorn_snap_view_paint :: proc "c" (
 			output.icon_id = AUDACITY_SNAP_ICON_CHECK
 			output.fill = snap_color(payload.color)
 		case alicorn.Text_Paint:
-			run, run_ok := alicorn.paint_text_run_resolve(&view.runtime, payload.run)
+			run, run_ok := alicorn.paint_text_run_resolve(rt, payload.run)
 			if !run_ok { continue }
 			output = snap_view_command_base(retained, AUDACITY_SNAP_DRAW_TEXT)
 			output.text_color = snap_color(payload.color)
@@ -394,6 +491,7 @@ audacity_alicorn_snap_view_paint :: proc "c" (
 		delivered += 1
 	}
 	view.callback_active = false
+	if alicorn.hosted_runtime_frame_submission_succeeded(&view.hosted) != .Ok { return -1 }
 	return delivered
 }
 

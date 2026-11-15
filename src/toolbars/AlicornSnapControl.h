@@ -33,6 +33,7 @@ private:
    void OnCaptureLost(wxMouseCaptureLostEvent& event);
    void OnKeyDown(wxKeyEvent& event);
    void OnSetFocus(wxFocusEvent& event);
+   void OnKillFocus(wxFocusEvent& event);
 
    void UpdateView();
    int32_t SendPointer(uint32_t kind, float x, float y, uint32_t button);

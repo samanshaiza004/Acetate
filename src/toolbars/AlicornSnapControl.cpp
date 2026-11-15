@@ -295,8 +295,12 @@ AlicornSnapControl::AlicornSnapControl(wxWindow* parent)
    SetName(wxT("Snap"));
 
    const auto size = GetClientSize();
+   const auto dpiScale = static_cast<float>(GetContentScaleFactor());
    mView = audacity_alicorn_snap_view_create(
-      static_cast<float>(size.x), static_cast<float>(size.y), 0);
+      static_cast<float>(size.x), static_cast<float>(size.y),
+      static_cast<int32_t>(std::lround(size.x * dpiScale)),
+      static_cast<int32_t>(std::lround(size.y * dpiScale)),
+      dpiScale, 0);
    if (!mView)
       wxLogError(wxT("Could not initialize the Alicorn Snap control"));
 
@@ -313,6 +317,7 @@ AlicornSnapControl::AlicornSnapControl(wxWindow* parent)
    Bind(wxEVT_MOUSE_CAPTURE_LOST, &AlicornSnapControl::OnCaptureLost, this);
    Bind(wxEVT_KEY_DOWN, &AlicornSnapControl::OnKeyDown, this);
    Bind(wxEVT_SET_FOCUS, &AlicornSnapControl::OnSetFocus, this);
+   Bind(wxEVT_KILL_FOCUS, &AlicornSnapControl::OnKillFocus, this);
 }
 
 AlicornSnapControl::~AlicornSnapControl()
@@ -400,8 +405,12 @@ void AlicornSnapControl::OnSize(wxSizeEvent& event)
 {
    if (mView) {
       const auto size = GetClientSize();
+      const auto dpiScale = static_cast<float>(GetContentScaleFactor());
       if (audacity_alicorn_snap_view_resize(
-             mView, static_cast<float>(size.x), static_cast<float>(size.y)) < 0)
+             mView, static_cast<float>(size.x), static_cast<float>(size.y),
+             static_cast<int32_t>(std::lround(size.x * dpiScale)),
+             static_cast<int32_t>(std::lround(size.y * dpiScale)),
+             dpiScale) < 0)
          wxLogWarning(wxT("Alicorn Snap control rejected its new size"));
       UpdateView();
    }
@@ -465,7 +474,17 @@ void AlicornSnapControl::OnKeyDown(wxKeyEvent& event)
 void AlicornSnapControl::OnSetFocus(wxFocusEvent& event)
 {
    if (mView) {
+      audacity_alicorn_snap_view_focus_changed(mView, 1, 1);
       audacity_alicorn_snap_view_key(mView, AUDACITY_SNAP_KEY_TAB);
+      UpdateView();
+   }
+   event.Skip();
+}
+
+void AlicornSnapControl::OnKillFocus(wxFocusEvent& event)
+{
+   if (mView) {
+      audacity_alicorn_snap_view_focus_changed(mView, 0, 0);
       UpdateView();
    }
    event.Skip();

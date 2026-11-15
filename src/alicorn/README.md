@@ -88,20 +88,26 @@ Waveform input and ruler snapshots are copied into Alicorn-owned retained data;
 project samples and selection are not copied into a second authoritative UI
 model.
 
-The pinned Alicorn revision also exposes `Hosted_Runtime`, a nonblocking
-per-surface lifecycle for a host-owned event loop, and `Sdl_GPU_Presenter`,
-which consumes retained paint commands through a host-owned SDL_GPU command
-buffer and target. The APIs cover input delivery, resize/DPI, one-shot
-deadlines, worker wakes, accessibility snapshots/actions, frame acknowledgement,
-fence retirement, cancellation, and ordered teardown. Acetate has not adopted
-either boundary yet: wx still owns its window and event loop, and the timeline
-integration still submits through its existing view wrapper and wx paint
-callback. Using the two APIs together is the next native-host experiment, not
-validated surface integration. Acetate must still prove wx/SDL surface
-compatibility, event fairness, focus/IME, accessibility, resize/DPI, frame
-retirement, wake delivery, and shutdown before replacing this path. Keep wx
-controls as fallbacks through that validation; Alicorn #196 remains open for
-the host integration work.
+The pinned Alicorn revision exposes `Hosted_Runtime`, a nonblocking per-surface
+lifecycle for a host-owned event loop, and `Sdl_GPU_Presenter`, which consumes
+retained paint commands through a host-owned SDL_GPU command buffer and target.
+Hosted_Runtime covers input delivery, resize/DPI, one-shot deadlines, worker
+wakes, accessibility snapshots/actions, frame acknowledgement, and ordered
+teardown. Acetate now uses it for the single-surface Snap checkbox: wx still
+owns the window and event loop, and synchronously presents the checkbox's
+retained commands through `wxGraphicsContext`. This is a narrow lifecycle
+adoption, not proof of SDL surface interoperation or GPU presentation. The
+timeline still uses its existing runtime wrapper, and Acetate has not adopted
+`Sdl_GPU_Presenter`.
+
+Alicorn #196, which introduced the host-owned Runtime API, is complete. The
+remaining wx surface and renderer validation belongs to Acetate integration
+work and Alicorn #162. In particular, the presenter failure-recovery contract
+for acquired swapchain targets is tracked by Alicorn #204. Before moving a
+surface to SDL_GPU, Acetate must validate wx/SDL surface compatibility, event
+fairness, focus/IME, accessibility, resize/DPI, frame retirement, wake
+delivery, and shutdown. Keep wx controls and the wx paint path as fallbacks
+until those checks pass.
 
 ## Build
 
