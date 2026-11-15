@@ -5,8 +5,9 @@ integration renders selected toolbar controls (including Pause/Play/Stop and
 Skip to Start/End,
 modifier-specific Play modes, and the Edit toolbar's Delete/Undo/Redo actions) and
 a timeline containing the normal-zoom waveform, time-ruler ticks and labels,
-selection/background fills, selected-range edge strokes, and playback
-indicator. It does not create an Alicorn window or GPU renderer.
+selection/background fills, selected-range edge strokes, playback indicator,
+and point-selection caret for selected tracks. It does not create an Alicorn
+window or GPU renderer.
 
 ## Timeline runtime and ownership
 
@@ -29,7 +30,10 @@ highlighting, high-zoom sample drawing, and any rejected geometry batch. The
 rectangle payload closes the API gap tracked by Alicorn #200; native pixel and
 repaint-cost acceptance remains open. The playback indicator uses the same
 retained geometry surface after the cached track backing bitmap is presented;
-Audacity's playback scroller remains authoritative. The ruler adapter copies
+Audacity's playback scroller remains authoritative. The point-selection caret
+also uses that surface after each selected channel's backing bitmap is drawn;
+Audacity's selected time remains authoritative and wx paints it if the retained
+path is unavailable. The ruler adapter copies
 Audacity's generated tick positions, formatted labels, fonts, and colors into
 the same retained tree, and paints its selected-range and loop-range bands
 and loop-boundary markers through retained rectangles. Audacity remains
@@ -56,9 +60,10 @@ Alicorn bridge does not yet replace. Keep it until the host can deliver
 committed text, preedit/cancel composition, editing and navigation keys, focus
 lifecycle, and accessible labels/values; Alicorn #196 tracks that host contract.
 This avoids replacing it with a plain text field that silently drops these
-behaviors. wx still owns the remaining ruler gestures and paints track-panel
-play-region and blank-track backgrounds, sync-lock selection patterns, the
-track backing surface, envelope controls,
+behaviors. wx still owns the remaining ruler gestures and paints blank-track
+backgrounds and sync-lock selection patterns. The track panel currently has no
+play-region shading; loop-region visualization is on the ruler. wx also paints
+the track backing surface, envelope controls,
 clip decorations, high-zoom sample editing, accessibility host objects, and
 native audio services. Delete/Undo/Redo
 buttons dispatch through Audacity's existing command system; this does not yet

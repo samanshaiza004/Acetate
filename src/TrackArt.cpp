@@ -18,6 +18,10 @@
 #include "TimeAndPitchInterface.h"
 #include "Track.h"
 #include "TrackArtist.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "alicorn/AlicornTimelineView.h"
+#include "TrackPanel.h"
+#endif
 #include "TrackPanelDrawingContext.h"
 #include "ZoomInfo.h"
 #include "TimeDisplayMode.h"
@@ -767,6 +771,15 @@ void TrackArt::DrawCursor(TrackPanelDrawingContext& context,
        if (x >= rect.GetLeft() && x <= rect.GetRight())
        {
           AColor::CursorColor(dc);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+          if (artist->parent) {
+             if (auto* view = artist->parent->GetAlicornTimelineView()) {
+                if (view->DrawVerticalIndicator(
+                       *dc, rect, x, dc->GetPen().GetColour()))
+                   return;
+             }
+          }
+#endif
           AColor::Line(*dc, x, rect.GetTop(), x, rect.GetBottom());
        }
    }

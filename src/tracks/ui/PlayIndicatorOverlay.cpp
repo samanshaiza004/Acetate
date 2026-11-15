@@ -128,7 +128,7 @@ void PlayIndicatorOverlayBase::Draw(OverlayPanel &panel, wxDC &dc)
       if (auto* view = tp->GetAlicornTimelineView()) {
          const auto size = tp->GetClientSize();
          const wxRect clip{ 0, 0, size.x, size.y };
-         if (view->DrawPlayhead(
+         if (view->DrawVerticalIndicator(
                 dc, clip, mLastIndicatorX, dc.GetPen().GetColour()))
             return;
       }

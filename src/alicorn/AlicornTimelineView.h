@@ -51,7 +51,7 @@ public:
       size_t rectangleCount,
       const AudacityWaveformSegment* segments,
       size_t count);
-   bool DrawPlayhead(
+   bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,
       int x,

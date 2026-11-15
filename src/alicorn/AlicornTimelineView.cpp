@@ -301,7 +301,7 @@ bool AlicornTimelineView::DrawWaveform(
       mView, &DrawGeometry, &context) >= 0;
 }
 
-bool AlicornTimelineView::DrawPlayhead(
+bool AlicornTimelineView::DrawVerticalIndicator(
    wxDC& dc, const wxRect& clip, int x, const wxColour& color)
 {
    const auto linear = ToLinearColor(color);
