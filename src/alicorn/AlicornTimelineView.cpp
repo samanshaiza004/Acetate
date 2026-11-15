@@ -59,6 +59,22 @@ struct PaintContext {
    size_t labelIndex{};
 };
 
+template<typename PaintProc>
+bool PaintOutputAndAcknowledge(
+   AudacityAlicornTimelineView* view,
+   uint32_t outputKind,
+   PaintProc&& paint)
+{
+   uint64_t revision{};
+   const auto pending = audacity_alicorn_timeline_view_output_revision(
+      view, outputKind, &revision);
+   if (pending < 0 || paint() < 0)
+      return false;
+   return pending == 0 ||
+      audacity_alicorn_timeline_view_output_submission_succeeded(
+         view, outputKind, revision) > 0;
+}
+
 void DrawGeometry(
    void* rawContext,
    const AudacityWaveformRectangle* rectangles,
@@ -333,8 +349,13 @@ bool AlicornTimelineView::DrawWaveform(
       context.pointMarkerPen = *pointMarkerPen;
       context.hasPointMarkerPen = true;
    }
-   return audacity_alicorn_timeline_view_paint_waveform(
-      mView, &DrawGeometry, &context) >= 0;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_WAVEFORM,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_waveform(
+            mView, &DrawGeometry, &context);
+      });
 }
 
 bool AlicornTimelineView::DrawVerticalIndicator(
@@ -379,8 +400,13 @@ bool AlicornTimelineView::DrawVerticalIndicator(
    context.graphics = graphics.get();
    context.clip = rect;
    context.yOrigin = mRulerSize.y;
-   return audacity_alicorn_timeline_view_paint_waveform_overlay(
-      mView, static_cast<uint32_t>(kind), &DrawGeometry, &context) >= 0;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_WAVEFORM,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_waveform_overlay(
+            mView, static_cast<uint32_t>(kind), &DrawGeometry, &context);
+      });
 }
 
 bool AlicornTimelineView::ClearVerticalIndicator(
@@ -412,8 +438,13 @@ bool AlicornTimelineView::ClearVerticalIndicator(
    context.graphics = graphics.get();
    context.clip = rect;
    context.yOrigin = mRulerSize.y;
-   return audacity_alicorn_timeline_view_paint_waveform_overlay(
-      mView, static_cast<uint32_t>(kind), &DrawGeometry, &context) >= 0;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_WAVEFORM,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_waveform_overlay(
+            mView, static_cast<uint32_t>(kind), &DrawGeometry, &context);
+      });
 }
 
 bool AlicornTimelineView::DrawRulerIndicator(
@@ -453,8 +484,13 @@ bool AlicornTimelineView::DrawRulerIndicator(
    PaintContext context;
    context.graphics = graphics.get();
    context.clip = rect;
-   return audacity_alicorn_timeline_view_paint_ruler_overlay(
-      mView, &DrawGeometry, &context) >= 0;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_RULER,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_ruler_overlay(
+            mView, &DrawGeometry, &context);
+      });
 }
 
 bool AlicornTimelineView::UpdateRuler(
@@ -593,6 +629,11 @@ bool AlicornTimelineView::DrawRuler(
          wxFONTSTYLE_NORMAL,
          label->fontWeight);
    }
-   return audacity_alicorn_timeline_view_paint_ruler(
-      mView, &DrawCommand, &DrawGeometry, &context) >= 0;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_RULER,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_ruler(
+            mView, &DrawCommand, &DrawGeometry, &context);
+      });
 }

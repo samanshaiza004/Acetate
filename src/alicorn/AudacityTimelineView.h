@@ -18,6 +18,11 @@ typedef enum AudacityWaveformIndicatorKind {
    AUDACITY_WAVEFORM_INDICATOR_COUNT = 2,
 } AudacityWaveformIndicatorKind;
 
+typedef enum AudacityTimelineOutputKind {
+   AUDACITY_TIMELINE_OUTPUT_RULER = 0,
+   AUDACITY_TIMELINE_OUTPUT_WAVEFORM = 1,
+} AudacityTimelineOutputKind;
+
 /* One retained runtime contains both the ruler and track-panel regions. */
 AudacityAlicornTimelineView* audacity_alicorn_timeline_view_create(
    float ruler_width,
@@ -111,6 +116,18 @@ int32_t audacity_alicorn_timeline_view_paint_ruler_overlay(
    AudacityAlicornTimelineView* view,
    AudacityWaveformPaintCallback geometry_callback,
    void* context);
+
+/* Capture and acknowledge the exact revision for one independently painted
+ * target. Capture returns 1 with a revision, 0 when clean, and -1 on error.
+ * Acknowledge only after the target's synchronous paint succeeds. */
+int32_t audacity_alicorn_timeline_view_output_revision(
+   AudacityAlicornTimelineView* view,
+   uint32_t output_kind,
+   uint64_t* revision);
+int32_t audacity_alicorn_timeline_view_output_submission_succeeded(
+   AudacityAlicornTimelineView* view,
+   uint32_t output_kind,
+   uint64_t revision);
 
 #ifdef __cplusplus
 }

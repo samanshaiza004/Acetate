@@ -104,11 +104,13 @@ wakes, accessibility snapshots/actions, frame acknowledgement, and ordered
 teardown. Acetate uses it for the Snap checkbox and individual action controls,
 each hosted on its own wx surface. wx still owns the windows and event loop,
 forwards the native input and resize calls, and synchronously presents retained
-commands through `wxGraphicsContext`. This is a lifecycle adoption, not proof
-of SDL surface interoperation or GPU presentation. The combined ruler/waveform
-timeline still uses its existing runtime wrapper because it paints to two
-separate wx surfaces and needs a coordinated presentation acknowledgement.
-This multi-surface acknowledgement gap is tracked in Alicorn [#205](https://github.com/samanshaiza004/alicorn/issues/205).
+commands through `wxGraphicsContext`. The timeline uses one retained Runtime
+with disjoint ruler and waveform output roots; each synchronous wx paint path
+captures and acknowledges that output's exact pending revision after drawing.
+This exercises Alicorn [#205's multi-output scheduling contract](https://github.com/samanshaiza004/alicorn/issues/205)
+without duplicating the Runtime. It does not prove SDL surface interoperation
+or GPU presentation. A native session still needs to confirm independent update
+and idle behavior.
 Acetate has not adopted `Sdl_GPU_Presenter`.
 
 Alicorn #196, which introduced the host-owned Runtime API, is complete. The

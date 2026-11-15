@@ -59,6 +59,8 @@ AudacityRulerDrawCallback :: #type proc "c" (
 
 Timeline_View :: struct {
 	runtime: alicorn.Runtime,
+	ruler_output: alicorn.Presentation_Output_ID,
+	waveform_output: alicorn.Presentation_Output_ID,
 	ruler_geometry_id: alicorn.Node_ID,
 	ruler_overlay_geometry_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
@@ -81,6 +83,8 @@ MAX_TIMELINE_LABELS :: 1024
 MAX_TIMELINE_LABEL_BYTES :: 4096
 AUDACITY_WAVEFORM_INDICATOR_CARET :: u32(0)
 AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD :: u32(1)
+AUDACITY_TIMELINE_OUTPUT_RULER :: u32(0)
+AUDACITY_TIMELINE_OUTPUT_WAVEFORM :: u32(1)
 
 valid_timeline_view :: proc(view: ^Timeline_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
@@ -116,6 +120,8 @@ timeline_view_build_description :: proc(
 			align=.Stretch,
 		),
 	)
+	ruler_output_bound := ruler_region != 0 &&
+		alicorn.presentation_output_bind_root(&view.runtime, view.ruler_output, ruler_region) == .Ok
 	columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.width)}
 	rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.ruler_height)}
 	ruler_grid := alicorn.grid_begin(
@@ -234,6 +240,8 @@ timeline_view_build_description :: proc(
 			align=.Stretch,
 		),
 	)
+	waveform_output_bound := waveform_region != 0 &&
+		alicorn.presentation_output_bind_root(&view.runtime, view.waveform_output, waveform_region) == .Ok
 	waveform_columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.width)}
 	waveform_rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.waveform_height)}
 	waveform_grid := alicorn.grid_begin(
@@ -277,7 +285,7 @@ timeline_view_build_description :: proc(
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	return ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok &&
+	return ruler_output_bound && waveform_output_bound && ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok &&
 		waveform_grid != 0 && waveform_geometry_ok && waveform_caret_overlay_ok &&
 		waveform_playhead_overlay_ok
 }
@@ -293,6 +301,17 @@ timeline_waveform_indicator_id :: proc(
 		return view.waveform_playhead_overlay_geometry_id
 	}
 	return 0
+}
+
+timeline_output_id :: proc(view: ^Timeline_View, output_kind: u32) -> (id: alicorn.Presentation_Output_ID, ok: bool) {
+	if view == nil { return }
+	switch output_kind {
+	case AUDACITY_TIMELINE_OUTPUT_RULER:
+		return view.ruler_output, true
+	case AUDACITY_TIMELINE_OUTPUT_WAVEFORM:
+		return view.waveform_output, true
+	}
+	return
 }
 
 @(export, link_name="audacity_alicorn_timeline_view_create")
@@ -316,6 +335,23 @@ audacity_alicorn_timeline_view_create :: proc "c" (
 		ruler_height+waveform_height,
 	})
 	view.runtime_initialized = true
+	ruler_output, ruler_output_status := alicorn.presentation_output_register(&view.runtime)
+	if ruler_output_status != .Ok {
+		alicorn.destroy_runtime(&view.runtime)
+		view.runtime_initialized = false
+		free(view)
+		return nil
+	}
+	waveform_output, waveform_output_status := alicorn.presentation_output_register(&view.runtime)
+	if waveform_output_status != .Ok {
+		_ = alicorn.presentation_output_unregister(&view.runtime, ruler_output)
+		alicorn.destroy_runtime(&view.runtime)
+		view.runtime_initialized = false
+		free(view)
+		return nil
+	}
+	view.ruler_output = ruler_output
+	view.waveform_output = waveform_output
 	if !timeline_view_build_description(view, nil) {
 		alicorn.destroy_runtime(&view.runtime)
 		view.runtime_initialized = false
@@ -1129,4 +1165,41 @@ audacity_alicorn_timeline_view_paint_ruler_overlay :: proc "c" (
 		geometry_callback,
 		callback_context,
 	)
+}
+
+// Return 1 with the currently pending output revision, 0 when this output is
+// clean, and -1 for an invalid view/output. The caller acknowledges only after
+// its native paint callback completes successfully.
+@(export, link_name="audacity_alicorn_timeline_view_output_revision")
+audacity_alicorn_timeline_view_output_revision :: proc "c" (
+	opaque_view: rawptr,
+	output_kind: u32,
+	revision: ^u64,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) || revision == nil { return -1 }
+	output, valid_output := timeline_output_id(view, output_kind)
+	if !valid_output { return -1 }
+	snapshot, status := alicorn.presentation_output_snapshot(&view.runtime, output)
+	if status != .Ok { return -1 }
+	if !snapshot.pending { return 0 }
+	revision^ = snapshot.revision
+	return 1
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_output_submission_succeeded")
+audacity_alicorn_timeline_view_output_submission_succeeded :: proc "c" (
+	opaque_view: rawptr,
+	output_kind: u32,
+	revision: u64,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) { return -1 }
+	output, valid_output := timeline_output_id(view, output_kind)
+	if !valid_output { return -1 }
+	status := alicorn.presentation_output_frame_submission_succeeded(&view.runtime, output, revision)
+	if status == .Ok { return 1 }
+	return -1
 }
