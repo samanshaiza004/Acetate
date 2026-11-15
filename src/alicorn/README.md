@@ -41,7 +41,11 @@ current wx numeric editor, so a future Alicorn editor can reuse Audacity's
 Start/End, Start/Length, Length/End, and Length/Center semantics. The existing
 `NumericTextCtrl` remains active because it supplies segmented time editing,
 format switching, native text behavior, and accessibility that the current
-Alicorn bridge does not yet replace. wx still owns ruler gestures,
+Alicorn bridge does not yet replace. Keep it until the host can deliver
+committed text, preedit/cancel composition, editing and navigation keys, focus
+lifecycle, and accessible labels/values; Alicorn #196 tracks that host contract.
+This avoids replacing it with a plain text field that silently drops these
+behaviors. wx still owns ruler gestures,
 play-region and blank-track backgrounds, sync-lock selection patterns, the
 track backing surface, envelope controls, clip decorations, high-zoom sample
 editing, accessibility host objects, and native audio services. Delete/Undo/Redo
