@@ -55,8 +55,11 @@ if( audacity_use_alicorn_snap_ui )
       toolbars/AlicornPaint.h
       toolbars/AlicornSnapControl.cpp
       toolbars/AlicornSnapControl.h
+      alicorn/AlicornRulerView.cpp
+      alicorn/AlicornRulerView.h
       alicorn/AlicornWaveformView.cpp
       alicorn/AlicornWaveformView.h
+      alicorn/AudacityRulerView.h
       alicorn/AudacityWaveformView.h
    )
    target_include_directories( ${TARGET} PRIVATE "${topdir}/src/alicorn" "${topdir}/src/toolbars" )

@@ -76,6 +76,8 @@ add_custom_command(
    DEPENDS
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacitySnapView.odin"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacitySnapView.h"
+      "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityRulerView.odin"
+      "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityRulerView.h"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityWaveformView.odin"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityWaveformView.h"
       ${alicorn_runtime_inputs}

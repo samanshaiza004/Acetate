@@ -20,6 +20,11 @@
 #include "ViewInfo.h" // for PlayRegion
 #include "TimeDisplayMode.h"
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include <memory>
+class AlicornRulerView;
+#endif
+
 class AudacityProject;
 struct AudioIOEvent;
 class LinearUpdater;
@@ -139,6 +144,10 @@ private:
    
    LinearUpdater& mUpdater;
    Ruler& mRuler;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   std::unique_ptr<AlicornRulerView> mAlicornRulerView;
+#endif
 
    TrackList *mTracks;
 

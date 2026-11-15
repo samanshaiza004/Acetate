@@ -1,33 +1,43 @@
 # Alicorn-backed Audacity controls
 
 This directory contains small Alicorn-backed controls hosted by Audacity 3.
-The current opt-in integration replaces normal-zoom waveform summary strokes
-through Alicorn-retained geometry, alongside the Snap checkbox, the Audio Setup
-toolbar button, the Selection Toolbar mode-setup button, the Edit toolbar
-buttons, the Cut/Copy/Paste toolbar buttons, and the momentary Stop transport
-button. Play remains native because its Shift/Ctrl modifier modes and toggle
-presentation need a behavior-preserving adapter. Audacity still owns the native
-window, event loop, accessibility bridge, menus, audio-device state, selection
-model, command dispatch, and drawing surface; Alicorn supplies retained control
-descriptions, paint commands, and transient pointer-drag endpoints for plain
-audio-track range selection. This adapter does not create an SDL window or
-renderer. The waveform path reads Audacity's existing 256-column min/max/RMS
-cache, updates one retained geometry surface owned by each TrackPanel, and
-translates geometry paint payloads synchronously through wxGraphicsContext. The
-wx `SelectHandle` still applies track eligibility, snapping, time conversion,
-selection mutation, undo history, and cancel rollback. The project selection is
-the source of truth; Alicorn retains only the active pointer gesture. The wx
-track panel still owns the backing surface, selection background, envelope
-controls, clip decorations, and high-zoom sample editing. If the Alicorn runtime
-cannot render a geometry update, the bitmap waveform path remains available.
-The geometry bridge's repaint cost has not yet been benchmarked against that
-bitmap cache.
+The opt-in integration renders normal-zoom waveform summary strokes and
+time-ruler marks/labels through Alicorn-retained geometry and text, alongside
+the Snap checkbox, Audio Setup toolbar button, Selection Toolbar mode-setup
+button, Edit toolbar buttons, Cut/Copy/Paste toolbar buttons, and momentary Stop
+transport button. Play remains native because its Shift/Ctrl modifier modes
+and toggle presentation need a behavior-preserving adapter. Audacity still owns
+the native window, event loop, accessibility bridge, menus, audio-device state,
+selection model, command dispatch, ruler formatting, and drawing surface;
+Alicorn supplies retained control descriptions, paint commands, ruler
+presentation, and transient pointer-drag endpoints for plain audio-track range
+selection. This adapter does not create an SDL window or renderer.
+
+The waveform path reads Audacity's existing 256-column min/max/RMS cache,
+updates one retained geometry surface owned by each TrackPanel, and translates
+geometry paint payloads synchronously through wxGraphicsContext. The ruler
+path takes an owned snapshot of Audacity's generated tick positions, labels,
+fonts, and colors, then renders those marks and labels through Alicorn in the
+existing wx paint pass. Ruler gestures, selection/play-region backgrounds,
+overlays, and the timeline's native host remain wx-owned. Both paths fall back
+to the original wx drawing when the Alicorn view cannot be initialized or
+updated. The wx `SelectHandle` still applies track eligibility, snapping, time
+conversion, selection mutation, undo history, and cancel rollback. The project
+selection is the source of truth; Alicorn retains only the active pointer
+gesture. The wx track panel still owns the waveform backing surface, selection
+background, envelope controls, clip decorations, and high-zoom sample editing.
+The geometry bridge's repaint cost has not yet been benchmarked against the
+native drawing paths.
+
+These are migration slices, not the target host architecture: each control or
+surface currently owns a small retained runtime. A single Alicorn runtime per
+project window, hosted by Audacity's existing event loop, remains unimplemented.
 
 ## Build
 
-Compile `AudacitySnapView.odin` as a static library with the external Alicorn
-repository root mapped as the collection (the import selects `runtime`), for
-example:
+Compile the Alicorn package in this directory as a static library with the
+external Alicorn repository root mapped as the collection (the import selects
+`runtime`), for example:
 
 ```sh
 odin build src/alicorn \
@@ -84,3 +94,12 @@ Alicorn geometry. Paint visits the completed geometry payload synchronously;
 segment storage is borrowed only for the callback. This path does not create an
 Alicorn GPU renderer and does not replace Audacity's waveform background,
 envelope controls, clip decorations, or high-zoom sample editing.
+
+The ruler view is owned by `AdornedRulerPanel` and also serializes its lifecycle
+on the wx UI thread. `Ruler::GetDisplaySnapshot` copies the already-generated
+Audacity ruler marks and formatted labels; it does not reimplement time-format
+or tick-spacing policy. Alicorn retains the tick geometry and text description,
+while wx maps the resulting paint commands onto the existing backing DC. The
+snapshot is copied during update. The original `Ruler::Draw` remains the
+fallback. No Alicorn code handles ruler gestures or selection/play-region
+overlays.

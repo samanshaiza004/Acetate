@@ -443,6 +443,123 @@ void Ruler::Draw(wxDC& dc) const
    Draw( dc, NULL);
 }
 
+Ruler::DisplaySnapshot Ruler::GetDisplaySnapshot(
+   wxDC& dc, const Envelope* envelope ) const
+{
+   DisplaySnapshot result;
+   if (mRulerStruct.mLength <= 0)
+      return result;
+
+   struct FontRestore {
+      wxDC& dc;
+      wxFont font;
+      ~FontRestore() { dc.SetFont(font); }
+   } restore{ dc, dc.GetFont() };
+
+   UpdateCache(dc, envelope);
+   const auto& cache = *mpCache;
+   const auto& fonts = *mRulerStruct.mpFonts;
+
+   const int iMaxPos = mRulerStruct.mOrientation == wxHORIZONTAL
+      ? mRulerStruct.mRight : mRulerStruct.mBottom - 5;
+
+   auto appendTick = [&](const RulerUpdater::Label& label, int length) {
+      const int pos = label.pos;
+      if (!mbTicksAtExtremes && (pos == 0 || pos == iMaxPos))
+         return;
+
+      DisplayTick tick;
+      tick.colour = mTickColour;
+      if (mRulerStruct.mOrientation == wxHORIZONTAL) {
+         tick.x1 = tick.x2 = mRulerStruct.mLeft + pos;
+         if (mRulerStruct.mFlip) {
+            tick.y1 = mRulerStruct.mTop;
+            tick.y2 = mRulerStruct.mTop + length;
+         }
+         else {
+            tick.y1 = mRulerStruct.mBottom - length;
+            tick.y2 = mRulerStruct.mBottom;
+         }
+      }
+      else {
+         tick.y1 = tick.y2 = mRulerStruct.mTop + pos;
+         if (mRulerStruct.mFlip) {
+            tick.x1 = mRulerStruct.mLeft;
+            tick.x2 = mRulerStruct.mLeft + length;
+         }
+         else {
+            tick.x1 = mRulerStruct.mRight - length;
+            tick.x2 = mRulerStruct.mRight;
+         }
+      }
+      result.ticks.push_back(tick);
+   };
+
+   auto appendLabel = [&](
+      const wxString& text, int x, int y, const wxFont& font,
+      const wxColour& colour
+   ) {
+      if (text.empty())
+         return;
+
+      dc.SetFont(font);
+      wxCoord width{}, height{};
+      dc.GetTextExtent(text, &width, &height);
+      result.labels.push_back(DisplayLabel{
+         text, x, y, width, height, font.GetPointSize(), font.GetWeight(), colour
+      });
+   };
+
+   auto appendMajorLabel = [&](const RulerUpdater::Label& label) {
+      if (!label.text || label.text->empty())
+         return;
+
+      const wxColour colour = mTwoTone && label.value < 0.0
+         ? wxColour{ theTheme.Colour(clrTextNegativeNumbers) } : mTickColour;
+      const wxString text = label.text->Translation();
+      const wxString units = label.units.Translation();
+
+      dc.SetFont(fonts.major);
+      wxCoord textWidth{}, textHeight{};
+      dc.GetTextExtent(text, &textWidth, &textHeight);
+      appendLabel(text, label.lx, label.ly, fonts.major, colour);
+      appendLabel(units, label.lx + textWidth, label.ly, fonts.minor, colour);
+   };
+
+   auto appendRegularLabel = [&](
+      const RulerUpdater::Label& label, const wxFont& font
+   ) {
+      if (!label.text || label.text->empty())
+         return;
+
+      const wxColour colour = mTwoTone && label.value < 0.0
+         ? wxColour{ theTheme.Colour(clrTextNegativeNumbers) } : mTickColour;
+      const wxString text = (*label.text + label.units).Translation();
+      appendLabel(text, label.lx, label.ly, font, colour);
+   };
+
+   for (const auto& label : cache.mMajorLabels) {
+      appendTick(label, mTickLengths.majorLength);
+      appendMajorLabel(label);
+   }
+
+   if (mbMinor) {
+      for (const auto& label : cache.mMinorLabels) {
+         appendTick(label, mTickLengths.minorLength);
+         appendRegularLabel(label, fonts.minor);
+      }
+   }
+
+   for (const auto& label : cache.mMinorMinorLabels) {
+      if (label.text) {
+         appendTick(label, mTickLengths.minorMinorLength);
+         appendRegularLabel(label, fonts.minorMinor);
+      }
+   }
+
+   return result;
+}
+
 void Ruler::Draw(wxDC& dc, const Envelope* envelope) const
 {
    if(mRulerStruct.mLength <=0 )

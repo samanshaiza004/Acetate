@@ -20,6 +20,9 @@
 #include <wx/font.h> // member variable
 #include <wx/pen.h> // member variable
 
+#include <vector>
+#include <wx/string.h>
+
 class wxDC;
 
 class Envelope;
@@ -122,6 +125,34 @@ class AUDACITY_DLL_API Ruler :
    //
    // Drawing
    //
+
+   // An owned, read-only projection of the generated ruler marks and labels.
+   // Coordinates are in the same DC coordinate space used by Draw. Label font
+   // sizes are wx point sizes; major labels with units are split into separate
+   // runs so their existing bold-number/regular-unit styling is preserved.
+   struct DisplayTick {
+      int x1{}, y1{}, x2{}, y2{};
+      wxColour colour;
+   };
+
+   struct DisplayLabel {
+      wxString text;
+      int x{}, y{}, width{}, height{};
+      int fontSize{};
+      wxFontWeight fontWeight{ wxFONTWEIGHT_NORMAL };
+      wxColour colour;
+   };
+
+   struct DisplaySnapshot {
+      std::vector<DisplayTick> ticks;
+      std::vector<DisplayLabel> labels;
+   };
+
+   // Uses dc for the same font metrics as Draw and returns copied values. The
+   // supplied DC's font is restored before returning.
+   DisplaySnapshot GetDisplaySnapshot(
+      wxDC& dc, const Envelope* envelope = nullptr
+   ) const;
 
    // Note that it will not erase for you...
    void Draw(wxDC& dc) const;

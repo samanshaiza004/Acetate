@@ -70,11 +70,11 @@ Document the one-track project eligibility rules and the exact edit semantics. D
 
 ### 1. Make Alicorn a window-level hosted surface
 
-Resolve the shared host integration before adding more individual controls. The current controls use separate retained runtimes, which is acceptable as a prototype but not as the foundation for a full editor. Use one long-lived Alicorn runtime per project window, hosted by Audacity's event loop, and validate resize, focus, pointer capture, keyboard/IME, accessibility, scheduling, and teardown.
+This remains the host-architecture gate. The current control and editor-surface experiments use separate retained runtimes; they prove rendering and input seams but are not the foundation for a full editor. Use one long-lived Alicorn runtime per project window, hosted by Audacity's event loop, and validate resize, focus, pointer capture, keyboard/IME, accessibility, scheduling, and teardown.
 
 ### 2. Deliver the read-only waveform workspace
 
-Replace the central track canvas for eligible projects with one Alicorn timeline: ruler, waveform, selection/playhead display, scroll, and zoom. Reuse Audacity's cached waveform summaries rather than copying or scanning the whole audio buffer during pointer movement. Preserve the existing import and playback engines.
+The first visual slices are now present: Alicorn renders normal-zoom waveform summaries from Audacity's bounded cache and renders time-ruler marks/labels from an owned snapshot of Audacity's generated ruler data. The wx host still owns ruler gestures, selection and play-region backgrounds, overlays, the backing surface, and high-zoom editing. Next, bring those pieces into one window-level Alicorn timeline with selection/playhead display, scroll, and zoom. Continue using cached summaries rather than copying or scanning the whole audio buffer during pointer movement. Preserve the existing import and playback engines.
 
 ### 3. Complete the edit loop
 
@@ -96,7 +96,7 @@ These are already tracked by Alicorn and should be advanced instead of duplicate
 - [#162 — Host-owned renderer-neutral presentation boundary](https://github.com/samanshaiza004/alicorn/issues/162): relevant if the desktop host must own presentation independently of an Alicorn-created window.
 - [#164 — Custom GPU canvas and waveform dogfood](https://github.com/samanshaiza004/alicorn/issues/164): relevant for a retained waveform surface and native rendering evidence.
 
-The current Audacity control bridge emits surface, icon, and text commands; it skips geometry and image payloads. A waveform implementation therefore needs an explicit supported rendering path through Alicorn's public canvas/surface APIs and the host bridge. Do not create a parallel renderer inside the editor. I found no separate Alicorn issue to file for this proposal because the existing host and custom-canvas issues cover the concrete dependencies.
+The Acetate bridge now carries surface, icon, text, and retained geometry payloads through wx; waveform and ruler output are synchronously mapped to the existing host drawing context. Do not create a parallel renderer inside the editor. The remaining shared-host work is tracked by Alicorn #196 and #162, and retained canvas work by #164; no duplicate issue is needed for this slice.
 
 ## Acceptance gates
 
@@ -124,7 +124,7 @@ Each addition should be an end-to-end vertical slice: backend command and persis
 
 ## Estimate and current progress
 
-The current Alicorn work covers a handful of toolbar controls; the waveform editor and the editing workflow above have not started. By visible UI surface, this is roughly **5–10% of the GUI migration**, but effectively **0% of the MVP editing loop**. These are planning estimates, not measured code-completion metrics.
+The current Alicorn work covers a handful of toolbar controls, normal-zoom waveform summaries, and time-ruler marks/labels. The unified timeline, selection/playhead presentation, editing workflow, and project-window runtime have not been completed. By visible UI surface, this remains roughly **5–10% of the GUI migration**, and effectively **0% of the MVP editing loop**. These are planning estimates, not measured code-completion metrics.
 
 Assuming the selected project, audio, import, and export operations are available behind the application boundary, estimate **8–14 engineer-weeks** for the hosted waveform editor, core edit loop, persistence, recovery, accessibility, and native validation (about 2–4 calendar months for one experienced engineer). This excludes completion of the broader Odin/Caliber backend rewrite; the total schedule depends on which of those operations still need to be ported. Re-estimate after the window-host spike and the first import→waveform→playback vertical slice.
 
