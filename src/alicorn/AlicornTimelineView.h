@@ -56,6 +56,11 @@ public:
       const wxRect& clip,
       int x,
       const wxColour& color);
+   bool DrawRulerIndicator(
+      wxDC& dc,
+      const wxRect& clip,
+      int x,
+      const wxColour& color);
    bool DrawRuler(
       wxDC& dc,
       const wxRect& clip,

@@ -53,6 +53,7 @@ AudacityRulerDrawCallback :: #type proc "c" (
 Timeline_View :: struct {
 	runtime: alicorn.Runtime,
 	ruler_geometry_id: alicorn.Node_ID,
+	ruler_overlay_geometry_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
 	width, ruler_height, waveform_height: f32,
 	runtime_initialized: bool,
@@ -199,6 +200,14 @@ timeline_view_build_description :: proc(
 	}
 	alicorn.container_end(&ui)
 	labels_ok := alicorn.grid_cell(&ui, labels_row, 0, 0)
+	view.ruler_overlay_geometry_id = alicorn.gpu_geometry_surface(
+		&ui,
+		"audacity-alicorn-timeline-ruler-overlay",
+		alicorn.layout_style(.Row, width=view.width, height=view.ruler_height),
+		1,
+	)
+	ruler_overlay_ok := view.ruler_overlay_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.ruler_overlay_geometry_id, 0, 0)
 	alicorn.grid_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
@@ -225,7 +234,7 @@ timeline_view_build_description :: proc(
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	return ruler_grid != 0 && ruler_geometry_ok && labels_ok && waveform_ok
+	return ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok && waveform_ok
 }
 
 @(export, link_name="audacity_alicorn_timeline_view_create")
@@ -695,6 +704,46 @@ audacity_alicorn_timeline_view_update_ruler_geometry :: proc "c" (
 	return 1
 }
 
+@(export, link_name="audacity_alicorn_timeline_view_update_ruler_overlay")
+audacity_alicorn_timeline_view_update_ruler_overlay :: proc "c" (
+	opaque_view: rawptr,
+	segment_input: ^AudacityWaveformSegment,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) { return -1 }
+	segments: [1]alicorn.GPU_Surface_Line_Segment
+	segment_count := 0
+	if segment_input != nil {
+		source := segment_input^
+		if !alicorn.number_is_finite(source.x0) || !alicorn.number_is_finite(source.y0) ||
+		   !alicorn.number_is_finite(source.x1) || !alicorn.number_is_finite(source.y1) ||
+		   !alicorn.number_is_finite(source.thickness) || source.thickness <= 0 ||
+		   !timeline_ruler_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
+			return -1
+		}
+		segments[0] = alicorn.GPU_Surface_Line_Segment{
+			start=alicorn.GPU_Surface_Point{source.x0, source.y0},
+			end=alicorn.GPU_Surface_Point{source.x1, source.y1},
+			thickness=source.thickness,
+			color=alicorn.Color{source.r, source.g, source.b, source.a},
+		}
+		segment_count = 1
+	}
+	if !alicorn.gpu_surface_update_geometry(
+		&view.runtime,
+		view.ruler_overlay_geometry_id,
+		segments[:segment_count],
+		nil,
+	) {
+		return -1
+	}
+	presentation, ready := alicorn.begin_presentation_frame(&view.runtime)
+	if !ready { return -1 }
+	alicorn.end_presentation_frame(&presentation)
+	return 1
+}
+
 @(export, link_name="audacity_alicorn_timeline_view_paint_waveform")
 audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 	opaque_view: rawptr,
@@ -794,7 +843,8 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 			draw_callback(callback_context, &output)
 			delivered += 1
 		case alicorn.Geometry_Paint:
-			if command.owner != view.ruler_geometry_id { continue }
+			if command.owner != view.ruler_geometry_id &&
+			   command.owner != view.ruler_overlay_geometry_id { continue }
 			geometry, geometry_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, payload.geometry)
 			if !geometry_ok || (len(geometry.rectangles) == 0 && len(geometry.segments) == 0) { continue }
 			output_rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]AudacityWaveformRectangle

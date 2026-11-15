@@ -15,11 +15,16 @@ Paul Licameli split from TrackPanel.cpp
 #include "AColor.h"
 #include "../../AdornedRulerPanel.h"
 #include "Project.h"
+#include "../../ProjectWindow.h"
 #include "../../ProjectWindows.h"
 #include "Track.h" //
 #include "TrackFocus.h"
 #include "../../TrackPanel.h"
 #include "ViewInfo.h"
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../alicorn/AlicornTimelineView.h"
+#endif
 
 #include <wx/dc.h>
 
@@ -79,6 +84,20 @@ std::pair<wxRect, bool> EditCursorOverlay::DoGetRectangle(wxSize size)
 
 void EditCursorOverlay::Draw(OverlayPanel &panel, wxDC &dc)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   const auto setRulerIndicator = [&](int x) {
+      if (mIsMaster)
+         return;
+      if (auto ruler = dynamic_cast<AdornedRulerPanel*>(&panel)) {
+         if (auto* window = ProjectWindow::Find(mProject)) {
+            if (auto* view = window->FindAlicornTimelineView())
+               (void)view->DrawRulerIndicator(
+                  dc, ruler->GetInnerRect(), x, wxColour{0, 0, 0});
+         }
+      }
+   };
+#endif
+
    if (mIsMaster && !mPartner) {
       auto &ruler = AdornedRulerPanel::Get( *mProject );
       mPartner = std::make_shared<EditCursorOverlay>(mProject, false);
@@ -86,8 +105,12 @@ void EditCursorOverlay::Draw(OverlayPanel &panel, wxDC &dc)
    }
 
    mLastCursorX = mNewCursorX;
-   if (mLastCursorX == -1)
+   if (mLastCursorX == -1) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      setRulerIndicator(-1);
+#endif
       return;
+   }
 
    const auto &viewInfo = ViewInfo::Get( *mProject );
 
@@ -96,8 +119,12 @@ void EditCursorOverlay::Draw(OverlayPanel &panel, wxDC &dc)
                              mCursorTime,
                              viewInfo.GetScreenEndTime());
 
-   if (!onScreen)
+   if (!onScreen) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      setRulerIndicator(-1);
+#endif
       return;
+   }
 
    auto &trackPanel = TrackPanel::Get( *mProject );
    //NOTE: point selection cursor drawing over tracks moved to TrackPanel.cpp(see also TrackArt::DrawCursor)
@@ -134,9 +161,15 @@ void EditCursorOverlay::Draw(OverlayPanel &panel, wxDC &dc)
       wxASSERT(false);*/
    if (auto ruler = dynamic_cast<AdornedRulerPanel*>(&panel)) {
        wxASSERT(!mIsMaster);
-       dc.SetPen(*wxBLACK_PEN);
        // AColor::Line includes both endpoints so use GetBottom()
        auto rect = ruler->GetInnerRect();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+       if (auto* window = ProjectWindow::Find(mProject))
+          if (auto* view = window->FindAlicornTimelineView();
+              view && view->DrawRulerIndicator(dc, rect, mLastCursorX, wxColour{0, 0, 0}))
+             return;
+#endif
+       dc.SetPen(*wxBLACK_PEN);
        AColor::Line(dc, mLastCursorX, rect.GetTop(), mLastCursorX, rect.GetBottom());
    }
 }

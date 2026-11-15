@@ -35,11 +35,12 @@ also uses that surface after each selected channel's backing bitmap is drawn;
 Audacity's selected time remains authoritative and wx paints it if the retained
 path is unavailable. The ruler adapter copies
 Audacity's generated tick positions, formatted labels, fonts, and colors into
-the same retained tree, and paints its selected-range and loop-range bands
-and loop-boundary markers through retained rectangles. Audacity remains
-authoritative for those ranges and their pixel/time mapping. Range-only repaint
-updates geometry without rebuilding the ruler description. It does not
-reimplement ruler policy.
+the same retained tree, and paints its selected-range and loop-range bands,
+loop-boundary markers, and point-selection caret through retained geometry.
+The caret is a separate inert layer above ruler labels. Audacity remains
+authoritative for those ranges, the cursor time, and their pixel/time mapping.
+Range-only repaint updates geometry without rebuilding the ruler description.
+It does not reimplement ruler policy.
 
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection

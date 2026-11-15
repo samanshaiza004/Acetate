@@ -319,6 +319,47 @@ bool AlicornTimelineView::DrawVerticalIndicator(
    return DrawWaveform(dc, clip, nullptr, 0, &line, 1);
 }
 
+bool AlicornTimelineView::DrawRulerIndicator(
+   wxDC& dc, const wxRect& clip, int x, const wxColour& color)
+{
+   if (!mView || !ResizeRuler(dc.GetSize()) || mRulerNeedsUpdate ||
+       !mLastSnapshot || !mHasRulerFills ||
+       mLastRulerFillCount > mLastRulerFills.size())
+      return false;
+
+   const auto rect = clip.Intersect(wxRect{wxPoint{0, 0}, dc.GetSize()});
+   if (rect.IsEmpty())
+      return true;
+
+   AudacityWaveformSegment line{};
+   const AudacityWaveformSegment* linePointer{};
+   if (x >= 0) {
+      const auto linear = ToLinearColor(color);
+      line = AudacityWaveformSegment{
+         static_cast<float>(x),
+         static_cast<float>(rect.GetTop()),
+         static_cast<float>(x),
+         static_cast<float>(rect.GetBottom() + 1),
+         1.0f,
+         linear.r,
+         linear.g,
+         linear.b,
+         linear.a
+      };
+      linePointer = &line;
+   }
+   if (audacity_alicorn_timeline_view_update_ruler_overlay(
+          mView, linePointer) < 0)
+      return false;
+
+   return DrawRuler(
+      dc,
+      rect,
+      *mLastSnapshot,
+      mLastRulerFills.data(),
+      mLastRulerFillCount);
+}
+
 bool AlicornTimelineView::UpdateRuler(
    const Ruler::DisplaySnapshot& snapshot, bool force)
 {

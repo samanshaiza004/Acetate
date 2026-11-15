@@ -71,6 +71,11 @@ int32_t audacity_alicorn_timeline_view_update_ruler_geometry(
    const AudacityRulerTick* ticks,
    uint64_t tick_count);
 
+/* Presentation-only indicator drawn above ruler labels; null clears it. */
+int32_t audacity_alicorn_timeline_view_update_ruler_overlay(
+   AudacityAlicornTimelineView* view,
+   const AudacityWaveformSegment* segment);
+
 /* Paint callbacks are synchronous and may not reenter or destroy the view.
  * Waveform bounds/clip are translated to track-panel local coordinates;
  * ruler commands remain ruler-panel local. */
