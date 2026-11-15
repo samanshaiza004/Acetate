@@ -35,7 +35,7 @@ Paul Licameli split from TrackPanel.cpp
 #include "../../TrackPanel.h"
 #include "../../TrackPanelDrawingContext.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-#include "../../alicorn/AlicornWaveformView.h"
+#include "../../alicorn/AlicornTimelineView.h"
 #endif
 #include "../../TrackPanelMouseEvent.h"
 #include "ViewInfo.h"
@@ -288,7 +288,7 @@ namespace
    bool BeginAlicornWaveformSelection(
       AudacityProject *project, int x, int y)
    {
-      auto* view = TrackPanel::Get(*project).GetAlicornWaveformView();
+      auto* view = TrackPanel::Get(*project).GetAlicornTimelineView();
       if (!view)
          return false;
       AudacityWaveformSelection selection{};
@@ -1046,7 +1046,7 @@ UIHandle::Result SelectHandle::Release(
       AudacityWaveformSelection selection{};
       auto releaseX = event.event.GetX();
       bool ended = false;
-      if (auto* view = TrackPanel::Get(*pProject).GetAlicornWaveformView()) {
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView()) {
          ended = view->Pointer(
             AUDACITY_SNAP_POINTER_UP,
             static_cast<float>(event.event.GetX()),
@@ -1083,7 +1083,7 @@ UIHandle::Result SelectHandle::Cancel(AudacityProject *pProject)
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    if (mAlicornSelectionActive) {
       AudacityWaveformSelection selection{};
-      if (auto* view = TrackPanel::Get(*pProject).GetAlicornWaveformView())
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView())
          view->Pointer(
             AUDACITY_SNAP_POINTER_CANCEL, 0.0f, 0.0f, 0, selection);
       mAlicornSelectionActive = false;
@@ -1249,7 +1249,7 @@ void SelectHandle::AdjustSelection(AudacityProject *pProject,
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    if (mAlicornSelectionActive) {
       AudacityWaveformSelection selection{};
-      if (auto* view = TrackPanel::Get(*pProject).GetAlicornWaveformView()) {
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView()) {
          if (view->Pointer(
                 AUDACITY_SNAP_POINTER_MOVE,
                 static_cast<float>(mouseXCoordinate),

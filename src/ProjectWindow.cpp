@@ -37,6 +37,9 @@ Paul Licameli split from AudacityProject.cpp
 #include <wx/wupdlock.h>
 
 #include "TrackPanel.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "alicorn/AlicornTimelineView.h"
+#endif
 
 namespace
 {
@@ -640,6 +643,28 @@ BEGIN_EVENT_TABLE(ProjectWindow, wxFrame)
    EVT_COMMAND(wxID_ANY, EVT_TOOLBAR_UPDATED, ProjectWindow::OnToolBarUpdate)
    //mchinen:multithreaded calls - may not be threadsafe with CommandEvent: may have to change.
 END_EVENT_TABLE()
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+AlicornTimelineView *ProjectWindow::GetAlicornTimelineView(
+   const wxSize& rulerSize, const wxSize& waveformSize)
+{
+   if (!mAlicornTimelineView)
+      mAlicornTimelineView = std::make_unique<AlicornTimelineView>();
+   if (!mAlicornTimelineView->Resize(rulerSize, waveformSize))
+      return nullptr;
+   return mAlicornTimelineView.get();
+}
+
+AlicornTimelineView *ProjectWindow::FindAlicornTimelineView() const noexcept
+{
+   return mAlicornTimelineView.get();
+}
+
+void ProjectWindow::DestroyAlicornTimelineView() noexcept
+{
+   mAlicornTimelineView.reset();
+}
+#endif
 
 void ProjectWindow::ApplyUpdatedTheme()
 {

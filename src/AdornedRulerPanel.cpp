@@ -64,7 +64,7 @@
 #include "wxWidgetsWindowPlacement.h"
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-#include "alicorn/AlicornRulerView.h"
+#include "alicorn/AlicornTimelineView.h"
 #endif
 
 #include <wx/dcclient.h>
@@ -2474,12 +2474,12 @@ void AdornedRulerPanel::DoDrawMarks(wxDC * dc, bool /*text */ )
       mRuler.SetTickLengths({ 4, 2, 2 });
    }
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-   if (!mAlicornRulerView)
-      mAlicornRulerView = std::make_unique<AlicornRulerView>(GetClientSize());
-   if (mAlicornRulerView && mAlicornRulerView->IsReady()) {
-      const auto snapshot = mRuler.GetDisplaySnapshot(*dc);
-      if (mAlicornRulerView->Draw(*dc, mOuter, snapshot))
-         return;
+   if (auto* window = ProjectWindow::Find(mProject)) {
+      if (auto* view = window->FindAlicornTimelineView()) {
+         const auto snapshot = mRuler.GetDisplaySnapshot(*dc);
+         if (view->DrawRuler(*dc, mOuter, snapshot))
+            return;
+      }
    }
 #endif
    mRuler.Draw( *dc );

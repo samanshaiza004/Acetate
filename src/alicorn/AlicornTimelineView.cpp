@@ -1,5 +1,5 @@
-/*  SPDX-License-Identifier: GPL-2.0-or-later */
-#include "AlicornRulerView.h"
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+#include "AlicornTimelineView.h"
 
 #include <algorithm>
 #include <cmath>
@@ -29,14 +29,6 @@ AudacitySnapColor ToLinearColor(const wxColour& color)
    };
 }
 
-struct PaintContext {
-   wxGraphicsContext* graphics{};
-   wxRect clip;
-   AudacityAlicorn::PaintContext command;
-   std::vector<wxFont> labelFonts;
-   size_t labelIndex{};
-};
-
 double LinearToSrgb(float value)
 {
    const auto linear = std::clamp(static_cast<double>(value), 0.0, 1.0);
@@ -54,18 +46,14 @@ wxColour ToWxColour(const AudacitySnapColor& color)
       static_cast<unsigned char>(std::lround(std::clamp(color.a, 0.0f, 1.0f) * 255.0f)));
 }
 
-void DrawCommand(void* rawContext, const AudacitySnapDrawCommand* command)
-{
-   auto* context = static_cast<PaintContext*>(rawContext);
-   if (!context || !command)
-      return;
-
-   if (command->kind == AUDACITY_SNAP_DRAW_TEXT &&
-       context->labelIndex < context->labelFonts.size())
-      context->command.font = context->labelFonts[context->labelIndex++];
-
-   AudacityAlicorn::DrawPaintCommand(&context->command, command);
-}
+struct PaintContext {
+   wxGraphicsContext* graphics{};
+   wxRect clip;
+   int yOrigin{};
+   AudacityAlicorn::PaintContext command;
+   std::vector<wxFont> labelFonts;
+   size_t labelIndex{};
+};
 
 void DrawGeometry(
    void* rawContext,
@@ -79,6 +67,10 @@ void DrawGeometry(
    auto* context = static_cast<PaintContext*>(rawContext);
    if (!context || !context->graphics || !segments)
       return;
+
+   bounds.y -= static_cast<float>(context->yOrigin);
+   if (commandClip.width >= 0.0f && commandClip.height >= 0.0f)
+      commandClip.y -= static_cast<float>(context->yOrigin);
 
    auto* graphics = context->graphics;
    graphics->PushState();
@@ -110,9 +102,17 @@ void DrawGeometry(
    graphics->PopState();
 }
 
-bool SameColor(const wxColour& left, const wxColour& right)
+void DrawCommand(void* rawContext, const AudacitySnapDrawCommand* command)
 {
-   return left == right;
+   auto* context = static_cast<PaintContext*>(rawContext);
+   if (!context || !command)
+      return;
+
+   if (command->kind == AUDACITY_SNAP_DRAW_TEXT &&
+       context->labelIndex < context->labelFonts.size())
+      context->command.font = context->labelFonts[context->labelIndex++];
+
+   AudacityAlicorn::DrawPaintCommand(&context->command, command);
 }
 
 bool SameSnapshot(
@@ -127,7 +127,7 @@ bool SameSnapshot(
       const auto& a = left.ticks[i];
       const auto& b = right.ticks[i];
       if (a.x1 != b.x1 || a.y1 != b.y1 || a.x2 != b.x2 || a.y2 != b.y2 ||
-          !SameColor(a.colour, b.colour))
+          a.colour != b.colour)
          return false;
    }
    for (size_t i = 0; i < left.labels.size(); ++i) {
@@ -135,7 +135,7 @@ bool SameSnapshot(
       const auto& b = right.labels[i];
       if (a.text != b.text || a.x != b.x || a.y != b.y || a.width != b.width ||
           a.height != b.height || a.fontSize != b.fontSize ||
-          a.fontWeight != b.fontWeight || !SameColor(a.colour, b.colour))
+          a.fontWeight != b.fontWeight || a.colour != b.colour)
          return false;
    }
    return true;
@@ -157,35 +157,135 @@ std::vector<const Ruler::DisplayLabel*> OrderedLabels(
 }
 }
 
-AlicornRulerView::AlicornRulerView(const wxSize& size)
+AlicornTimelineView::AlicornTimelineView(
+   const wxSize& rulerSize, const wxSize& waveformSize)
 {
-   mView = audacity_alicorn_ruler_view_create(
-      static_cast<float>(size.x), static_cast<float>(size.y));
+   Resize(rulerSize, waveformSize);
 }
 
-AlicornRulerView::~AlicornRulerView()
+AlicornTimelineView::~AlicornTimelineView()
 {
-   audacity_alicorn_ruler_view_destroy(mView);
+   audacity_alicorn_timeline_view_destroy(mView);
 }
 
-bool AlicornRulerView::Resize(const wxSize& size)
+bool AlicornTimelineView::Resize(
+   const wxSize& rulerSize, const wxSize& waveformSize)
 {
-   if (!mView)
+   if (rulerSize.x <= 0 || rulerSize.y <= 0 ||
+       waveformSize.x <= 0 || waveformSize.y <= 0)
       return false;
-   const auto result = audacity_alicorn_ruler_view_resize(
-      mView, static_cast<float>(size.x), static_cast<float>(size.y));
+
+   if (!mView) {
+      mView = audacity_alicorn_timeline_view_create(
+         static_cast<float>(rulerSize.x),
+         static_cast<float>(rulerSize.y),
+         static_cast<float>(waveformSize.x),
+         static_cast<float>(waveformSize.y));
+      if (!mView)
+         return false;
+      mRulerSize = rulerSize;
+      mWaveformSize = waveformSize;
+      mRulerNeedsUpdate = true;
+      return true;
+   }
+
+   if (mRulerSize == rulerSize && mWaveformSize == waveformSize)
+      return true;
+
+   const auto result = audacity_alicorn_timeline_view_resize(
+      mView,
+      static_cast<float>(rulerSize.x),
+      static_cast<float>(rulerSize.y),
+      static_cast<float>(waveformSize.x),
+      static_cast<float>(waveformSize.y));
    if (result < 0)
       return false;
-   if (result > 0)
-      mLastSnapshot.reset();
+
+   mRulerSize = rulerSize;
+   mWaveformSize = waveformSize;
+   if (result > 0) {
+      mRulerNeedsUpdate = true;
+      if (mLastSnapshot && !UpdateRuler(*mLastSnapshot, true))
+         return false;
+   }
    return true;
 }
 
-bool AlicornRulerView::Update(const Ruler::DisplaySnapshot& snapshot)
+bool AlicornTimelineView::ResizeRuler(const wxSize& size)
+{
+   return Resize(size, mWaveformSize);
+}
+
+bool AlicornTimelineView::ResizeWaveform(const wxSize& size)
+{
+   return Resize(mRulerSize, size);
+}
+
+int32_t AlicornTimelineView::Pointer(
+   uint32_t kind,
+   float x,
+   float y,
+   uint32_t button,
+   AudacityWaveformSelection& selection)
+{
+   if (!mView)
+      return -1;
+   selection = {};
+   return audacity_alicorn_timeline_view_pointer(
+      mView, kind, x, y, button, &selection);
+}
+
+bool AlicornTimelineView::DrawWaveform(
+   wxDC& dc,
+   const wxRect& clip,
+   const AudacityWaveformSegment* segments,
+   size_t count)
+{
+   if (!mView || !ResizeWaveform(dc.GetSize()) || (count > 0 && !segments))
+      return false;
+   if (count == 0)
+      return true;
+
+   if (audacity_alicorn_timeline_view_update_waveform(
+          mView, segments, static_cast<uint64_t>(count)) < 0)
+      return false;
+
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = clip;
+   context.yOrigin = mRulerSize.y;
+   return audacity_alicorn_timeline_view_paint_waveform(
+      mView, &DrawGeometry, &context) >= 0;
+}
+
+bool AlicornTimelineView::DrawPlayhead(
+   wxDC& dc, const wxRect& clip, int x, const wxColour& color)
+{
+   const auto linear = ToLinearColor(color);
+   const AudacityWaveformSegment line{
+      static_cast<float>(x),
+      0.0f,
+      static_cast<float>(x),
+      static_cast<float>(dc.GetSize().GetHeight()),
+      1.0f,
+      linear.r,
+      linear.g,
+      linear.b,
+      linear.a
+   };
+   return DrawWaveform(dc, clip, &line, 1);
+}
+
+bool AlicornTimelineView::UpdateRuler(
+   const Ruler::DisplaySnapshot& snapshot, bool force)
 {
    if (!mView)
       return false;
-   if (mLastSnapshot && SameSnapshot(*mLastSnapshot, snapshot))
+   if (!force && !mRulerNeedsUpdate && mLastSnapshot &&
+       SameSnapshot(*mLastSnapshot, snapshot))
       return true;
    if (snapshot.ticks.size() > static_cast<size_t>(AUDACITY_RULER_MAX_TICKS) ||
        snapshot.labels.size() > 1024)
@@ -215,8 +315,6 @@ bool AlicornRulerView::Update(const Ruler::DisplaySnapshot& snapshot)
 
    std::vector<AudacityRulerLabel> labels;
    labels.reserve(orderedLabels.size());
-   std::vector<wxFont> labelFonts;
-   labelFonts.reserve(orderedLabels.size());
    for (size_t i = 0; i < orderedLabels.size(); ++i) {
       const auto& source = *orderedLabels[i];
       const auto& text = textStorage[i];
@@ -238,25 +336,26 @@ bool AlicornRulerView::Update(const Ruler::DisplaySnapshot& snapshot)
          reinterpret_cast<const uint8_t*>(text.data()),
          static_cast<uint64_t>(text.size())
       });
-      labelFonts.push_back(font);
    }
 
-   if (audacity_alicorn_ruler_view_update(
+   if (audacity_alicorn_timeline_view_update_ruler(
           mView,
           ticks.data(), static_cast<uint64_t>(ticks.size()),
           labels.data(), static_cast<uint64_t>(labels.size())) < 0)
       return false;
 
    mLastSnapshot = std::make_unique<Ruler::DisplaySnapshot>(snapshot);
+   mRulerNeedsUpdate = false;
    return true;
 }
 
-bool AlicornRulerView::Draw(
+bool AlicornTimelineView::DrawRuler(
    wxDC& dc,
    const wxRect& clip,
    const Ruler::DisplaySnapshot& snapshot)
 {
-   if (!mView || !Resize(dc.GetSize()) || !Update(snapshot))
+   if (!mView || !ResizeRuler(dc.GetSize()) ||
+       !UpdateRuler(snapshot, mRulerNeedsUpdate))
       return false;
 
    std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
@@ -266,6 +365,8 @@ bool AlicornRulerView::Draw(
    PaintContext context;
    context.graphics = graphics.get();
    context.clip = clip;
+   context.command.graphics = graphics.get();
+   context.command.font = wxFont{};
    const auto orderedLabels = OrderedLabels(snapshot);
    context.labelFonts.reserve(orderedLabels.size());
    for (const auto* label : orderedLabels) {
@@ -275,9 +376,6 @@ bool AlicornRulerView::Draw(
          wxFONTSTYLE_NORMAL,
          label->fontWeight);
    }
-   context.command.graphics = graphics.get();
-   context.command.font = wxFont{};
-
-   return audacity_alicorn_ruler_view_paint(
+   return audacity_alicorn_timeline_view_paint_ruler(
       mView, &DrawCommand, &DrawGeometry, &context) >= 0;
 }

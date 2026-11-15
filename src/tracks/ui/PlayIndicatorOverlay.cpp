@@ -28,7 +28,7 @@ Paul Licameli split from TrackPanel.cpp
 #include "ChannelView.h"
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-#include "../../alicorn/AlicornWaveformView.h"
+#include "../../alicorn/AlicornTimelineView.h"
 #endif
 
 #include <wx/dc.h>
@@ -125,7 +125,7 @@ void PlayIndicatorOverlayBase::Draw(OverlayPanel &panel, wxDC &dc)
       wxASSERT(mIsMaster);
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-      if (auto* view = tp->GetAlicornWaveformView()) {
+      if (auto* view = tp->GetAlicornTimelineView()) {
          const auto size = tp->GetClientSize();
          const wxRect clip{ 0, 0, size.x, size.y };
          if (view->DrawPlayhead(

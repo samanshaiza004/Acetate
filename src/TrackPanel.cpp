@@ -46,7 +46,7 @@ is time to refresh some aspect of the screen.
 
 #include "TrackPanel.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-#include "AlicornWaveformView.h"
+#include "AlicornTimelineView.h"
 #endif
 #include "TrackPanelConstants.h"
 
@@ -375,13 +375,20 @@ void TrackPanel::UpdatePrefs()
 /// Gets the pointer to the AudacityProject that
 /// goes with this track panel.
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-AlicornWaveformView *TrackPanel::GetAlicornWaveformView()
+AlicornTimelineView *TrackPanel::GetAlicornTimelineView()
 {
-   if (!mAlicornWaveformView)
-      mAlicornWaveformView = std::make_unique<AlicornWaveformView>(GetClientSize());
-   if (!mAlicornWaveformView->IsReady() || !mAlicornWaveformView->Resize(GetClientSize()))
+   auto *project = GetProject();
+   if (!project || !mRuler)
       return nullptr;
-   return mAlicornWaveformView.get();
+
+   auto &window = ProjectWindow::Get(*project);
+   const auto *existingView = window.FindAlicornTimelineView();
+   const bool wasReady = existingView && existingView->IsReady();
+   auto *view = window.GetAlicornTimelineView(
+      mRuler->GetClientSize(), GetClientSize());
+   if (!wasReady && view && view->IsReady())
+      mRuler->Refresh();
+   return view && view->IsReady() ? view : nullptr;
 }
 #endif
 

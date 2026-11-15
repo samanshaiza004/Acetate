@@ -32,7 +32,7 @@ Paul Licameli split from WaveChannelView.cpp
 #include "../../../../TrackPanelDrawingContext.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "../../../../TrackPanel.h"
-#include "AlicornWaveformView.h"
+#include "AlicornTimelineView.h"
 #include "AudacityWaveformView.h"
 #endif
 #include "../../../../TrackPanelMouseEvent.h"
@@ -305,7 +305,7 @@ public:
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    bool DrawAlicorn(
       int channelIndex,
-      AlicornWaveformView& view,
+      AlicornTimelineView& view,
       wxDC& dc,
       const wxRect& clip,
       const WavePaintParameters& params,
@@ -458,7 +458,7 @@ public:
             appendSelectionEdge(selectedLastPixel);
          }
 
-         if (outputCount > 0 && !view.Draw(
+         if (outputCount > 0 && !view.DrawWaveform(
                 dc, clip, segments.data(), outputCount))
             return false;
 
@@ -562,7 +562,7 @@ void DrawWaveform(
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    bool alicornDrawn = false;
-   if (auto* view = artist->parent->GetAlicornWaveformView()) {
+   if (auto* view = artist->parent->GetAlicornTimelineView()) {
       const auto* selected = artist->pSelectedRegion;
       const auto selectedRangeActive =
          selected && SyncLock::IsSelectedOrSyncLockSelected(track);

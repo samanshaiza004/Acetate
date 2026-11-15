@@ -22,7 +22,7 @@
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include <memory>
-class AlicornRulerView;
+class AlicornTimelineView;
 #endif
 
 class AudacityProject;
@@ -146,7 +146,6 @@ private:
    Ruler& mRuler;
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-   std::unique_ptr<AlicornRulerView> mAlicornRulerView;
 #endif
 
    TrackList *mTracks;

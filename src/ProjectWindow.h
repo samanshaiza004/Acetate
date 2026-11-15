@@ -20,6 +20,9 @@ class wxScrollBar;
 class wxPanel;
 class wxSplitterWindow;
 class RealtimeEffectPanel;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornTimelineView;
+#endif
 enum class ProjectFileIOMessage : int;
 
 class ProjectWindow;
@@ -72,6 +75,12 @@ public:
     * \return Pointer to a top panel window (not null)
     */
    wxPanel *GetTopPanel() noexcept;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornTimelineView *GetAlicornTimelineView(
+      const wxSize& rulerSize, const wxSize& waveformSize);
+   AlicornTimelineView *FindAlicornTimelineView() const noexcept;
+   void DestroyAlicornTimelineView() noexcept;
+#endif
 
    void UpdateStatusWidths();
 
@@ -209,6 +218,9 @@ private:
       , mSnappingChangedSubscription
    ;
    std::unique_ptr<PlaybackScroller> mPlaybackScroller;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   std::unique_ptr<AlicornTimelineView> mAlicornTimelineView;
+#endif
    const Observer::Subscription mViewportSubscription;
 
    DECLARE_EVENT_TABLE()

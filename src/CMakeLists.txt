@@ -50,17 +50,16 @@ endif()
 
 if( audacity_use_alicorn_snap_ui )
    target_sources( ${TARGET} PRIVATE
+      alicorn/AlicornTimelineView.cpp
+      alicorn/AlicornTimelineView.h
+      alicorn/AudacityTimelineView.h
+      alicorn/AudacityRulerView.h
+      alicorn/AudacityWaveformView.h
       toolbars/AlicornActionControl.cpp
       toolbars/AlicornActionControl.h
       toolbars/AlicornPaint.h
       toolbars/AlicornSnapControl.cpp
       toolbars/AlicornSnapControl.h
-      alicorn/AlicornRulerView.cpp
-      alicorn/AlicornRulerView.h
-      alicorn/AlicornWaveformView.cpp
-      alicorn/AlicornWaveformView.h
-      alicorn/AudacityRulerView.h
-      alicorn/AudacityWaveformView.h
    )
    target_include_directories( ${TARGET} PRIVATE "${topdir}/src/alicorn" "${topdir}/src/toolbars" )
    target_compile_definitions( ${TARGET} PRIVATE AUDACITY_USE_ALICORN_SNAP_UI=1 )

@@ -569,6 +569,9 @@ void ProjectManager::OnCloseWindow(wxCloseEvent & event)
    ToolManager::Get( project ).Destroy();
 
    window.DestroyChildren();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   window.DestroyAlicornTimelineView();
+#endif
 
    // Close project only now, because TrackPanel might have been holding
    // some shared_ptr to WaveTracks keeping SampleBlocks alive.
