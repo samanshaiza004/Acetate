@@ -61,6 +61,9 @@
 #include "../SelectUtilities.h"
 #include "ViewInfo.h"
 #include "../widgets/AButton.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "AlicornActionControl.h"
+#endif
 #include "FileNames.h"
 
 #include "../tracks/ui/Scrubbing.h"
@@ -212,12 +215,21 @@ void ControlToolBar::Populate()
       theTheme.Image(bmpSeekDisabled));
 
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mStop = safenew AlicornActionControl(
+      this,
+      ID_STOP_BUTTON,
+      XO("Stop").Translation(),
+      AUDACITY_ACTION_ICON_STOP,
+      wxSize{ 52, 52 });
+#else
    mStop = MakeControlToolBarButton(this,
       ID_STOP_BUTTON,
       XO("Stop"),
       theTheme.Image(bmpStop),
       wxNullImage,
       theTheme.Image(bmpStopDisabled));
+#endif
 
    mRewind = MakeControlToolBarButton(this,
       ID_REW_BUTTON,

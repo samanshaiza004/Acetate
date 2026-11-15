@@ -27,6 +27,9 @@ class wxStatusBar;
 
 class AButton;
 class AudacityProject;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornActionControl;
+#endif
 
 // In the GUI, ControlToolBar appears as the "Transport Toolbar". "Control Toolbar" is historic.
 class AUDACITY_DLL_API ControlToolBar final : public ToolBar {
@@ -104,7 +107,11 @@ class AUDACITY_DLL_API ControlToolBar final : public ToolBar {
    AButton *mPlay;
    AButton *mRecord;
    AButton *mPause;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornActionControl *mStop;
+#else
    AButton *mStop;
+#endif
    AButton *mFF;
    AButton *mLoop;
 

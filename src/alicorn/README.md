@@ -4,7 +4,9 @@ This directory contains small Alicorn-backed controls hosted by Audacity 3.
 The current opt-in integration replaces normal-zoom waveform summary strokes
 through Alicorn-retained geometry, alongside the Snap checkbox, the Audio Setup
 toolbar button, the Selection Toolbar mode-setup button, the Edit toolbar
-buttons, and the Cut/Copy/Paste toolbar buttons. Audacity still owns the native
+buttons, the Cut/Copy/Paste toolbar buttons, and the momentary Stop transport
+button. Play remains native because its Shift/Ctrl modifier modes and toggle
+presentation need a behavior-preserving adapter. Audacity still owns the native
 window, event loop, accessibility bridge, menus, audio-device state, selection
 model, command dispatch, and drawing surface; Alicorn supplies retained control
 descriptions, paint commands, and transient pointer-drag endpoints for plain

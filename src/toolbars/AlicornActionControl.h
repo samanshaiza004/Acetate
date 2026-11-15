@@ -19,7 +19,10 @@ public:
 
    bool IsPressed() const noexcept { return mPressed; }
    void SetPressed(bool pressed);
+   void PushDown() { SetPressed(true); }
+   void PopUp() { SetPressed(false); }
    void SetAlicornEnabled(bool enabled);
+   void SetEnabled(bool enabled) { SetAlicornEnabled(enabled); }
    bool Enable(bool enabled = true) override;
    void Activate(uint32_t key = AUDACITY_SNAP_KEY_ACTIVATE);
 
