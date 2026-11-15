@@ -23,20 +23,18 @@ At normal zoom, it also sends bounded per-column envelope/background fill,
 zero-line, selected-range fill and edge, and waveform segments through the
 retained geometry surface. Fill runs use bounded first-class rectangles rather
 than thin-line encoding; Alicorn owns and validates the complete paint payload
-and keeps it within one vertex budget. At high zoom, connected sample lines
-and clipping marks also use retained geometry while draggable sample points
-remain hidden. High-zoom waveform background, envelope, and selection fills
-also use bounded retained rectangles when the complete batch fits; the zero
-line remains a wx overlay. The C++ paint callback still presents that geometry through wx
-`wxGraphicsContext`, so this is not yet a renderer migration. wx remains the
-fallback for sync-lock patterns, draggable high-zoom sample points, and
-geometry batches that exceed the surface budget or cannot be submitted.
-Dense sample markers stay on wx because the pinned filled-circle
-primitive uses 48 vertices per point; at ordinary sample-edit view widths, all
-visible markers plus waveform segments exceed the 8,192-vertex surface budget.
-Alicorn #201 tracks a compact bounded marker path. The rectangle payload closes
-the API gap tracked by Alicorn #200; native pixel and repaint-cost acceptance
-remains open. The playback indicator and
+and keeps it within one vertex budget. At high zoom, connected sample lines,
+clipping marks, and draggable sample points use retained geometry. Point glyphs
+use Alicorn's compact six-vertex marker payload rather than its 48-vertex
+filled-circle primitive. High-zoom waveform background, envelope, and selection
+fills also use bounded retained rectangles when the complete batch fits; the
+zero line remains a wx overlay. The C++ paint callback still presents that
+geometry through wx `wxGraphicsContext`, so this is not yet a renderer
+migration. wx remains the fallback for sync-lock patterns and geometry batches
+that exceed the surface budget or cannot be submitted. Alicorn #201 tracks the
+dense-marker capability; native pixel and repaint-cost acceptance remains
+open. The rectangle payload closes the API gap tracked by Alicorn #200. The
+playback indicator and
 point-selection caret use independent inert retained overlays after the
 cached track backing bitmap is presented. Audacity's playback scroller and
 selected time remain authoritative. Keeping each indicator in its own owner
@@ -89,6 +87,21 @@ valid only for the callback. Callbacks must not reenter or destroy the view.
 Waveform input and ruler snapshots are copied into Alicorn-owned retained data;
 project samples and selection are not copied into a second authoritative UI
 model.
+
+The pinned Alicorn revision also exposes `Hosted_Runtime`, a nonblocking
+per-surface lifecycle for a host-owned event loop, and `Sdl_GPU_Presenter`,
+which consumes retained paint commands through a host-owned SDL_GPU command
+buffer and target. The APIs cover input delivery, resize/DPI, one-shot
+deadlines, worker wakes, accessibility snapshots/actions, frame acknowledgement,
+fence retirement, cancellation, and ordered teardown. Acetate has not adopted
+either boundary yet: wx still owns its window and event loop, and the timeline
+integration still submits through its existing view wrapper and wx paint
+callback. Using the two APIs together is the next native-host experiment, not
+validated surface integration. Acetate must still prove wx/SDL surface
+compatibility, event fairness, focus/IME, accessibility, resize/DPI, frame
+retirement, wake delivery, and shutdown before replacing this path. Keep wx
+controls as fallbacks through that validation; Alicorn #196 remains open for
+the host integration work.
 
 ## Build
 

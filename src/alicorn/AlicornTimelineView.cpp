@@ -52,6 +52,8 @@ struct PaintContext {
    wxGraphicsContext* graphics{};
    wxRect clip;
    int yOrigin{};
+   wxPen pointMarkerPen;
+   bool hasPointMarkerPen{};
    AudacityAlicorn::PaintContext command;
    std::vector<wxFont> labelFonts;
    size_t labelIndex{};
@@ -63,6 +65,8 @@ void DrawGeometry(
    uint64_t rectangleCount,
    const AudacityWaveformSegment* segments,
    uint64_t segmentCount,
+   const AudacityWaveformPointMarker* pointMarkers,
+   uint64_t pointMarkerCount,
    AudacitySnapRect bounds,
    AudacitySnapRect commandClip,
    float translationX,
@@ -70,7 +74,8 @@ void DrawGeometry(
 {
    auto* context = static_cast<PaintContext*>(rawContext);
    if (!context || !context->graphics ||
-       (rectangleCount > 0 && !rectangles) || (segmentCount > 0 && !segments))
+       (rectangleCount > 0 && !rectangles) || (segmentCount > 0 && !segments) ||
+       (pointMarkerCount > 0 && !pointMarkers))
       return;
 
    bounds.y -= static_cast<float>(context->yOrigin);
@@ -102,6 +107,28 @@ void DrawGeometry(
       }
       graphics->DrawRectangle(
          rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+   }
+
+   graphics->SetPen(context->hasPointMarkerPen
+      ? context->pointMarkerPen
+      : wxPen(wxColour(0, 0, 0, 0), 0, wxPENSTYLE_TRANSPARENT));
+   wxColour previousMarkerFill;
+   bool hasMarkerBrush = false;
+   for (uint64_t i = 0; i < pointMarkerCount; ++i) {
+      const auto& marker = pointMarkers[i];
+      const auto color = ToWxColour(AudacitySnapColor{
+         marker.r, marker.g, marker.b, marker.a});
+      if (!hasMarkerBrush || color != previousMarkerFill) {
+         graphics->SetBrush(wxBrush(color));
+         previousMarkerFill = color;
+         hasMarkerBrush = true;
+      }
+      const auto half = static_cast<double>(marker.diameter) * 0.5;
+      graphics->DrawEllipse(
+         marker.center_x - half,
+         marker.center_y - half,
+         marker.diameter,
+         marker.diameter);
    }
 
    wxColour previousColour;
@@ -276,18 +303,23 @@ bool AlicornTimelineView::DrawWaveform(
    const AudacityWaveformRectangle* rectangles,
    size_t rectangleCount,
    const AudacityWaveformSegment* segments,
-   size_t count)
+   size_t segmentCount,
+   const AudacityWaveformPointMarker* pointMarkers,
+   size_t pointMarkerCount,
+   const wxPen* pointMarkerPen)
 {
    if (!mView || !ResizeWaveform(dc.GetSize()) ||
-       (rectangleCount > 0 && !rectangles) || (count > 0 && !segments))
+       (rectangleCount > 0 && !rectangles) || (segmentCount > 0 && !segments) ||
+       (pointMarkerCount > 0 && !pointMarkers))
       return false;
-   if (rectangleCount == 0 && count == 0)
+   if (rectangleCount == 0 && segmentCount == 0 && pointMarkerCount == 0)
       return true;
 
    if (audacity_alicorn_timeline_view_update_waveform(
           mView,
           rectangles, static_cast<uint64_t>(rectangleCount),
-          segments, static_cast<uint64_t>(count)) < 0)
+          segments, static_cast<uint64_t>(segmentCount),
+          pointMarkers, static_cast<uint64_t>(pointMarkerCount)) < 0)
       return false;
 
    std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
@@ -297,6 +329,10 @@ bool AlicornTimelineView::DrawWaveform(
    context.graphics = graphics.get();
    context.clip = clip;
    context.yOrigin = mRulerSize.y;
+   if (pointMarkerPen) {
+      context.pointMarkerPen = *pointMarkerPen;
+      context.hasPointMarkerPen = true;
+   }
    return audacity_alicorn_timeline_view_paint_waveform(
       mView, &DrawGeometry, &context) >= 0;
 }

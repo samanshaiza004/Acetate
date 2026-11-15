@@ -9,6 +9,7 @@
 #include <wx/dc.h>
 #include <wx/gdicmn.h>
 #include <wx/colour.h>
+#include <wx/pen.h>
 
 #include "AudacityTimelineView.h"
 #include "widgets/Ruler.h"
@@ -50,7 +51,10 @@ public:
       const AudacityWaveformRectangle* rectangles,
       size_t rectangleCount,
       const AudacityWaveformSegment* segments,
-      size_t count);
+      size_t segmentCount,
+      const AudacityWaveformPointMarker* pointMarkers,
+      size_t pointMarkerCount,
+      const wxPen* pointMarkerPen = nullptr);
    bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,

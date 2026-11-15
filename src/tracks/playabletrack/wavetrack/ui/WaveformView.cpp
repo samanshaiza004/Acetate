@@ -587,7 +587,7 @@ public:
 
          if ((rectangleCount > 0 || segmentCount > 0) && !view.DrawWaveform(
                 dc, clip, rectangles.data(), rectangleCount,
-                segments.data(), segmentCount))
+                segments.data(), segmentCount, nullptr, 0))
             return false;
 
          elementFirstPixel += CacheWidth;
@@ -922,7 +922,8 @@ void DrawWaveformBackground(TrackPanelDrawingContext &context,
          }
 
          if (withinBudget && view->DrawWaveform(
-                dc, rect, rectangles.data(), rectangleCount, nullptr, 0)) {
+                dc, rect, rectangles.data(), rectangleCount, nullptr, 0,
+                nullptr, 0)) {
             if (bIsSyncLockSelected && t0 < t1) {
                const int begin = std::max(0, std::min(rect.width,
                   static_cast<int>(zoomInfo.TimeToPosition(t0, -leftOffset))));
@@ -1159,33 +1160,82 @@ void DrawIndividualSamples(TrackPanelDrawingContext &context,
                                   rect.height, dB, true, dBRange, false)));
    }
 
-#ifdef AUDACITY_USE_ALICORN_SNAP_UI
-   // Between the overview and draggable-sample zoom levels, connect the
-   // visible sample range through Alicorn's bounded retained geometry. Keep
-   // the native path when point editing is visible or this portion exceeds
-   // the surface budget.
-   if (!showPoints) {
-      if (auto* view = artist->parent->GetAlicornTimelineView()) {
-         const auto requiredSegments = size_t(slen - 1) + size_t(clipcnt);
-         if (requiredSegments <= AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS) {
-            std::array<AudacityWaveformSegment,
-               AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS> segments{};
-            size_t segmentCount = 0;
-            const auto toLinearChannel = [](unsigned char value) {
-               const auto srgb = static_cast<float>(value) / 255.0f;
-               return srgb <= 0.04045f ? srgb / 12.92f :
-                  std::pow((srgb + 0.055f) / 1.055f, 2.4f);
-            };
-            const auto toSnapColor = [&](const wxColour& color) {
-               return AudacitySnapColor{
-                  toLinearChannel(color.Red()),
-                  toLinearChannel(color.Green()),
-                  toLinearChannel(color.Blue()),
-                  static_cast<float>(color.Alpha()) / 255.0f,
-               };
-            };
-            const auto sampleColor = toSnapColor(pen.GetColour());
+   const auto sampleDisplay = artist->mSampleDisplay;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Keep connected samples, clipped-sample marks, stems, and draggable point
+   // glyphs in one bounded Alicorn payload. Audacity still owns sample hit
+   // testing and edits; wx remains the presenter during this migration slice.
+   if (auto* view = artist->parent->GetAlicornTimelineView()) {
+      const bool drawStems = showPoints &&
+         sampleDisplay == static_cast<int>(WaveChannelViewConstants::StemPlot);
+      const auto sampleSegmentCount = drawStems ? size_t(slen) : size_t(slen - 1);
+      const auto bigPoints = artist->bigPoints;
+      const int tickSize = bigPoints ? 4 : 3;
+      const wxBrush* markerBrush = nullptr;
+      size_t markerCount = 0;
+      if (showPoints) {
+         const auto& dragBrush = artist->dragsampleBrush;
+         const auto& pointBrush = artist->sampleBrush;
+         markerBrush = highlight
+            ? &AColor::uglyBrush
+            : bigPoints ? &dragBrush : &pointBrush;
+         for (decltype(slen) s = 0; s < slen; ++s) {
+            if (ypos[s] >= 0 && ypos[s] < rect.height)
+               ++markerCount;
+         }
+      }
+
+      const auto primitiveLimit = size_t(AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS);
+      bool fitsBudget = markerCount <= primitiveLimit;
+      if (fitsBudget) {
+         const auto remainingAfterMarkers = primitiveLimit - markerCount;
+         fitsBudget = sampleSegmentCount <= remainingAfterMarkers;
+         if (fitsBudget)
+            fitsBudget = size_t(clipcnt) <= remainingAfterMarkers - sampleSegmentCount;
+      }
+
+      if (fitsBudget) {
+         std::array<AudacityWaveformSegment,
+            AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS> segments;
+         std::array<AudacityWaveformPointMarker,
+            AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS> markers;
+         size_t segmentCount = 0;
+         size_t outputMarkerCount = 0;
+         const auto toLinearChannel = [](unsigned char value) {
+            const auto srgb = static_cast<float>(value) / 255.0f;
+            return srgb <= 0.04045f ? srgb / 12.92f :
+               std::pow((srgb + 0.055f) / 1.055f, 2.4f);
+         };
+         const auto toSnapColor = [&](const wxColour& color) {
+            return AudacitySnapColor{
+               toLinearChannel(color.Red()),
+               toLinearChannel(color.Green()),
+               toLinearChannel(color.Blue()),
+               static_cast<float>(color.Alpha()) / 255.0f,
+            };
+         };
+         const auto sampleColor = toSnapColor(pen.GetColour());
+
+         if (drawStems) {
+            auto zeroY = GetWaveYPos(
+               0.0, zoomMin, zoomMax, rect.height, dB, true, dBRange, false);
+            zeroY = rect.y + std::max(-1, std::min(rect.height, zeroY));
+            for (decltype(slen) s = 0; s < slen; ++s) {
+               segments[segmentCount++] = AudacityWaveformSegment{
+                  static_cast<float>(rect.x + xpos[s]),
+                  static_cast<float>(rect.y + ypos[s]),
+                  static_cast<float>(rect.x + xpos[s]),
+                  static_cast<float>(zeroY),
+                  1.0f,
+                  sampleColor.r,
+                  sampleColor.g,
+                  sampleColor.b,
+                  sampleColor.a,
+               };
+            }
+         }
+         else {
             for (decltype(slen) s = 0; s + 1 < slen; ++s) {
                segments[segmentCount++] = AudacityWaveformSegment{
                   static_cast<float>(rect.x + xpos[s]),
@@ -1199,30 +1249,49 @@ void DrawIndividualSamples(TrackPanelDrawingContext &context,
                   sampleColor.a,
                };
             }
-
-            if (clipcnt > 0) {
-               const auto clippedColor = toSnapColor(
-                  (muted ? artist->muteClippedPen : artist->clippedPen).GetColour());
-               for (int i = 0; i < clipcnt; ++i) {
-                  const auto x = static_cast<float>(rect.x + clipped[i]);
-                  segments[segmentCount++] = AudacityWaveformSegment{
-                     x,
-                     static_cast<float>(rect.y),
-                     x,
-                     static_cast<float>(rect.y + rect.height),
-                     1.0f,
-                     clippedColor.r,
-                     clippedColor.g,
-                     clippedColor.b,
-                     clippedColor.a,
-                  };
-               }
-            }
-
-            if (view->DrawWaveform(
-                   dc, rect, nullptr, 0, segments.data(), segmentCount))
-               return;
          }
+
+         if (clipcnt > 0) {
+            const auto clippedColor = toSnapColor(
+               (muted ? artist->muteClippedPen : artist->clippedPen).GetColour());
+            for (int i = 0; i < clipcnt; ++i) {
+               const auto x = static_cast<float>(rect.x + clipped[i]);
+               segments[segmentCount++] = AudacityWaveformSegment{
+                  x,
+                  static_cast<float>(rect.y),
+                  x,
+                  static_cast<float>(rect.y + rect.height),
+                  1.0f,
+                  clippedColor.r,
+                  clippedColor.g,
+                  clippedColor.b,
+                  clippedColor.a,
+               };
+            }
+         }
+
+         if (showPoints) {
+            const auto markerColor = toSnapColor(markerBrush->GetColour());
+            const auto halfPixelOffset = tickSize % 2 == 0 ? 0.0f : 0.5f;
+            for (decltype(slen) s = 0; s < slen; ++s) {
+               if (ypos[s] < 0 || ypos[s] >= rect.height)
+                  continue;
+               markers[outputMarkerCount++] = AudacityWaveformPointMarker{
+                  static_cast<float>(rect.x + xpos[s]) + halfPixelOffset,
+                  static_cast<float>(rect.y + ypos[s]) + halfPixelOffset,
+                  static_cast<float>(tickSize),
+                  markerColor.r,
+                  markerColor.g,
+                  markerColor.b,
+                  markerColor.a,
+               };
+            }
+         }
+
+         if (view->DrawWaveform(
+                dc, rect, nullptr, 0, segments.data(), segmentCount,
+                markers.data(), outputMarkerCount, &pen))
+            return;
       }
    }
 #endif
@@ -1250,7 +1319,6 @@ void DrawIndividualSamples(TrackPanelDrawingContext &context,
       }
    }
 
-   const auto sampleDisplay = artist->mSampleDisplay;
    if (showPoints &&
        (sampleDisplay == (int) WaveChannelViewConstants::StemPlot)
    ){

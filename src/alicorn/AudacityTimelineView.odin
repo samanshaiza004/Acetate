@@ -15,6 +15,11 @@ AudacityWaveformRectangle :: struct {
 	r, g, b, a: f32,
 }
 
+AudacityWaveformPointMarker :: struct {
+	center_x, center_y, diameter: f32,
+	r, g, b, a: f32,
+}
+
 AudacityWaveformSelection :: struct {
 	phase: u32,
 	anchor_x: f32,
@@ -27,6 +32,8 @@ AudacityWaveformPaintCallback :: #type proc "c" (
 	rectangle_count: u64,
 	segments: ^AudacityWaveformSegment,
 	segment_count: u64,
+	point_markers: ^AudacityWaveformPointMarker,
+	point_marker_count: u64,
 	bounds: AudacitySnapRect,
 	clip: AudacitySnapRect,
 	translation_x, translation_y: f32,
@@ -575,20 +582,29 @@ audacity_alicorn_timeline_view_update_waveform :: proc "c" (
 	rectangle_count: u64,
 	input: ^AudacityWaveformSegment,
 	segment_count: u64,
+	point_marker_input: ^AudacityWaveformPointMarker,
+	point_marker_count: u64,
 ) -> i32 {
 	context = odin_runtime.default_context()
 	view := transmute(^Timeline_View)opaque_view
 	if !valid_timeline_view(view) ||
 	   (rectangle_count > 0 && rectangle_input == nil) ||
 	   (segment_count > 0 && input == nil) ||
+	   (point_marker_count > 0 && point_marker_input == nil) ||
 	   rectangle_count > u64(MAX_TIMELINE_GEOMETRY_RECTANGLES) ||
-	   segment_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) {
+	   segment_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) ||
+	   point_marker_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) {
 		return -1
 	}
-	if segment_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS)-rectangle_count { return -1 }
+	remaining_primitives := u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) - rectangle_count
+	if segment_count > remaining_primitives { return -1 }
+	remaining_primitives -= segment_count
+	if point_marker_count > remaining_primitives { return -1 }
 	rectangle_input_slice := mem.slice_ptr(rectangle_input, int(rectangle_count))
 	count := int(segment_count)
 	input_segments := mem.slice_ptr(input, count)
+	marker_count := int(point_marker_count)
+	input_markers := mem.slice_ptr(point_marker_input, marker_count)
 	rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]alicorn.GPU_Surface_Filled_Rectangle
 	for source, index in rectangle_input_slice {
 		rectangles[index] = alicorn.GPU_Surface_Filled_Rectangle{
@@ -606,12 +622,21 @@ audacity_alicorn_timeline_view_update_waveform :: proc "c" (
 			color=alicorn.Color{source.r, source.g, source.b, source.a},
 		}
 	}
-	if !alicorn.gpu_surface_update_geometry_with_rectangles(
+	point_markers: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Point_Marker
+	for source, index in input_markers {
+		point_markers[index] = alicorn.GPU_Surface_Point_Marker{
+			center=alicorn.GPU_Surface_Point{source.center_x, source.center_y},
+			diameter=source.diameter,
+			color=alicorn.Color{source.r, source.g, source.b, source.a},
+		}
+	}
+	if !alicorn.gpu_surface_update_geometry_with_rectangles_and_markers(
 		&view.runtime,
 		view.waveform_geometry_id,
 		rectangles[:int(rectangle_count)],
 		segments[:count],
 		nil,
+		point_markers[:marker_count],
 	) {
 		return -1
 	}
@@ -857,7 +882,7 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 		geometry, geometry_ok := command.payload.(alicorn.Geometry_Paint)
 		if !geometry_ok { continue }
 		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
-		if !payload_ok || (len(payload.rectangles) == 0 && len(payload.segments) == 0) { continue }
+		if !payload_ok || (len(payload.rectangles) == 0 && len(payload.segments) == 0 && len(payload.point_markers) == 0) { continue }
 
 		output_rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]AudacityWaveformRectangle
 		for i in 0..<len(payload.rectangles) {
@@ -888,16 +913,32 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 				a=segment.color.a,
 			}
 		}
+		output_markers: [MAX_TIMELINE_GEOMETRY_SEGMENTS]AudacityWaveformPointMarker
+		for marker, i in payload.point_markers {
+			output_markers[i] = AudacityWaveformPointMarker{
+				center_x=marker.center.x,
+				center_y=marker.center.y,
+				diameter=marker.diameter,
+				r=marker.color.r,
+				g=marker.color.g,
+				b=marker.color.b,
+				a=marker.color.a,
+			}
+		}
 		rectangle_pointer: ^AudacityWaveformRectangle = nil
 		if len(payload.rectangles) > 0 { rectangle_pointer = &output_rectangles[0] }
 		segment_pointer: ^AudacityWaveformSegment = nil
 		if len(payload.segments) > 0 { segment_pointer = &output[0] }
+		marker_pointer: ^AudacityWaveformPointMarker = nil
+		if len(payload.point_markers) > 0 { marker_pointer = &output_markers[0] }
 		callback(
 			callback_context,
 			rectangle_pointer,
 			u64(len(payload.rectangles)),
 			segment_pointer,
 			u64(len(payload.segments)),
+			marker_pointer,
+			u64(len(payload.point_markers)),
 			snap_rect(command.bounds),
 			snap_rect(command.clip),
 			command.translation[0],
@@ -939,7 +980,8 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 		case alicorn.Geometry_Paint:
 			if command.owner != view.ruler_geometry_id { continue }
 			geometry, geometry_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, payload.geometry)
-			if !geometry_ok || (len(geometry.rectangles) == 0 && len(geometry.segments) == 0) { continue }
+			if !geometry_ok || len(geometry.point_markers) != 0 ||
+			   (len(geometry.rectangles) == 0 && len(geometry.segments) == 0) { continue }
 			output_rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]AudacityWaveformRectangle
 			for i in 0..<len(geometry.rectangles) {
 				rectangle := geometry.rectangles[i]
@@ -979,6 +1021,8 @@ audacity_alicorn_timeline_view_paint_ruler :: proc "c" (
 				u64(len(geometry.rectangles)),
 				segment_pointer,
 				u64(len(geometry.segments)),
+				nil,
+				0,
 				snap_rect(command.bounds),
 				snap_rect(command.clip),
 				command.translation[0],
@@ -1013,7 +1057,7 @@ timeline_view_paint_single_segment_overlay :: proc(
 		if !geometry_ok { continue }
 		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
 		if !payload_ok { continue }
-		if len(payload.rectangles) != 0 || len(payload.segments) > 1 {
+		if len(payload.rectangles) != 0 || len(payload.segments) > 1 || len(payload.point_markers) != 0 {
 			view.callback_active = false
 			return -1
 		}
@@ -1037,6 +1081,8 @@ timeline_view_paint_single_segment_overlay :: proc(
 			0,
 			&output,
 			1,
+			nil,
+			0,
 			snap_rect(command.bounds),
 			snap_rect(command.clip),
 			command.translation[0],

@@ -60,7 +60,9 @@ int32_t audacity_alicorn_timeline_view_update_waveform(
    const AudacityWaveformRectangle* rectangles,
    uint64_t rectangle_count,
    const AudacityWaveformSegment* segments,
-   uint64_t segment_count);
+   uint64_t segment_count,
+   const AudacityWaveformPointMarker* point_markers,
+   uint64_t point_marker_count);
 /* Transient playhead and caret geometry have independent retained owners. */
 int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
    AudacityAlicornTimelineView* view,
