@@ -103,7 +103,11 @@ class AUDACITY_DLL_API ControlToolBar final : public ToolBar {
       BUTTON_COUNT,
    };
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornActionControl *mRewind;
+#else
    AButton *mRewind;
+#endif
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    AlicornActionControl *mPlay;
 #else
@@ -120,7 +124,11 @@ class AUDACITY_DLL_API ControlToolBar final : public ToolBar {
 #else
    AButton *mStop;
 #endif
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornActionControl *mFF;
+#else
    AButton *mFF;
+#endif
    AButton *mLoop;
 
    wxString mStrLocale; // standard locale abbreviation

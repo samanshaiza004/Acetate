@@ -29,6 +29,8 @@ uint32_t ActionIconForThemeBitmap(int bitmapId)
    if (bitmapId == bmpRedo) return AUDACITY_ACTION_ICON_REDO;
    if (bitmapId == bmpPlay) return AUDACITY_ACTION_ICON_PLAY;
    if (bitmapId == bmpPause) return AUDACITY_ACTION_ICON_PAUSE;
+   if (bitmapId == bmpRewind) return AUDACITY_ACTION_ICON_REWIND;
+   if (bitmapId == bmpFFwd) return AUDACITY_ACTION_ICON_FAST_FORWARD;
    if (bitmapId == bmpCutPreview) return AUDACITY_ACTION_ICON_PLAY_CUT_PREVIEW;
    if (bitmapId == bmpScrub) return AUDACITY_ACTION_ICON_PLAY_SCRUB;
    if (bitmapId == bmpSeek) return AUDACITY_ACTION_ICON_PLAY_SEEK;

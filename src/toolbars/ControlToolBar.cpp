@@ -249,6 +249,21 @@ void ControlToolBar::Populate()
       theTheme.Image(bmpStopDisabled));
 #endif
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mRewind = safenew AlicornActionControl(
+      this,
+      ID_REW_BUTTON,
+      XO("Skip to Start").Translation(),
+      AUDACITY_ACTION_ICON_REWIND,
+      wxSize{ 52, 52 });
+
+   mFF = safenew AlicornActionControl(
+      this,
+      ID_FF_BUTTON,
+      XO("Skip to End").Translation(),
+      AUDACITY_ACTION_ICON_FAST_FORWARD,
+      wxSize{ 52, 52 });
+#else
    mRewind = MakeControlToolBarButton(this,
       ID_REW_BUTTON,
       XO("Skip to Start"),
@@ -262,6 +277,7 @@ void ControlToolBar::Populate()
       theTheme.Image(bmpFFwd),
       wxNullImage,
       theTheme.Image(bmpFFwdDisabled));
+#endif
 
    mRecord = MakeControlToolBarButton(this,
       ID_RECORD_BUTTON,
