@@ -9,6 +9,9 @@
 
 ***********************************************************************/
 #include "EchoBase.h"
+#ifdef AUDACITY_USE_ODIN_BACKEND
+#include "OdinBackend.h"
+#endif
 #include "BasicUI.h"
 #include "ShuttleAutomation.h"
 
@@ -96,6 +99,16 @@ size_t EchoBase::Instance::ProcessBlock(
 
    const float* ibuf = inBlock[0];
    float* obuf = outBlock[0];
+
+#ifdef AUDACITY_USE_ODIN_BACKEND
+   uint64_t historyPosition = histPos;
+   if (audacity_odin_echo_process_block(
+          ibuf, obuf, history.get(), histLen, &historyPosition, blockLen,
+          echoSettings.decay) == 0) {
+      histPos = static_cast<size_t>(historyPosition);
+      return blockLen;
+   }
+#endif
 
    for (decltype(blockLen) i = 0; i < blockLen; i++, histPos++)
    {

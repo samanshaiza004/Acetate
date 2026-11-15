@@ -26,6 +26,10 @@ The Normalize effect's streaming DC accumulator and per-block offset/gain
 transform also run in Odin. Audacity continues to own track traversal, peak
 analysis, cancellation, progress reporting, and project mutation.
 
+The Echo block kernel also runs in Odin. Its delay-ring allocation and
+cross-block position remain owned by the effect instance; C++ passes borrowed
+audio and history buffers synchronously and retains effect scheduling/lifecycle.
+
 The compressor gain-reduction envelope kernel also runs in Odin. Its direct
 in-process call is synchronous and allocation-free; the C++ processor retains
 settings, cross-block envelope state, peak-meter atomics, lookahead storage and

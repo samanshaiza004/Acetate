@@ -22,6 +22,12 @@ double audacity_odin_normalize_accumulate_sum(
 void audacity_odin_normalize_process_block(
    float* samples, size_t block_len, float offset, float multiplier);
 
+// Processes one Echo block with the effect-owned delay ring and position.
+// Buffers are borrowed only for this synchronous call; C++ owns allocation.
+int32_t audacity_odin_echo_process_block(
+   const float* input, float* output, float* history, uint64_t history_len,
+   uint64_t* history_position, uint64_t block_len, double decay);
+
 // Computes compressor gain reduction. State belongs to the caller and is
 // carried across blocks; exact input/output aliasing is supported. No
 // allocation, locking, or Caliber transport occurs.

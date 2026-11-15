@@ -254,6 +254,37 @@ odin_normalize_process_block :: proc "c" (
 	}
 }
 
+@(export, link_name="audacity_odin_echo_process_block")
+odin_echo_process_block :: proc "c" (
+	input: [^]f32,
+	output: [^]f32,
+	history: [^]f32,
+	history_len: u64,
+	history_position: ^u64,
+	block_len: u64,
+	decay: f64,
+) -> i32 {
+	if history_position == nil || math.is_nan(decay) || math.is_inf(decay) {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+	if block_len == 0 do return i32(CALIBER_STATUS_OK)
+	if input == nil || output == nil || history == nil || history_len == 0 ||
+		history_position^ > history_len {
+		return i32(CALIBER_STATUS_INVALID_ARGUMENT)
+	}
+
+	position := history_position^
+	for i in 0..<block_len {
+		if position == history_len do position = 0
+		value := f32(f64(input[i]) + f64(history[position]) * decay)
+		output[i] = value
+		history[position] = value
+		position += 1
+	}
+	history_position^ = position
+	return i32(CALIBER_STATUS_OK)
+}
+
 @(export, link_name="audacity_odin_zero_crossing_score_channel")
 odin_zero_crossing_score_channel :: proc "c" (
 	samples: [^]f32,
