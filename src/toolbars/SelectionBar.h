@@ -73,6 +73,12 @@ class AUDACITY_DLL_API SelectionBar final : public ToolBar {
    // selection-mode semantics without duplicating them.
    bool ApplyTimeControlValue(int driver, double value, bool done = false);
 
+   // Read or change the active display mode without depending on the native
+   // setup menu. ApplySelectionMode also updates the existing preferences and
+   // numeric controls when they have been created.
+   SelectionMode GetSelectionMode() const noexcept { return mSelectionMode; }
+   bool ApplySelectionMode(SelectionMode mode);
+
    void SetSelectionFormat(const NumericFormatID & format);
    void RegenerateTooltips() override;
 

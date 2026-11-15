@@ -282,10 +282,9 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
 
          menu.Bind(
             wxEVT_MENU,
-            [this, selectionMode](auto& evt)
+            [this, selectionMode](auto&)
             {
-               SetSelectionMode(static_cast<SelectionMode>(selectionMode));
-               SelectionModeUpdated();
+               ApplySelectionMode(static_cast<SelectionMode>(selectionMode));
             },
             subMenu->GetId());
 
@@ -548,6 +547,28 @@ void SelectionBar::SelectionModeUpdated()
    UpdateSelectionMode(mSelectionMode);
 
    FitToTimeControls();
+}
+
+bool SelectionBar::ApplySelectionMode(SelectionMode mode)
+{
+   if (static_cast<unsigned>(mode) >
+       static_cast<unsigned>(SelectionMode::LengthCenter))
+      return false;
+
+   if (mode == mSelectionMode)
+      return true;
+
+   // The mode can be restored before Populate creates the controls. In that
+   // case update the persisted choice now; Populate will apply it to the fields.
+   if (!mTimeControls[0] || !mTimeControls[1]) {
+      mSelectionMode = mode;
+      UpdateSelectionMode(mode);
+      return true;
+   }
+
+   SetSelectionMode(mode);
+   SelectionModeUpdated();
+   return true;
 }
 
 // We used to have 8 modes which showed different combinations of the

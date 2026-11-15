@@ -62,12 +62,20 @@ mouse capture and Audacity's `Viewport` applies the horizontal scroll.
 Selection-mode calculations are also exposed through
 `SelectionBar::ApplyTimeControlValue`, independent of the current wx numeric
 editor, so a future Alicorn editor can reuse Audacity's Start/End, Start/Length,
-Length/End, and Length/Center semantics. The existing
+Length/End, and Length/Center semantics. `GetSelectionMode` and
+`ApplySelectionMode` expose the selected mode to an adapter without requiring
+access to `SelectionBar`'s private state; the latter keeps preference updates,
+field labels, numeric formats, and layout in Audacity. The native mode menu
+remains in place for now: a control-sized wx surface clips Alicorn's anchored
+popup to its own bounds, and Acetate does not yet expose Alicorn popup semantics
+through the native accessibility tree. The existing
 `NumericTextCtrl` remains active because it supplies segmented time editing,
 format switching, native text behavior, and accessibility that the current
 Alicorn bridge does not yet replace. Keep it until the host can deliver
 committed text, preedit/cancel composition, editing and navigation keys, focus
-lifecycle, and accessible labels/values; Alicorn #196 tracks that host contract.
+lifecycle, and accessible labels/values. Alicorn #196 delivered the hosted
+Runtime contract; native text-entry and accessibility validation remain
+Acetate integration work.
 This avoids replacing it with a plain text field that silently drops these
 behaviors. wx still owns the remaining ruler gestures and paints blank-track
 backgrounds and sync-lock selection patterns. The track panel currently has no
