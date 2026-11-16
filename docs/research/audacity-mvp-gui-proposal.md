@@ -141,6 +141,10 @@ Assuming the selected project, audio, import, and export operations are availabl
 
 Full parity is not responsibly dateable from this MVP estimate. It is multiple feature and platform-validation cycles beyond the first release.
 
+### Follow-up validation at `8fb50188a2`
+
+The opt-in macOS arm64 `Audacity` target rebuilt successfully after `ToolManager::DefaultConfigTable` gained File Actions between Tools and Edit, restoring its default dock position through Reset Toolbars. `git diff --check` passed. A refreshed disposable app bundle at `/private/tmp/AcetateMVPVerification.app` used its own Portable Settings directory with effects scanning disabled and its temporary directory redirected under `/private/tmp`. The desktop bridge listed the bundle as running but timed out or failed to bind its window. No UI state was observed, and no audio or project was opened. Toolbar visibility/reset placement, supported-file import, save/reopen, export, and native accessibility remain unverified.
+
 ## Sources
 
 - [Audacity 3.7.9 release notes](https://github.com/audacity/audacity/releases/tag/Audacity-3.7.9) and [official releases list](https://github.com/audacity/audacity/releases).
