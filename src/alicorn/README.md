@@ -86,10 +86,11 @@ popup to its own bounds, and Acetate does not yet expose Alicorn popup semantics
 through the native accessibility tree. The Selection Toolbar's numeric-time
 values now use a retained Alicorn view for segmented digits, formatted labels,
 focused-digit appearance, and the format chevron. Alicorn's hosted input owns
-Left/Right/Home/End digit-focus navigation and physical pointer hit testing for
-digit clicks. `NumericTextCtrl` mirrors the selected digit for Audacity's native
-accessibility object and continues to own digit entry, increment/decrement,
-format changes, tab traversal, and the context menu. wx still translates native
+digit-focus navigation, routes digit/Backspace/Delete/Up/Down edit intents, and
+performs physical pointer hit testing for digit clicks. `NumericTextCtrl` applies
+those edits through its existing formatter/converter, mirrors the selected digit
+for Audacity's native accessibility object, and continues to own format changes,
+tab traversal, and the context menu. wx still translates native
 events and retains its paint path as a fallback. Native text input, IME handling,
 and accessibility have not moved to Alicorn, and visual parity has not yet been
 checked in a running application. Alicorn #196

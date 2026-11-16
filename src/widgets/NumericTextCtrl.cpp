@@ -1009,24 +1009,58 @@ void NumericTextCtrl::OnKeyDown(wxKeyEvent &event)
    event.Skip(false);
 
    int keyCode = event.GetKeyCode();
+   // Normalize numpad digits before translating the key into Alicorn's
+   // platform-neutral numeric-time interaction vocabulary.
+   if ((keyCode >= WXK_NUMPAD0) && (keyCode <= WXK_NUMPAD9))
+      keyCode -= WXK_NUMPAD0 - '0';
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    if (mAlicornPaint) {
       uint32_t alicornKey = 0;
+      if (!mReadOnly && !event.HasAnyModifiers() &&
+          keyCode >= '0' && keyCode <= '9') {
+         alicornKey = AUDACITY_NUMERIC_TIME_KEY_DIGIT_BASE + (keyCode - '0');
+      }
       switch (keyCode) {
       case WXK_LEFT: alicornKey = AUDACITY_NUMERIC_TIME_KEY_LEFT; break;
       case WXK_RIGHT: alicornKey = AUDACITY_NUMERIC_TIME_KEY_RIGHT; break;
       case WXK_HOME: alicornKey = AUDACITY_NUMERIC_TIME_KEY_HOME; break;
       case WXK_END: alicornKey = AUDACITY_NUMERIC_TIME_KEY_END; break;
+      case WXK_BACK:
+         if (!mReadOnly) alicornKey = AUDACITY_NUMERIC_TIME_KEY_BACKSPACE;
+         break;
+      case WXK_DELETE:
+         if (!mReadOnly) alicornKey = AUDACITY_NUMERIC_TIME_KEY_DELETE;
+         break;
+      case WXK_UP:
+         if (!mReadOnly) alicornKey = AUDACITY_NUMERIC_TIME_KEY_UP;
+         break;
+      case WXK_DOWN:
+         if (!mReadOnly) alicornKey = AUDACITY_NUMERIC_TIME_KEY_DOWN;
+         break;
       }
       const auto view = gAlicornNumericTimeViews.find(this);
-      if (alicornKey != 0 && view != gAlicornNumericTimeViews.end() &&
-          audacity_alicorn_numeric_time_view_key(view->second, alicornKey) > 0) {
-         const auto focusedDigit = audacity_alicorn_numeric_time_view_focused_digit(view->second);
-         if (focusedDigit >= 0 && focusedDigit < static_cast<int32_t>(mBoxes.size())) {
-            mFocusedDigit = focusedDigit;
-            SetFieldFocus(mFocusedDigit);
-            Refresh(false);
-            return;
+      if (alicornKey != 0 && view != gAlicornNumericTimeViews.end()) {
+         const auto result = audacity_alicorn_numeric_time_view_key(view->second, alicornKey);
+         // Focus navigation is handled here. Edit intents deliberately fall
+         // through to Audacity's existing formatter/converter behavior below.
+         if (result == AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED) {
+            const auto focusedDigit =
+               audacity_alicorn_numeric_time_view_focused_digit(view->second);
+            if (focusedDigit >= 0 && focusedDigit < static_cast<int32_t>(mBoxes.size())) {
+               mFocusedDigit = focusedDigit;
+               SetFieldFocus(mFocusedDigit);
+               Refresh(false);
+               return;
+            }
+            DestroyAlicornNumericTimeView(this);
+            gAlicornNumericTimeViewFailures.insert(this);
+         }
+         else if (result == AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT) {
+            // The existing conversion path below applies the requested edit.
+         }
+         else if (result != AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED) {
+            DestroyAlicornNumericTimeView(this);
+            gAlicornNumericTimeViewFailures.insert(this);
          }
       }
    }
@@ -1037,10 +1071,6 @@ void NumericTextCtrl::OnKeyDown(wxKeyEvent &event)
       mFocusedDigit = 0;
    if (mFocusedDigit >= (int)mBoxes.size())
       mFocusedDigit = mBoxes.size() - 1;
-
-   // Convert numeric keypad entries.
-   if ((keyCode >= WXK_NUMPAD0) && (keyCode <= WXK_NUMPAD9))
-      keyCode -= WXK_NUMPAD0 - '0';
 
    auto& digits = mFormatter->GetDigitInfos();
 

@@ -45,7 +45,18 @@ enum {
     AUDACITY_NUMERIC_TIME_KEY_LEFT = 1,
     AUDACITY_NUMERIC_TIME_KEY_RIGHT = 2,
     AUDACITY_NUMERIC_TIME_KEY_HOME = 3,
-    AUDACITY_NUMERIC_TIME_KEY_END = 4
+    AUDACITY_NUMERIC_TIME_KEY_END = 4,
+    AUDACITY_NUMERIC_TIME_KEY_DIGIT_BASE = 16,
+    AUDACITY_NUMERIC_TIME_KEY_BACKSPACE = 32,
+    AUDACITY_NUMERIC_TIME_KEY_DELETE = 33,
+    AUDACITY_NUMERIC_TIME_KEY_UP = 34,
+    AUDACITY_NUMERIC_TIME_KEY_DOWN = 35
+};
+
+enum {
+    AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED = 0,
+    AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED = 1,
+    AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT = 2
 };
 
 AudacityAlicornNumericTimeView *audacity_alicorn_numeric_time_view_create(
@@ -76,8 +87,11 @@ int32_t audacity_alicorn_numeric_time_view_pointer(
     float x,
     float y,
     uint32_t button);
-/* Route digit-focus navigation through the hosted Alicorn key callback.
- * Returns 1 when handled, 0 when unhandled, and -1 on an invalid view. */
+/* Route numeric-time key behavior through the hosted Alicorn key callback.
+ * Returns KEY_RESULT_FOCUS_CHANGED for navigation, KEY_RESULT_EDIT for a
+ * value-edit key that the wx adapter applies through NumericTextCtrl,
+ * KEY_RESULT_UNHANDLED for other keys, and -1 on an invalid view. Digit key
+ * codes are DIGIT_BASE plus 0..9. */
 int32_t audacity_alicorn_numeric_time_view_key(
     AudacityAlicornNumericTimeView *view,
     uint32_t key);

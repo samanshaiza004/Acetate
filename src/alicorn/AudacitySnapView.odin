@@ -990,6 +990,7 @@ Numeric_Time_View :: struct {
 	style: AudacityNumericTimeStyle,
 	focused_digit: i32,
 	digit_count: i32,
+	last_key_result: i32,
 	style_initialized: bool,
 	fonts_initialized: bool,
 	callback_active: bool,
@@ -1002,6 +1003,14 @@ AUDACITY_NUMERIC_TIME_KEY_LEFT :: u32(1)
 AUDACITY_NUMERIC_TIME_KEY_RIGHT :: u32(2)
 AUDACITY_NUMERIC_TIME_KEY_HOME :: u32(3)
 AUDACITY_NUMERIC_TIME_KEY_END :: u32(4)
+AUDACITY_NUMERIC_TIME_KEY_DIGIT_BASE :: u32(16)
+AUDACITY_NUMERIC_TIME_KEY_BACKSPACE :: u32(32)
+AUDACITY_NUMERIC_TIME_KEY_DELETE :: u32(33)
+AUDACITY_NUMERIC_TIME_KEY_UP :: u32(34)
+AUDACITY_NUMERIC_TIME_KEY_DOWN :: u32(35)
+AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED :: i32(0)
+AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED :: i32(1)
+AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT :: i32(2)
 
 valid_numeric_time_view :: proc(view: ^Numeric_Time_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
@@ -1186,17 +1195,32 @@ numeric_time_on_key :: proc(
 		return false
 	}
 	index := clamp(view.focused_digit, 0, view.digit_count-1)
+	view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED
 	switch event.key_code {
 	case AUDACITY_NUMERIC_TIME_KEY_LEFT:
 		index = (index + view.digit_count - 1) % view.digit_count
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED
 	case AUDACITY_NUMERIC_TIME_KEY_RIGHT:
 		index = (index + 1) % view.digit_count
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED
 	case AUDACITY_NUMERIC_TIME_KEY_HOME:
 		index = 0
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED
 	case AUDACITY_NUMERIC_TIME_KEY_END:
 		index = view.digit_count - 1
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED
+	case AUDACITY_NUMERIC_TIME_KEY_BACKSPACE:
+		index = (index + view.digit_count - 1) % view.digit_count
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT
+	case AUDACITY_NUMERIC_TIME_KEY_DELETE, AUDACITY_NUMERIC_TIME_KEY_UP, AUDACITY_NUMERIC_TIME_KEY_DOWN:
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT
 	case:
-		return false
+		if event.key_code < AUDACITY_NUMERIC_TIME_KEY_DIGIT_BASE ||
+		   event.key_code >= AUDACITY_NUMERIC_TIME_KEY_DIGIT_BASE+10 {
+			return false
+		}
+		index = (index + 1) % view.digit_count
+		view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT
 	}
 	view.focused_digit = index
 	view.style.focused_digit = index
@@ -1415,6 +1439,7 @@ audacity_alicorn_numeric_time_view_key :: proc "c" (
 	if !valid_numeric_time_view(view) {
 		return -1
 	}
+	view.last_key_result = AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED
 	handled, status := alicorn.hosted_runtime_key(&view.hosted, alicorn.Hosted_Key_Event{
 		key_code=key,
 		pressed=true,
@@ -1422,10 +1447,13 @@ audacity_alicorn_numeric_time_view_key :: proc "c" (
 	if status != .Ok {
 		return -1
 	}
-	if handled && numeric_time_step(view).status != .Ok {
+	if !handled {
+		return AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED
+	}
+	if numeric_time_step(view).status != .Ok {
 		return -1
 	}
-	return 1 if handled else 0
+	return view.last_key_result
 }
 
 @(export, link_name="audacity_alicorn_numeric_time_view_pointer")
