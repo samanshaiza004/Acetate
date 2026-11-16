@@ -98,8 +98,10 @@ if( APPLE )
       set( TARGET_MACOS_VERSION 10.13 )
       set( CMAKE_OSX_ARCHITECTURES x86_64 CACHE INTERNAL "" )
    elseif( MACOS_ARCHITECTURE STREQUAL "arm64" )
-      set( MIN_MACOS_VERSION 10.13 )
-      set( TARGET_MACOS_VERSION 10.13 )
+      # Apple Silicon first shipped in macOS 11.0; 10.13 is not a valid
+      # deployment target for arm64 binaries.
+      set( MIN_MACOS_VERSION 11.0 )
+      set( TARGET_MACOS_VERSION 11.0 )
       set( CMAKE_OSX_ARCHITECTURES arm64 CACHE INTERNAL "" )
    else()
       message( FATAL_ERROR "MACOS_ARCHITECTURE must be x86_64 or arm64")
