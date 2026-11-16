@@ -145,6 +145,10 @@ Full parity is not responsibly dateable from this MVP estimate. It is multiple f
 
 The opt-in macOS arm64 `Audacity` target rebuilt successfully after `ToolManager::DefaultConfigTable` gained File Actions between Tools and Edit, restoring its default dock position through Reset Toolbars. `git diff --check` passed. A refreshed disposable app bundle at `/private/tmp/AcetateMVPVerification.app` used its own Portable Settings directory with effects scanning disabled and its temporary directory redirected under `/private/tmp`. The desktop bridge listed the bundle as running but timed out or failed to bind its window. No UI state was observed, and no audio or project was opened. Toolbar visibility/reset placement, supported-file import, save/reopen, export, and native accessibility remain unverified.
 
+### Follow-up validation at `80dbedd8c9` (2026-11-16)
+
+The opt-in macOS arm64 `Audacity` target built successfully after the Tools toolbar's Selection/Envelope/Draw/Multi-Tool selector was migrated to Alicorn. `git diff --check` passed. The built `.app` could not be launched through Launch Services (`kLSNoExecutableErr`, `-10827`); launching the Audacity Mach-O directly from a disposable bundle instead aborted during wx/AppKit initialization, in `___RegisterApplication_block_invoke` while `wxApp::DoInitGui` initialized `NSApplication`. The desktop bridge could not bind to the process, so no application UI was observed and no audio or project was opened. This reproduces the existing macOS host-launch limitation; it does not establish a regression in the toolbar migration. Native visual behavior, input, import/edit/save/export, and accessibility remain unverified.
+
 ## Sources
 
 - [Audacity 3.7.9 release notes](https://github.com/audacity/audacity/releases/tag/Audacity-3.7.9) and [official releases list](https://github.com/audacity/audacity/releases).

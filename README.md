@@ -26,6 +26,8 @@ These are partial slices, not a replacement timeline. wx still owns the main win
 
 The waveform and ruler surfaces use one `ProjectWindow`-owned Alicorn runtime, while wx continues to host and synchronously dispatch paint/input work. The Snap checkbox and individual action controls use the host-owned `Hosted_Runtime` lifecycle on their native surfaces. The timeline still uses its earlier runtime wrapper, and the SDL_GPU presenter is not integrated into wx. Alicorn routes wheel events through the retained waveform region and supplies middle-button pan deltas; Audacity still applies its project-specific zoom and scroll policy through `ViewInfo` and `Viewport`. Keyboard selection and a validated one-track edit workflow are still outstanding. Open/import/save/export continue through Audacity's existing menus, dialogs, and backend. Do not copy project PCM into a second UI model.
 
+The opt-in Alicorn path also renders the Tools toolbar's Selection, Envelope, Draw, and Multi-Tool choices as one radio group. Selection remains Audacity-owned; wx remains available as the fallback. This is a control migration only, not a replacement for Audacity's wxWidgets application shell.
+
 ## Architecture boundary
 
 - **Audacity/backend:** project and track data, audio transport, edits, undo/redo, file I/O, export, and recovery.
