@@ -20,6 +20,11 @@ public:
       wxRect bounds;
       wxColour color;
    };
+   struct WaveformFill {
+      wxRect bounds;
+      wxColour color;
+   };
+   using WaveformFills = std::array<WaveformFill, 3>;
 
    AlicornTimelineView() = default;
    explicit AlicornTimelineView(const wxSize& rulerSize, const wxSize& waveformSize);
@@ -55,6 +60,11 @@ public:
       const AudacityWaveformPointMarker* pointMarkers,
       size_t pointMarkerCount,
       const wxPen* pointMarkerPen = nullptr);
+   bool DrawWaveformFills(
+      wxDC& dc,
+      const wxRect& clip,
+      const WaveformFills& fills,
+      size_t fillCount);
    bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,

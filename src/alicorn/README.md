@@ -31,7 +31,10 @@ fills also use bounded retained rectangles when the complete batch fits. The
 same bounded background adapter is used for normal-zoom envelope-highlight and
 sync-lock-selected cases when that background is painted separately. Successful
 background paths draw the zero line through retained geometry after any
-sync-lock pattern; wx remains the fallback. The C++ paint callback still
+sync-lock pattern; wx remains the fallback. Plain solid channel backgrounds and
+selected-track selection partitions also use bounded retained fills when no beat
+grid is active. Sync-lock-only patterns, beat-grid fills, and non-solid brushes
+remain on wx. The C++ paint callback still
 presents that geometry through wx `wxGraphicsContext`, so this is not yet a
 renderer migration. wx remains the fallback for sync-lock patterns and geometry batches
 that exceed the surface budget or cannot be submitted. Alicorn #201 tracks the

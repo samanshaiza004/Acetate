@@ -679,6 +679,7 @@ void TrackArt::DrawBackgroundWithSelection(
    const auto& beatWeakSelBrush = artist->beatWeakSelBrush[useBeatsAlternateColor];
    const auto& beatSepearatorPen = artist->beatSepearatorPen[useBeatsAlternateColor];
    const auto& barSepearatorPen = artist->barSepearatorPen[useBeatsAlternateColor];
+   const bool syncLockSelected = SyncLock::IsSelectedOrSyncLockSelected(track);
 
    auto drawBgRect = [dc, &gridlinePainter, &rect](
                         const wxBrush& regularBrush,
@@ -698,7 +699,20 @@ void TrackArt::DrawBackgroundWithSelection(
       }
    };
 
-   if (SyncLock::IsSelectedOrSyncLockSelected(track)) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Retain plain solid backgrounds and selected-track selection partitions.
+   // Sync-lock tiles, beat-grid fills, and non-solid brushes stay on wx.
+   AlicornTimelineView* alicornView{};
+   const bool simpleBrushes = !gridlinePainter.enabled &&
+      unselBrush.GetStyle() == wxBRUSHSTYLE_SOLID &&
+      (!track.GetSelected() || selBrush.GetStyle() == wxBRUSHSTYLE_SOLID);
+   if (simpleBrushes && (!syncLockSelected || track.GetSelected()) &&
+       artist->parent)
+      alicornView = artist->parent->GetAlicornTimelineView();
+#endif
+
+   bool retainedBackgroundDrawn = false;
+   if (syncLockSelected) {
       // Rectangles before, within, after the selection
       wxRect before = rect;
       wxRect within = rect;
@@ -710,8 +724,6 @@ void TrackArt::DrawBackgroundWithSelection(
       }
 
       if (before.width > 0) {
-         drawBgRect(unselBrush, beatStrongBrush, beatWeakBrush, before);
-
          within.x = 1 + before.GetRight();
       }
       within.width = rect.x + (int)(zoomInfo.TimeToPosition(sel1) ) - within.x -1;
@@ -725,7 +737,35 @@ void TrackArt::DrawBackgroundWithSelection(
       if (within.width < 1)
          within.width = 1;
 
-      if (within.width > 0) {
+      if (within.width > 0)
+         after.x = 1 + within.GetRight();
+      else
+         after.x = within.x;
+      after.width = 1 + rect.GetRight() - after.x;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (track.GetSelected() && alicornView) {
+         AlicornTimelineView::WaveformFills fills{};
+         size_t fillCount{};
+         const auto addFill = [&](const wxRect& bounds, const wxBrush& brush) {
+            if (!bounds.IsEmpty() && fillCount < fills.size())
+               fills[fillCount++] = { bounds, brush.GetColour() };
+         };
+         if (before.width > 0)
+            addFill(before, unselBrush);
+         if (within.width > 0)
+            addFill(within, selBrush);
+         if (after.width > 0)
+            addFill(after, unselBrush);
+         retainedBackgroundDrawn = alicornView->DrawWaveformFills(
+            *dc, rect, fills, fillCount);
+      }
+#endif
+
+      if (!retainedBackgroundDrawn && before.width > 0)
+         drawBgRect(unselBrush, beatStrongBrush, beatWeakBrush, before);
+
+      if (!retainedBackgroundDrawn && within.width > 0) {
          if (track.GetSelected()) {
             drawBgRect(selBrush, beatStrongSelBrush, beatWeakSelBrush, within);
          }
@@ -735,23 +775,23 @@ void TrackArt::DrawBackgroundWithSelection(
                unselBrush, beatStrongBrush, beatWeakBrush, within);
             DrawSyncLockTiles( context, within );
          }
-
-         after.x = 1 + within.GetRight();
-      }
-      else {
-         // `within` not drawn; start where it would have gone
-         after.x = within.x;
       }
 
-      after.width = 1 + rect.GetRight() - after.x;
-      if (after.width > 0)
-         drawBgRect(
-            unselBrush, beatStrongBrush, beatWeakBrush, after);
+      if (!retainedBackgroundDrawn && after.width > 0)
+         drawBgRect(unselBrush, beatStrongBrush, beatWeakBrush, after);
    }
    else
    {
-      drawBgRect(
-         unselBrush, beatStrongBrush, beatWeakBrush, rect);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (alicornView) {
+         AlicornTimelineView::WaveformFills fills{};
+         fills[0] = { rect, unselBrush.GetColour() };
+         retainedBackgroundDrawn = alicornView->DrawWaveformFills(
+            *dc, rect, fills, 1);
+      }
+#endif
+      if (!retainedBackgroundDrawn)
+         drawBgRect(unselBrush, beatStrongBrush, beatWeakBrush, rect);
    }
 
    if (gridlinePainter.enabled)
