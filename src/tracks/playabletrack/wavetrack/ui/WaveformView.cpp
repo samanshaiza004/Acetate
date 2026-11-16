@@ -1289,13 +1289,16 @@ void DrawIndividualSamples(TrackPanelDrawingContext &context,
 
          if (showPoints) {
             const auto markerColor = toSnapColor(markerBrush->GetColour());
-            const auto halfPixelOffset = tickSize % 2 == 0 ? 0.0f : 0.5f;
+            // Match the center of Audacity's inclusive wxRect ellipse:
+            // odd markers are centered on the sample; even markers are
+            // centered half a pixel up and left.
+            const auto markerCenterOffset = tickSize % 2 == 0 ? -0.5f : 0.0f;
             for (decltype(slen) s = 0; s < slen; ++s) {
                if (ypos[s] < 0 || ypos[s] >= rect.height)
                   continue;
                markers[outputMarkerCount++] = AudacityWaveformPointMarker{
-                  static_cast<float>(rect.x + xpos[s]) + halfPixelOffset,
-                  static_cast<float>(rect.y + ypos[s]) + halfPixelOffset,
+                  static_cast<float>(rect.x + xpos[s]) + markerCenterOffset,
+                  static_cast<float>(rect.y + ypos[s]) + markerCenterOffset,
                   static_cast<float>(tickSize),
                   markerColor.r,
                   markerColor.g,
