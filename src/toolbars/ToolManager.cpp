@@ -530,7 +530,8 @@ static struct DefaultConfigEntry {
    // Top dock row, may wrap
    { wxT("Control"),           {},                     {}                },
    { wxT("Tools"),             wxT("Control"),         {}                },
-   { wxT("Edit"),              wxT("Tools"),           {}                },
+   { wxT("FileActions"),       wxT("Tools"),           {}                },
+   { wxT("Edit"),              wxT("FileActions"),     {}                },
    { wxT("CutCopyPaste"),      wxT("Edit"),            {}                },
    { wxT("Audio Setup"),       wxT("CutCopyPaste"),    {}                },
 #ifdef HAS_AUDIOCOM_UPLOAD
