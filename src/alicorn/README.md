@@ -13,6 +13,14 @@ selection/background fills, selected-range edge strokes, playback indicator,
 and point-selection caret for selected tracks. It does not create an Alicorn
 window or GPU renderer.
 
+The retained timeline is enabled only for an empty project or a project with
+exactly one top-level `WaveTrack` group containing one or two channels. If the
+track list changes to any other shape, Acetate destroys that timeline runtime
+and the complete timeline uses Audacity's wx drawing path. This is only a
+presentation gate; it does not certify that every effect or other project
+object is safe to edit or save from a future standalone Acetate workspace.
+Toolbar controls remain independently opt-in.
+
 ## Timeline runtime and ownership
 
 `ProjectWindow` lazily owns one `AlicornTimelineView` for the ruler and

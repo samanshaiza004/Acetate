@@ -645,9 +645,42 @@ BEGIN_EVENT_TABLE(ProjectWindow, wxFrame)
 END_EVENT_TABLE()
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
+bool ProjectWindow::IsAlicornTimelineEligible() const
+{
+   const auto project = FindProject();
+   if (!project)
+      return false;
+
+   const auto *trackList = TrackPanel::Get(*project).GetTracks();
+   if (!trackList)
+      return false;
+
+   // Permit an empty project for the import-first flow, or one unlinked
+   // mono/stereo waveform track. Keep wx for other project shapes.
+   auto tracks = trackList->Any();
+   auto iter = tracks.begin();
+   if (iter == tracks.end())
+      return true;
+
+   const auto *waveTrack = dynamic_cast<const WaveTrack *>(*iter);
+   if (!waveTrack || waveTrack->GetLinkType() != Track::LinkType::None)
+      return false;
+
+   ++iter;
+   if (iter != tracks.end())
+      return false;
+
+   return waveTrack->NChannels() == 1 || waveTrack->NChannels() == 2;
+}
+
 AlicornTimelineView *ProjectWindow::GetAlicornTimelineView(
    const wxSize& rulerSize, const wxSize& waveformSize)
 {
+   if (!IsAlicornTimelineEligible()) {
+      mAlicornTimelineView.reset();
+      return nullptr;
+   }
+
    if (!mAlicornTimelineView)
       mAlicornTimelineView = std::make_unique<AlicornTimelineView>();
    if (!mAlicornTimelineView->Resize(rulerSize, waveformSize))
@@ -655,8 +688,10 @@ AlicornTimelineView *ProjectWindow::GetAlicornTimelineView(
    return mAlicornTimelineView.get();
 }
 
-AlicornTimelineView *ProjectWindow::FindAlicornTimelineView() const noexcept
+AlicornTimelineView *ProjectWindow::FindAlicornTimelineView() const
 {
+   if (!IsAlicornTimelineEligible())
+      return nullptr;
    return mAlicornTimelineView.get();
 }
 

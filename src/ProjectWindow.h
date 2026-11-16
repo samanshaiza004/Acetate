@@ -78,7 +78,7 @@ public:
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    AlicornTimelineView *GetAlicornTimelineView(
       const wxSize& rulerSize, const wxSize& waveformSize);
-   AlicornTimelineView *FindAlicornTimelineView() const noexcept;
+   AlicornTimelineView *FindAlicornTimelineView() const;
    void DestroyAlicornTimelineView() noexcept;
 #endif
 
@@ -165,6 +165,9 @@ public:
 
    wxStatusBar* CreateProjectStatusBar();
  private:
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool IsAlicornTimelineEligible() const;
+#endif
    void OnThemeChange(struct ThemeChangeMessage);
 
    // PrefsListener implementation

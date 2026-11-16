@@ -45,6 +45,8 @@ Audacity project files are not interchangeable with exported audio. An `.aup3` s
 
 The MVP may open an `.aup3` only when it can represent and preserve every project object in that file. If a project contains unsupported tracks, effects, or other data, offer to open it in the complete legacy workspace. Never silently flatten, omit, or rewrite unsupported content. Saving from the MVP must preserve the same project data that was opened.
 
+The current retained-timeline gate is narrower than full project compatibility: it permits an empty project or exactly one top-level `WaveTrack` group with one or two channels. Other track-list shapes use the wx timeline. This check does not inspect effect state or every serialized project object, so it must not be used as the future open/edit/save compatibility decision. A distinct Acetate workspace and its full compatibility preflight remain to be implemented.
+
 The full wxWidgets workspace remains available during rollout. The Alicorn workspace becomes eligible for default use only after import, edit, save/reopen, export, accessibility, and recovery behavior pass on supported platforms.
 
 ## Responsibility boundary
