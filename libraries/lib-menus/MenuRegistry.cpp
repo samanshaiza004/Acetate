@@ -220,7 +220,7 @@ void MenuRegistry::Visit(Visitor<Traits> &visitor, AudacityProject &project)
 "ShowTransportTB,ShowToolsTB,ShowRecordMeterTB,ShowPlayMeterTB,"
 //"ShowMeterTB,"
 "ShowMixerTB,"
-"ShowEditTB,ShowTranscriptionTB,ShowScrubbingTB,ShowDeviceTB,ShowSelectionTB,"
+"ShowFileActionsTB,ShowEditTB,ShowTranscriptionTB,ShowScrubbingTB,ShowDeviceTB,ShowSelectionTB,"
 "ShowSpectralSelectionTB") },
          {wxT("/Tracks/Add/Add"), wxT(
 "NewMonoTrack,NewStereoTrack,NewLabelTrack,NewTimeTrack")},
