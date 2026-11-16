@@ -390,6 +390,36 @@ bool AlicornTimelineView::DrawWaveformFills(
       dc, clip, rectangles.data(), rectangleCount, nullptr, 0, nullptr, 0);
 }
 
+bool AlicornTimelineView::DrawWaveformSegments(
+   wxDC& dc,
+   const wxRect& clip,
+   const WaveformSegments& sourceSegments,
+   size_t segmentCount)
+{
+   if (segmentCount > sourceSegments.size())
+      return false;
+   std::array<AudacityWaveformSegment, 4> segments{};
+   for (size_t i = 0; i < segmentCount; ++i) {
+      const auto& source = sourceSegments[i];
+      const auto linear = ToLinearColor(source.color);
+      segments[i] = AudacityWaveformSegment{
+         static_cast<float>(source.start.x),
+         static_cast<float>(source.start.y),
+         static_cast<float>(source.end.x),
+         static_cast<float>(source.end.y),
+         source.thickness,
+         linear.r,
+         linear.g,
+         linear.b,
+         linear.a
+      };
+   }
+   if (segmentCount == 0)
+      return true;
+   return DrawWaveform(
+      dc, clip, nullptr, 0, segments.data(), segmentCount, nullptr, 0);
+}
+
 bool AlicornTimelineView::DrawVerticalIndicator(
    wxDC& dc,
    const wxRect& clip,

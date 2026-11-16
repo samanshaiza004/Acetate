@@ -348,6 +348,51 @@ void TrackArt::DrawClipEdges(wxDC& dc, const wxRect& clipRect, bool selected)
    }
 }
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+bool TrackArt::DrawClipEdges(
+   AlicornTimelineView& view,
+   wxDC& dc,
+   const wxRect& clip,
+   const wxRect& clipRect,
+   bool selected)
+{
+   if constexpr (ClipSelectionStrokeSize != 1)
+      return false;
+
+   dc.SetBrush(*wxTRANSPARENT_BRUSH);
+   AColor::UseThemeColour(&dc, -1, clrClipAffordanceOutlinePen);
+   const auto outlineColor = dc.GetPen().GetColour();
+   AlicornTimelineView::WaveformSegments segments{};
+   size_t segmentCount{};
+   segments[segmentCount++] = {
+      { clipRect.GetLeft(), clipRect.GetTop() },
+      { clipRect.GetLeft(), clipRect.GetBottom() },
+      outlineColor,
+   };
+   segments[segmentCount++] = {
+      { clipRect.GetRight(), clipRect.GetTop() },
+      { clipRect.GetRight(), clipRect.GetBottom() },
+      outlineColor,
+   };
+   if (selected) {
+      AColor::UseThemeColour(&dc, -1, clrClipAffordanceStroke);
+      const auto selectionColor = dc.GetPen().GetColour();
+      segments[segmentCount++] = {
+         { clipRect.GetLeft() - ClipSelectionStrokeSize, clipRect.GetTop() },
+         { clipRect.GetLeft() - ClipSelectionStrokeSize, clipRect.GetBottom() },
+         selectionColor,
+      };
+      segments[segmentCount++] = {
+         { clipRect.GetRight() + ClipSelectionStrokeSize, clipRect.GetTop() },
+         { clipRect.GetRight() + ClipSelectionStrokeSize, clipRect.GetBottom() },
+         selectionColor,
+      };
+   }
+   return view.DrawWaveformSegments(
+      dc, clip, segments, segmentCount);
+}
+#endif
+
 void TrackArt::DrawClipFolded(wxDC& dc, const wxRect& rect)
 {
    AColor::UseThemeColour(&dc, clrClipAffordanceOutlinePen);

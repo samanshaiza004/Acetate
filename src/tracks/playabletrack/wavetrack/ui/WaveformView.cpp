@@ -1584,7 +1584,16 @@ void DrawClipWaveform(TrackPanelDrawingContext &context,
    }
    {
       auto clipRect = ClipParameters::GetClipRect(clip, zoomInfo, rect);
-      TrackArt::DrawClipEdges(dc, clipRect, selected);
+      bool alicornClipEdgesDrawn = false;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (artist->parent) {
+         if (auto* view = artist->parent->GetAlicornTimelineView())
+            alicornClipEdgesDrawn = TrackArt::DrawClipEdges(
+               *view, dc, rect, clipRect, selected);
+      }
+#endif
+      if (!alicornClipEdgesDrawn)
+         TrackArt::DrawClipEdges(dc, clipRect, selected);
    }
 }
 

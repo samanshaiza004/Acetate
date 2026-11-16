@@ -36,7 +36,9 @@ selected-track selection partitions also use bounded retained fills when no beat
 grid is active. Sync-lock-only patterns, beat-grid fills, and non-solid brushes
 remain on wx. The C++ paint callback still
 presents that geometry through wx `wxGraphicsContext`, so this is not yet a
-renderer migration. wx remains the fallback for sync-lock patterns and geometry batches
+renderer migration. Waveform clip boundaries and selected-clip strokes also use
+retained line segments; the original wx path remains the fallback and continues
+to serve spectrum and note tracks. wx remains the fallback for sync-lock patterns and geometry batches
 that exceed the surface budget or cannot be submitted. Alicorn #201 tracks the
 dense-marker capability; native pixel and repaint-cost acceptance remains
 open. The rectangle payload closes the API gap tracked by Alicorn #200. The

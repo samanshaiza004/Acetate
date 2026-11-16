@@ -24,7 +24,14 @@ public:
       wxRect bounds;
       wxColour color;
    };
+   struct WaveformSegment {
+      wxPoint start;
+      wxPoint end;
+      wxColour color;
+      float thickness{ 1.0f };
+   };
    using WaveformFills = std::array<WaveformFill, 3>;
+   using WaveformSegments = std::array<WaveformSegment, 4>;
 
    AlicornTimelineView() = default;
    explicit AlicornTimelineView(const wxSize& rulerSize, const wxSize& waveformSize);
@@ -65,6 +72,11 @@ public:
       const wxRect& clip,
       const WaveformFills& fills,
       size_t fillCount);
+   bool DrawWaveformSegments(
+      wxDC& dc,
+      const wxRect& clip,
+      const WaveformSegments& segments,
+      size_t segmentCount);
    bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,

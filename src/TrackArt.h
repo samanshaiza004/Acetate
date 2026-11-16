@@ -19,6 +19,10 @@ class wxRect;
 class wxString;
 #include <wx/types.h>
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornTimelineView;
+#endif
+
 namespace TrackArt {
 
    static constexpr int ClipFrameRadius{ 6 };
@@ -36,6 +40,16 @@ namespace TrackArt {
 
    AUDACITY_DLL_API
    void DrawClipEdges(wxDC& dc, const wxRect& clipRect, bool selected = false);
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AUDACITY_DLL_API
+   bool DrawClipEdges(
+      AlicornTimelineView& view,
+      wxDC& dc,
+      const wxRect& clip,
+      const wxRect& clipRect,
+      bool selected = false);
+#endif
 
    //Used to draw clip boundaries without contents/details when it's not
    //sensible to show them
