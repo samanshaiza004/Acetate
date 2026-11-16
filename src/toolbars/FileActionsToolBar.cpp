@@ -15,6 +15,7 @@
 
 namespace {
 enum {
+   NewProjectID,
    OpenProjectID,
    ImportAudioID,
    SaveProjectID,
@@ -25,6 +26,7 @@ enum {
 constexpr int FirstActionID = 22500;
 
 const ToolBarButtons::ButtonList FileActionButtons{
+   { NewProjectID, wxT("New"), XO("New Project") },
    { OpenProjectID, wxT("Open"), XO("Open Project") },
    { ImportAudioID, wxT("ImportAudio"), XO("Import Audio") },
    { SaveProjectID, wxT("Save"), XO("Save Project") },
@@ -86,6 +88,7 @@ void FileActionsToolBar::Populate()
    Add(mToolSizer = safenew wxBoxSizer(wxHORIZONTAL),
       0, wxALIGN_CENTRE | wxALL, toolbarSpacing);
 
+   AddActionButton(NewProjectID, XO("New Project"));
    AddActionButton(OpenProjectID, XO("Open Project"));
    AddActionButton(ImportAudioID, XO("Import Audio"));
    AddActionButton(SaveProjectID, XO("Save Project"));

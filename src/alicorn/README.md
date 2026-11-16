@@ -3,11 +3,11 @@
 This directory contains opt-in Alicorn views hosted by Audacity 3. The
 integration renders selected toolbar controls, including Pause/Play/Stop,
 Skip to Start/End, modifier-specific Play modes, and Edit toolbar actions. The
-File Actions toolbar provides Open Project, Import Audio, Save Project, and
-Export Audio. It uses Alicorn buttons in the opt-in build and wx buttons
-otherwise; both dispatch Audacity's existing commands. Audacity continues to
-own file dialogs, import, persistence, and export. The integration also renders
-a timeline containing the normal-zoom waveform, time-ruler ticks and labels,
+File Actions toolbar provides New Project, Open Project, Import Audio, Save
+Project, and Export Audio. It uses Alicorn buttons in the opt-in build and wx
+buttons otherwise; both dispatch Audacity's existing commands. Audacity
+continues to own file dialogs, import, persistence, and export. The integration
+also renders a timeline containing the normal-zoom waveform, time-ruler ticks and labels,
 selection/background fills, selected-range edge strokes, playback indicator,
 and point-selection caret for selected tracks. It does not create an Alicorn
 window or GPU renderer.
