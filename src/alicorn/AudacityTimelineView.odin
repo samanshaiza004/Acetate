@@ -77,6 +77,9 @@ Timeline_View :: struct {
 	callback_active: bool,
 	selection_drag_active: bool,
 	selection_anchor_x, selection_current_x: f32,
+	zoom_drag_active: bool,
+	zoom_drag_button: int,
+	zoom_anchor_x, zoom_current_x: f32,
 	pan_drag_active: bool,
 	pan_anchor_x, pan_current_x: f32,
 	ruler_drag_active: bool,
@@ -600,6 +603,44 @@ timeline_view_ruler_pointer_callback :: proc(
 	}
 }
 
+timeline_view_zoom_pointer_callback :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	event: alicorn.Pointer_Event,
+	target: alicorn.Node_ID,
+) {
+	view := transmute(^Timeline_View)state
+	if view == nil || rt == nil { return }
+	switch event.kind {
+	case .Down:
+		view.zoom_drag_active = false
+		view.zoom_drag_button = 0
+		if target != view.waveform_geometry_id ||
+		   (event.button != alicorn.POINTER_BUTTON_PRIMARY &&
+		    event.button != alicorn.POINTER_BUTTON_MIDDLE &&
+		    event.button != alicorn.POINTER_BUTTON_SECONDARY) {
+			return
+		}
+		view.zoom_drag_active = true
+		view.zoom_drag_button = event.button
+		view.zoom_anchor_x = event.x
+		view.zoom_current_x = event.x
+	case .Move:
+		if view.zoom_drag_active && event.button == view.zoom_drag_button {
+			view.zoom_current_x = event.x
+		}
+	case .Up:
+		if view.zoom_drag_active && event.button == view.zoom_drag_button {
+			view.zoom_current_x = event.x
+			view.zoom_drag_active = false
+			view.zoom_drag_button = 0
+		}
+	case .Cancel:
+		view.zoom_drag_active = false
+		view.zoom_drag_button = 0
+	}
+}
+
 timeline_view_scroll_capture :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
@@ -717,6 +758,63 @@ audacity_alicorn_timeline_view_pointer :: proc "c" (
 		phase=phase,
 		anchor_x=anchor_x,
 		current_x=current_x,
+	}
+	return i32(phase)
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_zoom_pointer")
+audacity_alicorn_timeline_view_zoom_pointer :: proc "c" (
+	opaque_view: rawptr,
+	kind: u32,
+	x, y: f32,
+	button: u32,
+	gesture: ^AudacityWaveformSelection,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) || gesture == nil ||
+	   !alicorn.number_is_finite(x) || !alicorn.number_is_finite(y) || button > 3 {
+		return -1
+	}
+	pointer_kind: alicorn.Pointer_Kind
+	switch kind {
+	case 0: pointer_kind = .Move
+	case 1: pointer_kind = .Down
+	case 2: pointer_kind = .Up
+	case 3: pointer_kind = .Cancel
+	case: return -1
+	}
+	if (kind == 1 || kind == 2) && button == 0 { return -1 }
+	event := alicorn.Pointer_Event{
+		kind=pointer_kind,
+		x=x,
+		y=y+view.ruler_height,
+		button=int(button),
+	}
+	was_active := view.zoom_drag_active
+	target := alicorn.process_pointer(&view.runtime, event)
+	_ = alicorn.application_dispatch_pointer(
+		&view.runtime,
+		rawptr(view),
+		timeline_view_zoom_pointer_callback,
+		event,
+		target,
+	)
+	phase: u32 = 0
+	switch kind {
+	case 1:
+		if view.zoom_drag_active { phase = 1 }
+	case 0:
+		if view.zoom_drag_active { phase = 2 }
+	case 2:
+		if was_active { phase = 3 }
+	case 3:
+		if was_active { phase = 4 }
+	}
+	gesture^ = AudacityWaveformSelection{
+		phase=phase,
+		anchor_x=view.zoom_anchor_x,
+		current_x=view.zoom_current_x,
 	}
 	return i32(phase)
 }

@@ -11,6 +11,8 @@ Paul Licameli split from TrackPanel.cpp
 #ifndef __AUDACITY_ZOOM_HANDLE__
 #define __AUDACITY_ZOOM_HANDLE__
 
+#include <cstdint>
+
 #include "../../UIHandle.h"
 
 class wxMouseState;
@@ -69,6 +71,10 @@ private:
 
    int mZoomStart{}, mZoomEnd{};
    wxRect mRect{};
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool mAlicornZoomActive{};
+   std::uint32_t mAlicornZoomButton{};
+#endif
 };
 
 #endif

@@ -23,7 +23,27 @@ Paul Licameli split from TrackPanel.cpp
 #include "../../TrackPanelDrawingContext.h"
 #include "../../TrackPanelMouseEvent.h"
 #include "ViewInfo.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../TrackPanel.h"
+#include "../../alicorn/AlicornTimelineView.h"
+#endif
 #include "../../../images/Cursors.h"
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+namespace
+{
+std::uint32_t AlicornButton(const wxMouseEvent& event)
+{
+   if (event.LeftDown() || event.LeftDClick())
+      return AUDACITY_SNAP_BUTTON_PRIMARY;
+   if (event.MiddleDown())
+      return AUDACITY_SNAP_BUTTON_MIDDLE;
+   if (event.RightDown())
+      return AUDACITY_SNAP_BUTTON_SECONDARY;
+   return 0;
+}
+}
+#endif
 
 ///  This class takes care of our different zoom
 ///  possibilities.  It is possible for a user to just
@@ -94,7 +114,7 @@ bool ZoomHandle::HandlesRightClick()
 }
 
 UIHandle::Result ZoomHandle::Click
-(const TrackPanelMouseEvent &evt, AudacityProject *)
+(const TrackPanelMouseEvent &evt, AudacityProject *pProject)
 {
    const wxMouseEvent &event = evt.event;
    if (event.ButtonDown() || event.LeftDClick()) {
@@ -102,18 +122,51 @@ UIHandle::Result ZoomHandle::Click
       mZoomStart = event.m_x;
       mZoomEnd = event.m_x;
       mRect = evt.rect;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      mAlicornZoomActive = false;
+      mAlicornZoomButton = AlicornButton(event);
+      if (mAlicornZoomButton != 0) {
+         AudacityWaveformSelection gesture{};
+         if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView()) {
+            if (view->ZoomPointer(
+                   AUDACITY_SNAP_POINTER_DOWN,
+                   static_cast<float>(event.m_x),
+                   static_cast<float>(event.m_y),
+                   mAlicornZoomButton,
+                   gesture) == AUDACITY_WAVEFORM_SELECTION_BEGAN) {
+               mAlicornZoomActive = true;
+               mZoomStart = static_cast<int>(gesture.anchor_x);
+               mZoomEnd = static_cast<int>(gesture.current_x);
+            }
+         }
+      }
+#endif
    }
    return RefreshCode::RefreshNone;
 }
 
 UIHandle::Result ZoomHandle::Drag
-(const TrackPanelMouseEvent &evt, AudacityProject *)
+(const TrackPanelMouseEvent &evt, AudacityProject *pProject)
 {
    const wxMouseEvent &event = evt.event;
    const int left = mRect.GetLeft();
    const int right = mRect.GetRight();
 
    mZoomEnd = event.m_x;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornZoomActive) {
+      AudacityWaveformSelection gesture{};
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView()) {
+         if (view->ZoomPointer(
+                AUDACITY_SNAP_POINTER_MOVE,
+                static_cast<float>(event.m_x),
+                static_cast<float>(event.m_y),
+                mAlicornZoomButton,
+                gesture) == AUDACITY_WAVEFORM_SELECTION_UPDATED)
+            mZoomEnd = static_cast<int>(gesture.current_x);
+      }
+   }
+#endif
 
    if (event.m_x < left) {
       mZoomEnd = left;
@@ -139,6 +192,26 @@ UIHandle::Result ZoomHandle::Release
 {
    const wxMouseEvent &event = evt.event;
    auto &viewInfo = ViewInfo::Get( *pProject );
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornZoomActive) {
+      AudacityWaveformSelection gesture{};
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView()) {
+         if (view->ZoomPointer(
+                AUDACITY_SNAP_POINTER_UP,
+                static_cast<float>(event.m_x),
+                static_cast<float>(event.m_y),
+                mAlicornZoomButton,
+                gesture) == AUDACITY_WAVEFORM_SELECTION_ENDED) {
+            mZoomStart = static_cast<int>(gesture.anchor_x);
+            mZoomEnd = std::clamp(
+               static_cast<int>(gesture.current_x),
+               mRect.GetLeft(), mRect.GetRight());
+         }
+      }
+   }
+   mAlicornZoomActive = false;
+   mAlicornZoomButton = 0;
+#endif
    if (mZoomEnd < mZoomStart)
       std::swap(mZoomStart, mZoomEnd);
 
@@ -188,8 +261,21 @@ UIHandle::Result ZoomHandle::Release
    return RefreshAll | FixScrollbars;
 }
 
-UIHandle::Result ZoomHandle::Cancel(AudacityProject*)
+UIHandle::Result ZoomHandle::Cancel(AudacityProject* pProject)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornZoomActive) {
+      AudacityWaveformSelection gesture{};
+      if (pProject) {
+         if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView())
+            view->ZoomPointer(
+               AUDACITY_SNAP_POINTER_CANCEL, 0.0f, 0.0f, 0, gesture);
+      }
+      mAlicornZoomActive = false;
+      mAlicornZoomButton = 0;
+   }
+#endif
+   mZoomStart = mZoomEnd = 0;
    // Cancel is implemented!  And there is no initial state to restore,
    // so just return a code.
    return RefreshCode::RefreshAll;

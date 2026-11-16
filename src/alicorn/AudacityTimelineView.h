@@ -51,6 +51,16 @@ int32_t audacity_alicorn_timeline_view_pointer(
    uint32_t button,
    AudacityWaveformSelection* selection);
 
+/* Zoom-tool pointer coordinates are track-panel local. Alicorn tracks the
+ * gesture only; Audacity remains responsible for zoom and scroll policy. */
+int32_t audacity_alicorn_timeline_view_zoom_pointer(
+   AudacityAlicornTimelineView* view,
+   uint32_t kind,
+   float x,
+   float y,
+   uint32_t button,
+   AudacityWaveformSelection* gesture);
+
 /* Pointer coordinates are ruler-panel local and track only an Alicorn-owned
  * drag gesture; Audacity remains responsible for ruler actions and state. */
 int32_t audacity_alicorn_timeline_view_ruler_pointer(

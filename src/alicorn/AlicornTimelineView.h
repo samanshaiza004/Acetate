@@ -63,6 +63,12 @@ public:
       float y,
       uint32_t button,
       AudacityWaveformSelection& selection);
+   int32_t ZoomPointer(
+      uint32_t kind,
+      float x,
+      float y,
+      uint32_t button,
+      AudacityWaveformSelection& gesture);
    int32_t RulerPointer(
       uint32_t kind,
       float x,

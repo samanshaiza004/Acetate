@@ -380,6 +380,20 @@ int32_t AlicornTimelineView::Pointer(
       mView, kind, x, y, button, &selection);
 }
 
+int32_t AlicornTimelineView::ZoomPointer(
+   uint32_t kind,
+   float x,
+   float y,
+   uint32_t button,
+   AudacityWaveformSelection& gesture)
+{
+   if (!mView)
+      return -1;
+   gesture = {};
+   return audacity_alicorn_timeline_view_zoom_pointer(
+      mView, kind, x, y, button, &gesture);
+}
+
 int32_t AlicornTimelineView::RulerPointer(
    uint32_t kind,
    float x,
