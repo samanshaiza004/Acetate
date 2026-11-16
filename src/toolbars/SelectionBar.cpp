@@ -451,14 +451,11 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
 void SelectionBar::Populate()
 {
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-   // Rebuild the popup with current labels and theme colors whenever the
-   // toolbar controls are recreated.
-   if (mSelectionModePopup) {
-      if (mSelectionModePopup->IsShown())
-         mSelectionModePopup->Dismiss();
-      mSelectionModePopup->Destroy();
-      mSelectionModePopup = nullptr;
-   }
+   // The popup is a child of this toolbar, so ToolBar::ReCreateButtons has
+   // already deleted it in DestroyChildren() before calling Populate(). Only
+   // forget the pointer; it must not be dereferenced here. The popup is rebuilt
+   // with current labels and theme colors in AddSelectionSetupButton.
+   mSelectionModePopup = nullptr;
 #endif
 
    SetBackgroundColour( theTheme.Colour( clrMedium  ) );
