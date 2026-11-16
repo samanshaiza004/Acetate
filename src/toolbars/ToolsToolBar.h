@@ -25,7 +25,11 @@ class wxGridSizer;
 class wxImage;
 class wxWindow;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornActionControl;
+#else
 class AButton;
+#endif
 class AudacityProject;
 struct ProjectSettingsEvent;
 
@@ -64,7 +68,11 @@ class ToolsToolBar final : public ToolBar {
    enum { numTools = 4 };
 
    Observer::Subscription mSubscription;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornActionControl *mTool[numTools];
+#else
    AButton *mTool[numTools];
+#endif
    wxGridSizer *mToolSizer;
    int mCurrentTool;
 

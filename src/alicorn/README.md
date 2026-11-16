@@ -2,7 +2,8 @@
 
 This directory contains opt-in Alicorn views hosted by Audacity 3. The
 integration renders selected toolbar controls, including Pause/Play/Stop,
-Skip to Start/End, modifier-specific Play modes, and Edit toolbar actions. The
+Skip to Start/End, modifier-specific Play modes, the Selection/Envelope/Draw/
+Multi-Tool radio group, and Edit toolbar actions. The
 File Actions toolbar provides New Project, Open Project, Import Audio, Save
 Project, and Export Audio. It uses Alicorn buttons in the opt-in build and wx
 buttons otherwise; both dispatch Audacity's existing commands. Audacity

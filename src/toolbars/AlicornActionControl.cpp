@@ -10,10 +10,15 @@
 
 #include "AllThemeResources.h"
 #include "AlicornPaint.h"
+#include "Theme.h"
 
 namespace AudacityAlicorn {
 uint32_t ActionIconForThemeBitmap(int bitmapId)
 {
+   if (bitmapId == bmpIBeam) return AUDACITY_ACTION_ICON_SELECTION_TOOL;
+   if (bitmapId == bmpEnvelope) return AUDACITY_ACTION_ICON_ENVELOPE_TOOL;
+   if (bitmapId == bmpDraw) return AUDACITY_ACTION_ICON_DRAW_TOOL;
+   if (bitmapId == bmpMulti) return AUDACITY_ACTION_ICON_MULTI_TOOL;
    if (bitmapId == bmpCut) return AUDACITY_ACTION_ICON_CUT;
    if (bitmapId == bmpCopy) return AUDACITY_ACTION_ICON_COPY;
    if (bitmapId == bmpPaste) return AUDACITY_ACTION_ICON_PASTE;
@@ -109,6 +114,43 @@ public:
 
 namespace {
 const wxSize MinimumSize{ 112, 48 };
+
+bool ThemeBitmapForToolIcon(uint32_t iconId, teBmps& bitmapId)
+{
+   switch (iconId) {
+   case AUDACITY_SNAP_ICON_SELECTION_TOOL: bitmapId = bmpIBeam; return true;
+   case AUDACITY_SNAP_ICON_ENVELOPE_TOOL: bitmapId = bmpEnvelope; return true;
+   case AUDACITY_SNAP_ICON_DRAW_TOOL: bitmapId = bmpDraw; return true;
+   case AUDACITY_SNAP_ICON_MULTI_TOOL: bitmapId = bmpMulti; return true;
+   default: return false;
+   }
+}
+
+void DrawActionPaintCommand(
+   void* rawContext, const AudacitySnapDrawCommand* command)
+{
+   auto* context = static_cast<AudacityAlicorn::PaintContext*>(rawContext);
+   teBmps bitmapId;
+   if (context && command && context->graphics &&
+       command->kind == AUDACITY_SNAP_DRAW_ICON &&
+       ThemeBitmapForToolIcon(command->icon_id, bitmapId)) {
+      const auto image = theTheme.Image(bitmapId);
+      if (image.IsOk()) {
+         auto* graphics = context->graphics;
+         graphics->PushState();
+         if (command->clip.width >= 0.0f && command->clip.height >= 0.0f)
+            graphics->Clip(command->clip.x, command->clip.y,
+               command->clip.width, command->clip.height);
+         graphics->Translate(command->translation_x, command->translation_y);
+         const wxBitmap bitmap{ image };
+         graphics->DrawBitmap(bitmap, command->bounds.x, command->bounds.y,
+            command->bounds.width, command->bounds.height);
+         graphics->PopState();
+         return;
+      }
+   }
+   AudacityAlicorn::DrawPaintCommand(rawContext, command);
+}
 }
 
 AlicornActionControl::AlicornActionControl(
@@ -273,7 +315,7 @@ void AlicornActionControl::OnPaint(wxPaintEvent&)
       return;
    AudacityAlicorn::PaintContext context{ graphics.get(), GetFont(), IsEnabled() };
    if (audacity_alicorn_action_view_paint(
-          mView, &AudacityAlicorn::DrawPaintCommand, &context) < 0)
+          mView, &DrawActionPaintCommand, &context) < 0)
       wxLogWarning(wxT("Alicorn action button could not read its paint list"));
 }
 

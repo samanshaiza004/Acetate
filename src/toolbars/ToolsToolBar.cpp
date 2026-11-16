@@ -34,6 +34,10 @@
 #include "ToolsToolBar.h"
 #include "ToolManager.h"
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "AlicornActionControl.h"
+#endif
+
 // For compilers that support precompilation, includes "wx/wx.h".
 #include <wx/wxprec.h>
 
@@ -53,7 +57,9 @@
 #include "../tracks/ui/Scrubbing.h"
 #include "Viewport.h"
 
+#ifndef AUDACITY_USE_ALICORN_SNAP_UI
 #include "../widgets/AButton.h"
+#endif
 
 
 IMPLEMENT_CLASS(ToolsToolBar, ToolBar);
@@ -72,6 +78,7 @@ END_EVENT_TABLE()
 namespace
 {
 
+#ifndef AUDACITY_USE_ALICORN_SNAP_UI
 AButton* MakeToolsToolBarButton(wxWindow* parent,
                                 wxWindowID id,
                                 const TranslatableString& label,
@@ -93,6 +100,7 @@ AButton* MakeToolsToolBarButton(wxWindow* parent,
    button->SetMaxSize(wxSize { 25, 25 });
    return button;
 }
+#endif
 
 }
 
@@ -209,6 +217,22 @@ void ToolsToolBar::Populate()
 
    /* Tools */
    using namespace ToolCodes;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   const auto makeTool = [this](int id, const TranslatableString& label, int bitmapId) {
+      const auto name = label.Translation();
+      auto button = safenew AlicornActionControl(
+         this, FirstToolID + id, name,
+         AudacityAlicorn::ActionIconForThemeBitmap(bitmapId), wxSize{ 25, 25 });
+      button->SetRadioOption(false);
+      mTool[id] = button;
+      mToolSizer->Add(button);
+   };
+
+   makeTool(selectTool, XO("Selection Tool"), bmpIBeam);
+   makeTool(envelopeTool, XO("Envelope Tool"), bmpEnvelope);
+   makeTool(drawTool, XO("Draw Tool"), bmpDraw);
+   makeTool(multiTool, XO("Multi-Tool"), bmpMulti);
+#else
    mTool[ selectTool   ] =
       MakeToolsToolBarButton(this, selectTool, XO("Selection Tool"), theTheme.Image(bmpIBeam));
       //MakeTool( this, bmpIBeam, selectTool, XO("Selection Tool") );
@@ -225,6 +249,7 @@ void ToolsToolBar::Populate()
    mToolSizer->Add(mTool[envelopeTool]);
    mToolSizer->Add(mTool[drawTool]);
    mToolSizer->Add(mTool[multiTool]);
+#endif
 
    DoToolChanged();
 
@@ -235,12 +260,17 @@ void ToolsToolBar::OnTool(wxCommandEvent & evt)
 {
    // This will cause callback to OnToolChanged
    auto iTool = evt.GetId() - ToolCodes::firstTool - FirstToolID;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Alicorn controls report activation without changing observer-owned state.
+   ProjectSettings::Get(mProject).SetTool(iTool);
+#else
    auto pButton = mTool[iTool];
    if (pButton->IsDown())
       ProjectSettings::Get( mProject ).SetTool( iTool );
    else
       // Don't stay up
       pButton->PushDown();
+#endif
 }
 
 void ToolsToolBar::OnToolChanged(ProjectSettingsEvent evt)
@@ -257,10 +287,14 @@ void ToolsToolBar::DoToolChanged()
    using namespace ToolCodes;
    mCurrentTool = projectSettings.GetTool() - firstTool;
    for (int i = 0; i < numTools; i++)
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      mTool[i]->SetRadioOption(i == mCurrentTool);
+#else
       if (i == mCurrentTool)
          mTool[i]->PushDown();
       else
          mTool[i]->PopUp();
+#endif
 
    gPrefs->Write(wxT("/GUI/ToolBars/Tools/MultiToolActive"),
                  mTool[multiTool]->IsDown());
