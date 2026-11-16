@@ -232,7 +232,8 @@ void SelectionBar::AddTime(int id, wxSizer * pSizer)
    auto &formats = ProjectNumericFormats::Get(mProject);
    auto formatName = formats.GetSelectionFormat();
    auto pCtrl = safenew NumericTextCtrl(FormatterContext::ProjectContext(mProject),
-      this, id, NumericConverterType_TIME(), formatName, 0.0);
+      this, id, NumericConverterType_TIME(), formatName, 0.0,
+      NumericTextCtrl::Options{}.AlicornPaint(true));
 
    pCtrl->Bind(
       wxEVT_TEXT,

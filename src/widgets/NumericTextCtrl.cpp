@@ -200,8 +200,9 @@ NumericTextCtrl::NumericTextCtrl(
    mBackgroundBitmap{},
    mDigitFont{},
    mLabelFont{},
-   mAutoPos(options.autoPos)
-   , mType(type)
+   mAutoPos(options.autoPos),
+   mAlicornPaint(options.alicornPaint),
+   mType(type)
 {
    mAllowInvalidValue = false;
 
@@ -570,7 +571,9 @@ void NumericTextCtrl::OnPaint(wxPaintEvent & WXUNUSED(event))
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    bool alicornPainted = false;
-   if (gAlicornNumericTimeViewFailures.find(this) == gAlicornNumericTimeViewFailures.end() && mLabelFont && mDigitFont) {
+   if (mAlicornPaint &&
+       gAlicornNumericTimeViewFailures.find(this) == gAlicornNumericTimeViewFailures.end() &&
+       mLabelFont && mDigitFont) {
       auto viewIt = gAlicornNumericTimeViews.find(this);
       if (viewIt == gAlicornNumericTimeViews.end()) {
          const auto clientSize = GetClientSize();

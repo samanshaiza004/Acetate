@@ -49,6 +49,7 @@ class AUDACITY_DLL_API NumericTextCtrl final
       TranslatableString customFormat {};
       bool hasValue { false };
       double value{ -1.0 };
+      bool alicornPaint { false };
 
       Options() {}
 
@@ -64,6 +65,8 @@ class AUDACITY_DLL_API NumericTextCtrl final
          { customFormat = f; return *this; }
       Options &Value (bool has, double v)
          { hasValue = has, value = v; return *this; }
+      Options &AlicornPaint (bool enable)
+         { alicornPaint = enable; return *this; }
    };
 
    NumericTextCtrl(
@@ -169,6 +172,8 @@ private:
 
    // If true, the focus will be set to the first non-zero digit
    bool           mAutoPos;
+   // If true, render the numeric time control through the retained Alicorn view.
+   bool           mAlicornPaint;
 
    // Keeps track of extra fractional scrollwheel steps
    double         mScrollRemainder;
