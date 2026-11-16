@@ -984,6 +984,8 @@ Numeric_Time_View :: struct {
 	dpi_scale: f32,
 	segments: []Numeric_Time_Segment,
 	style: AudacityNumericTimeStyle,
+	focused_digit: i32,
+	digit_count: i32,
 	style_initialized: bool,
 	fonts_initialized: bool,
 	callback_active: bool,
@@ -992,6 +994,11 @@ Numeric_Time_View :: struct {
 
 NUMERIC_TIME_MAX_SEGMENTS :: 128
 NUMERIC_TIME_MAX_TEXT_BYTES :: 4096
+
+AUDACITY_NUMERIC_TIME_KEY_LEFT :: u32(1)
+AUDACITY_NUMERIC_TIME_KEY_RIGHT :: u32(2)
+AUDACITY_NUMERIC_TIME_KEY_HOME :: u32(3)
+AUDACITY_NUMERIC_TIME_KEY_END :: u32(4)
 
 valid_numeric_time_view :: proc(view: ^Numeric_Time_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
@@ -1136,6 +1143,36 @@ numeric_time_post_wake :: proc(data: rawptr) -> bool {
 	return false
 }
 
+numeric_time_on_key :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	focused_owner: alicorn.Node_ID,
+	event: alicorn.Hosted_Key_Event,
+) -> bool {
+	_ = rt
+	_ = focused_owner
+	view := transmute(^Numeric_Time_View)state
+	if view == nil || !event.pressed || view.digit_count <= 0 {
+		return false
+	}
+	index := clamp(view.focused_digit, 0, view.digit_count-1)
+	switch event.key_code {
+	case AUDACITY_NUMERIC_TIME_KEY_LEFT:
+		index = (index + view.digit_count - 1) % view.digit_count
+	case AUDACITY_NUMERIC_TIME_KEY_RIGHT:
+		index = (index + 1) % view.digit_count
+	case AUDACITY_NUMERIC_TIME_KEY_HOME:
+		index = 0
+	case AUDACITY_NUMERIC_TIME_KEY_END:
+		index = view.digit_count - 1
+	case:
+		return false
+	}
+	view.focused_digit = index
+	view.style.focused_digit = index
+	return true
+}
+
 numeric_time_initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
 	view := transmute(^Numeric_Time_View)state
 	if view != nil && rt != nil {
@@ -1177,6 +1214,7 @@ audacity_alicorn_numeric_time_view_create :: proc "c" (
 		render=numeric_time_render,
 		on_initialize=numeric_time_initialize,
 		post_wake=numeric_time_post_wake,
+		on_key=numeric_time_on_key,
 	})
 	if status != .Ok || !view.fonts_initialized {
 		if status == .Ok { _ = alicorn.hosted_runtime_destroy(&view.hosted) }
@@ -1283,6 +1321,15 @@ audacity_alicorn_numeric_time_view_update :: proc "c" (
 		}
 		candidate[i] = Numeric_Time_Segment{text=value, width=segment.width, digit_index=segment.digit_index}
 	}
+	digit_count := i32(0)
+	for segment in candidate {
+		if segment.digit_index >= digit_count {
+			digit_count = segment.digit_index + 1
+		}
+	}
+	view.digit_count = digit_count
+	view.focused_digit = clamp(style.focused_digit, i32(0), max(i32(0), digit_count-1))
+	style.focused_digit = view.focused_digit
 
 	changed := !view.style_initialized || !numeric_time_style_equal(view.style, style) ||
 		!numeric_time_segments_equal(view.segments, candidate)
@@ -1298,6 +1345,39 @@ audacity_alicorn_numeric_time_view_update :: proc "c" (
 		numeric_time_segments_destroy(candidate, context.allocator)
 	}
 	return 1 if numeric_time_step(view).status == .Ok else -1
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_key")
+audacity_alicorn_numeric_time_view_key :: proc "c" (
+	opaque_view: rawptr,
+	key: u32,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if !valid_numeric_time_view(view) {
+		return -1
+	}
+	handled, status := alicorn.hosted_runtime_key(&view.hosted, alicorn.Hosted_Key_Event{
+		key_code=key,
+		pressed=true,
+	})
+	if status != .Ok {
+		return -1
+	}
+	if handled && numeric_time_step(view).status != .Ok {
+		return -1
+	}
+	return 1 if handled else 0
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_focused_digit")
+audacity_alicorn_numeric_time_view_focused_digit :: proc "c" (opaque_view: rawptr) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if !valid_numeric_time_view(view) {
+		return -1
+	}
+	return view.focused_digit
 }
 
 @(export, link_name="audacity_alicorn_numeric_time_view_paint")

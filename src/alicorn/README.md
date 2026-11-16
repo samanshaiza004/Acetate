@@ -70,12 +70,13 @@ remains in place for now: a control-sized wx surface clips Alicorn's anchored
 popup to its own bounds, and Acetate does not yet expose Alicorn popup semantics
 through the native accessibility tree. The Selection Toolbar's numeric-time
 values now use a retained Alicorn view for segmented digits, formatted labels,
-focused-digit appearance, and the format chevron. `NumericTextCtrl` remains the
-control and authoritative owner of editing, digit navigation, format changes,
-focus, the context menu, and its native accessibility object; wx retains its
-paint path as a fallback. This is a presentation migration only: native text
-input, IME handling, and accessibility have not moved to Alicorn, and visual
-parity has not yet been checked in a running application. Alicorn #196
+focused-digit appearance, and the format chevron. Alicorn's hosted key callback
+now owns Left/Right/Home/End digit-focus navigation; `NumericTextCtrl` mirrors
+that focus for Audacity's native accessibility object and continues to own
+digit entry, increment/decrement, format changes, tab traversal, and the context
+menu. wx retains its paint path as a fallback. Native text input, IME handling,
+and accessibility have not moved to Alicorn, and visual parity has not yet been
+checked in a running application. Alicorn #196
 delivered the hosted Runtime contract; further editor and host integration
 remain Acetate work. wx still owns the remaining ruler gestures and paints blank-track
 backgrounds and sync-lock selection patterns. The track panel currently has no

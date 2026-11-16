@@ -41,6 +41,13 @@ typedef struct AudacityNumericTimeStyle {
     uint8_t reserved;
 } AudacityNumericTimeStyle;
 
+enum {
+    AUDACITY_NUMERIC_TIME_KEY_LEFT = 1,
+    AUDACITY_NUMERIC_TIME_KEY_RIGHT = 2,
+    AUDACITY_NUMERIC_TIME_KEY_HOME = 3,
+    AUDACITY_NUMERIC_TIME_KEY_END = 4
+};
+
 AudacityAlicornNumericTimeView *audacity_alicorn_numeric_time_view_create(
     float width,
     float height,
@@ -61,6 +68,14 @@ int32_t audacity_alicorn_numeric_time_view_update(
     const AudacityNumericTimeSegment *segments,
     uint64_t segment_count,
     const AudacityNumericTimeStyle *style);
+/* Route digit-focus navigation through the hosted Alicorn key callback.
+ * Returns 1 when handled, 0 when unhandled, and -1 on an invalid view. */
+int32_t audacity_alicorn_numeric_time_view_key(
+    AudacityAlicornNumericTimeView *view,
+    uint32_t key);
+/* Returns the focused digit ordinal, or -1 for an invalid view. */
+int32_t audacity_alicorn_numeric_time_view_focused_digit(
+    AudacityAlicornNumericTimeView *view);
 int32_t audacity_alicorn_numeric_time_view_paint(
     AudacityAlicornNumericTimeView *view,
     AudacitySnapDrawCallback callback,

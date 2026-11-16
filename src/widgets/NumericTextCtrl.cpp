@@ -968,6 +968,28 @@ void NumericTextCtrl::OnKeyDown(wxKeyEvent &event)
    event.Skip(false);
 
    int keyCode = event.GetKeyCode();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornPaint) {
+      uint32_t alicornKey = 0;
+      switch (keyCode) {
+      case WXK_LEFT: alicornKey = AUDACITY_NUMERIC_TIME_KEY_LEFT; break;
+      case WXK_RIGHT: alicornKey = AUDACITY_NUMERIC_TIME_KEY_RIGHT; break;
+      case WXK_HOME: alicornKey = AUDACITY_NUMERIC_TIME_KEY_HOME; break;
+      case WXK_END: alicornKey = AUDACITY_NUMERIC_TIME_KEY_END; break;
+      }
+      const auto view = gAlicornNumericTimeViews.find(this);
+      if (alicornKey != 0 && view != gAlicornNumericTimeViews.end() &&
+          audacity_alicorn_numeric_time_view_key(view->second, alicornKey) > 0) {
+         const auto focusedDigit = audacity_alicorn_numeric_time_view_focused_digit(view->second);
+         if (focusedDigit >= 0 && focusedDigit < static_cast<int32_t>(mBoxes.size())) {
+            mFocusedDigit = focusedDigit;
+            SetFieldFocus(mFocusedDigit);
+            Refresh(false);
+            return;
+         }
+      }
+   }
+#endif
    int digit = mFocusedDigit;
 
    if (mFocusedDigit < 0)
