@@ -53,7 +53,12 @@ public:
    {
       if (childId != wxACC_SELF && childId != 0)
          return wxACC_FAIL;
-      *role = wxROLE_SYSTEM_PUSHBUTTON;
+      const auto* control = static_cast<AlicornActionControl*>(GetWindow());
+      if (!control)
+         return wxACC_FAIL;
+      *role = control->IsRadioOption()
+         ? wxROLE_SYSTEM_RADIOBUTTON
+         : wxROLE_SYSTEM_PUSHBUTTON;
       return wxACC_OK;
    }
 
@@ -68,7 +73,9 @@ public:
       *state = wxACC_STATE_SYSTEM_FOCUSABLE;
       if (control->HasFocus())
          *state |= wxACC_STATE_SYSTEM_FOCUSED;
-      if (control->IsPressed())
+      if (control->IsRadioOption() && control->IsPressed())
+         *state |= wxACC_STATE_SYSTEM_CHECKED;
+      else if (!control->IsRadioOption() && control->IsPressed())
          *state |= wxACC_STATE_SYSTEM_PRESSED;
       if (!control->IsEnabled())
          *state |= wxACC_STATE_SYSTEM_UNAVAILABLE;
@@ -79,7 +86,10 @@ public:
    {
       if (childId != wxACC_SELF && childId != 0)
          return wxACC_FAIL;
-      *actionName = wxT("Press");
+      const auto* control = static_cast<AlicornActionControl*>(GetWindow());
+      *actionName = control && control->IsRadioOption()
+         ? wxT("Select")
+         : wxT("Press");
       return wxACC_OK;
    }
 
@@ -152,6 +162,12 @@ void AlicornActionControl::SetPressed(bool pressed)
       return;
    mPressed = pressed;
    UpdateView();
+}
+
+void AlicornActionControl::SetRadioOption(bool selected)
+{
+   mRadioOption = true;
+   SetPressed(selected);
 }
 
 void AlicornActionControl::SetIcon(uint32_t iconId)

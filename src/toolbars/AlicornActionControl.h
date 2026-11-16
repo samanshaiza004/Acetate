@@ -19,7 +19,9 @@ public:
 
    bool IsPressed() const noexcept { return mPressed; }
    bool IsDown() const noexcept { return IsPressed(); }
+   bool IsRadioOption() const noexcept { return mRadioOption; }
    void SetPressed(bool pressed);
+   void SetRadioOption(bool selected);
    void PushDown() { SetPressed(true); }
    void PopUp() { SetPressed(false); }
    void SetIcon(uint32_t iconId);
@@ -56,6 +58,7 @@ private:
    bool mSupportsPlayAlternates{};
    bool mWasShiftDown{};
    bool mWasControlDown{};
+   bool mRadioOption{};
    bool mPressed{};
    bool mUpdating{};
 };

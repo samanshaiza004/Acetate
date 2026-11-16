@@ -33,6 +33,7 @@ class AudacityProject;
 class NumericTextCtrl;
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 class AlicornActionControl;
+class AlicornSelectionModePopup;
 #endif
 
 extern IntSetting SelectionToolbarMode;
@@ -120,6 +121,7 @@ class AUDACITY_DLL_API SelectionBar final : public ToolBar {
    std::array<NumericTextCtrl*, 2> mTimeControls {};
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    AlicornActionControl* mSetupButton{};
+   AlicornSelectionModePopup* mSelectionModePopup{};
 #else
    AButton* mSetupButton{};
 #endif

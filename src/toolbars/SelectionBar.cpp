@@ -26,6 +26,10 @@ selection range.
 
 #include <algorithm>
 #include <cmath>
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include <functional>
+#include <utility>
+#endif
 
 #include "ToolManager.h"
 
@@ -66,6 +70,8 @@ selection range.
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "AlicornActionControl.h"
 #include "../alicorn/AudacitySnapView.h"
+#include <wx/popupwin.h>
+#include <wx/sizer.h>
 #include <wx/weakref.h>
 #endif
 
@@ -115,6 +121,128 @@ const NumericConverterType TimeConverterType[][2] {
    { NumericConverterType_DURATION(), NumericConverterType_TIME() },
 };
 }
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornSelectionModePopup final : public wxPopupTransientWindow
+{
+public:
+   using Mode = SelectionBar::SelectionMode;
+   using OnSelection = std::function<void(Mode)>;
+
+   AlicornSelectionModePopup(
+      wxWindow* parent,
+      const std::array<wxString, 4>& choices,
+      OnSelection onSelection)
+      : wxPopupTransientWindow(parent, wxBORDER_SIMPLE),
+        mOnSelection(std::move(onSelection))
+   {
+      wxCoord optionWidth = 280;
+      wxCoord optionHeight = 32;
+      for (const auto& choice : choices) {
+         wxCoord textWidth{}, textHeight{};
+         GetTextExtent(choice, &textWidth, &textHeight);
+         optionWidth = std::max(optionWidth, textWidth + 32);
+         optionHeight = std::max(optionHeight, textHeight + 12);
+      }
+
+      auto* sizer = safenew wxBoxSizer(wxVERTICAL);
+      for (size_t index = 0; index < mOptions.size(); ++index) {
+         auto* option = safenew AlicornActionControl(
+            this,
+            wxID_ANY,
+            choices[index],
+            AUDACITY_ACTION_ICON_NONE,
+            wxSize{ optionWidth, optionHeight });
+         option->SetRadioOption(false);
+         option->Bind(wxEVT_BUTTON, [this, index](wxCommandEvent&) {
+            if (mOnSelection)
+               mOnSelection(static_cast<Mode>(index));
+            mRestoreAnchorFocus = true;
+            Dismiss();
+         });
+         sizer->Add(option, 0, wxEXPAND | wxALL, 1);
+         mOptions[index] = option;
+      }
+
+      SetBackgroundColour(theTheme.Colour(clrMedium));
+      SetSizerAndFit(sizer);
+      Bind(wxEVT_CHAR_HOOK, &AlicornSelectionModePopup::OnCharHook, this);
+   }
+
+   void PopupFor(AlicornActionControl* anchor, Mode mode)
+   {
+      if (!anchor)
+         return;
+
+      mAnchor = anchor;
+      mMode = mode;
+      mRestoreAnchorFocus = false;
+      for (size_t index = 0; index < mOptions.size(); ++index)
+         mOptions[index]->SetPressed(index == static_cast<size_t>(mode));
+
+      const auto origin = anchor->ClientToScreen(
+         wxPoint{ 0, anchor->GetClientSize().y });
+      Position(origin, GetSize());
+      Popup(mOptions[static_cast<size_t>(mode)]);
+   }
+
+protected:
+   void OnDismiss() override
+   {
+      wxPopupTransientWindow::OnDismiss();
+      if (mAnchor) {
+         mAnchor->SetPressed(false);
+         if (mRestoreAnchorFocus)
+            mAnchor->SetFocus();
+      }
+      mRestoreAnchorFocus = false;
+   }
+
+private:
+   void OnCharHook(wxKeyEvent& event)
+   {
+      const auto key = event.GetKeyCode();
+      if (key == WXK_ESCAPE) {
+         mRestoreAnchorFocus = true;
+         Dismiss();
+         return;
+      }
+
+      const auto current = FocusedOptionIndex();
+      if (key == WXK_UP || key == WXK_DOWN) {
+         const auto delta = key == WXK_UP ? -1 : 1;
+         const auto next = (current + delta + static_cast<int>(mOptions.size())) %
+            static_cast<int>(mOptions.size());
+         mOptions[static_cast<size_t>(next)]->SetFocus();
+         return;
+      }
+      if (key == WXK_HOME) {
+         mOptions.front()->SetFocus();
+         return;
+      }
+      if (key == WXK_END) {
+         mOptions.back()->SetFocus();
+         return;
+      }
+      event.Skip();
+   }
+
+   int FocusedOptionIndex() const
+   {
+      for (size_t index = 0; index < mOptions.size(); ++index) {
+         if (mOptions[index]->HasFocus())
+            return static_cast<int>(index);
+      }
+      return static_cast<int>(mMode);
+   }
+
+   std::array<AlicornActionControl*, 4> mOptions{};
+   wxWeakRef<AlicornActionControl> mAnchor;
+   OnSelection mOnSelection;
+   Mode mMode{ Mode::StartEnd };
+   bool mRestoreAnchorFocus{};
+};
+#endif
 
 IMPLEMENT_CLASS(SelectionBar, ToolBar);
 
@@ -260,18 +388,34 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
 {
    auto setupBtn = MakeSetupButton();
 
+   const std::array<wxString, 4> choices = {
+      _("Start and End of Selection"),
+      _("Start and Length of Selection"),
+      _("Length and End of Selection"),
+      _("Length and Center of Selection"),
+   };
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (!mSelectionModePopup) {
+      mSelectionModePopup = safenew AlicornSelectionModePopup(
+         this,
+         choices,
+         [this](SelectionMode mode) { ApplySelectionMode(mode); });
+   }
+
+   setupBtn->Bind(wxEVT_BUTTON, [this, setupBtn](auto&) {
+      if (!mSelectionModePopup)
+         return;
+      if (mSelectionModePopup->IsShown()) {
+         mSelectionModePopup->Dismiss();
+         return;
+      }
+      setupBtn->SetPressed(true);
+      mSelectionModePopup->PopupFor(setupBtn, mSelectionMode);
+   });
+#else
    auto showMenu = [this, setupBtn]()
    {
-#ifdef AUDACITY_USE_ALICORN_SNAP_UI
-      setupBtn->SetPressed(true);
-#endif
-      static const wxString choices[4] = {
-         _("Start and End of Selection"),
-         _("Start and Length of Selection"),
-         _("Length and End of Selection"),
-         _("Length and Center of Selection"),
-      };
-
       wxMenu menu;
       int selectionMode {};
       for (auto& choice : choices)
@@ -292,23 +436,13 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
          ++selectionMode;
       }
 
-#ifdef AUDACITY_USE_ALICORN_SNAP_UI
-      const wxWeakRef<AlicornActionControl> weakSetupButton{ setupBtn };
-      menu.Bind(wxEVT_MENU_CLOSE, [weakSetupButton](auto&) {
-         if (weakSetupButton)
-            weakSetupButton->SetPressed(false);
-      });
-#else
       menu.Bind(wxEVT_MENU_CLOSE, [setupBtn](auto&) { setupBtn->PopUp(); });
-#endif
 
       BasicMenu::Handle { &menu }.Popup(wxWidgetsWindowPlacement { setupBtn });
    };
-
-   // Keep the handler with the child that owns the ID. Populate can recreate
-   // this button; binding on the toolbar leaves closures that capture the old
-   // child after its destruction.
    setupBtn->Bind(wxEVT_BUTTON, [showMenu](auto&) { showMenu(); });
+#endif
+
    pSizer->Add(setupBtn, 0, wxALIGN_RIGHT | wxBOTTOM | wxRIGHT, 5);
 
    mSetupButton = setupBtn;
@@ -349,6 +483,16 @@ void SelectionBar::Populate()
 
 void SelectionBar::UpdatePrefs()
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Rebuild the popup with the current localized labels and theme colors.
+   if (mSelectionModePopup) {
+      if (mSelectionModePopup->IsShown())
+         mSelectionModePopup->Dismiss();
+      mSelectionModePopup->Destroy();
+      mSelectionModePopup = nullptr;
+   }
+#endif
+
    // The project rate is no longer driven from here.
    // When preferences change, the Project learns about it too.
    // If necessary we can drive the SelectionBar mRate via the Project
