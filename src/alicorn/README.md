@@ -73,7 +73,7 @@ snapping, loop-region mutation, selection-sync, and rollback policy. Project
 selection and loop-region state remain authoritative; Alicorn retains only active
 pointer gestures. Middle-button
 horizontal pan deltas are derived from the retained pointer gesture; wx retains
-mouse capture and Audacity's `Viewport` applies the horizontal scroll.
+mouse capture and Audacity's `Viewport` applies the horizontal scroll. Native wheel input is translated by wx to Alicorn `Scroll_Event`s and captured by a hidden waveform `Scroll_Region` before the existing Audacity modifier, scrubbing, zoom, and viewport policy runs. This establishes Alicorn hit testing and event routing; `ViewInfo` and `Viewport` still own the actual zoom/scroll state and policy.
 Selection-mode calculations are also exposed through
 `SelectionBar::ApplyTimeControlValue`, independent of the current wx numeric
 editor, so a future Alicorn editor can reuse Audacity's Start/End, Start/Length,
@@ -98,7 +98,7 @@ remain Acetate work. wx still owns the remaining ruler gestures and paints blank
 backgrounds and sync-lock selection patterns. The track panel currently has no
 play-region shading; loop-region visualization is on the ruler. wx also paints
 the track backing surface, envelope controls,
-rounded clip-affordance fills, outlines/buttons, and in-place title editing, high-zoom sample
+clip-affordance outlines/buttons, and in-place title editing, high-zoom sample
 editing, accessibility host objects, and
 native audio services. Delete/Undo/Redo
 buttons dispatch through Audacity's existing command system; this does not yet

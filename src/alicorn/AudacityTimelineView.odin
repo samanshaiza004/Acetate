@@ -66,6 +66,7 @@ Timeline_View :: struct {
 	waveform_label_text_count: int,
 	ruler_geometry_id: alicorn.Node_ID,
 	ruler_overlay_geometry_id: alicorn.Node_ID,
+	waveform_scroll_region_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
 	clip_affordance_geometry_id: alicorn.Node_ID,
 	waveform_caret_overlay_geometry_id: alicorn.Node_ID,
@@ -235,12 +236,19 @@ timeline_view_build_description :: proc(
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 
-	waveform_region := alicorn.container_begin(
+	waveform_region := alicorn.scroll_region_begin(
 		&ui,
-		.Container,
 		key=alicorn.key_string("audacity-alicorn-timeline-waveform-region"),
+		viewport_height=view.waveform_height,
+		content_height=view.waveform_height,
+		viewport_width=view.width,
+		content_width=view.width,
+		axes=.Both,
+		scrollbars=.Hidden,
 		style=alicorn.layout_style(.Row, width=view.width, height=view.waveform_height, align=.Stretch),
+		label="audacity-timeline-waveform-input",
 	)
+	view.waveform_scroll_region_id = waveform_region.id
 	waveform_region_columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.width)}
 	waveform_region_rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.waveform_height)}
 	waveform_region_grid := alicorn.grid_begin(
@@ -368,7 +376,7 @@ timeline_view_build_description :: proc(
 	waveform_labels_region_ok := waveform_labels_region != 0 &&
 		alicorn.grid_cell(&ui, waveform_labels_region, 0, 0)
 	alicorn.grid_end(&ui)
-	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
 	alicorn.end_frame(&ui)
 	return ruler_output_bound && waveform_output_bound && waveform_labels_bound && ruler_grid != 0 && ruler_geometry_ok && ruler_labels_ok && ruler_overlay_ok &&
 		waveform_region_grid != 0 && waveform_grid != 0 && waveform_geometry_ok && clip_affordance_geometry_ok && waveform_caret_overlay_ok &&
@@ -578,6 +586,53 @@ timeline_view_ruler_pointer_callback :: proc(
 	case .Cancel:
 		view.ruler_drag_active = false
 	}
+}
+
+timeline_view_scroll_capture :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	event: alicorn.Scroll_Event,
+	target: alicorn.Node_ID,
+) -> bool {
+	view := transmute(^Timeline_View)state
+	return view != nil && rt != nil && target == view.waveform_scroll_region_id &&
+		alicorn.number_is_finite(event.delta_y)
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_scroll")
+audacity_alicorn_timeline_view_scroll :: proc "c" (
+	opaque_view: rawptr,
+	steps: f32,
+	x, y: f32,
+	modifiers: u32,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) || !alicorn.number_is_finite(steps) ||
+	   !alicorn.number_is_finite(x) || !alicorn.number_is_finite(y) ||
+	   steps < -1_000_000 || steps > 1_000_000 ||
+	   modifiers & ~u32(0x0f) != 0 {
+		return -1
+	}
+	event := alicorn.Scroll_Event{
+		delta_y=-steps,
+		ticks_y=int(-steps),
+		x=x,
+		y=y+view.ruler_height,
+		modifiers=alicorn.Input_Modifiers{
+			shift=(modifiers & 0x01) != 0,
+			control=(modifiers & 0x02) != 0,
+			alt=(modifiers & 0x04) != 0,
+			super=(modifiers & 0x08) != 0,
+		},
+	}
+	return 1 if alicorn.application_dispatch_scroll(
+		&view.runtime,
+		rawptr(view),
+		event,
+		timeline_view_scroll_capture,
+		nil,
+	) else 0
 }
 
 @(export, link_name="audacity_alicorn_timeline_view_pointer")

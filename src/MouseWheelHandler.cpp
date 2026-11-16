@@ -14,6 +14,10 @@ Paul Licameli split from ProjectWindow.cpp
 #include "ViewInfo.h"
 #include "Viewport.h"
 #include "tracks/ui/Scrubbing.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "ProjectWindow.h"
+#include "alicorn/AlicornTimelineView.h"
+#endif
 
 // Common mouse wheel handling in track panel cells, moved here to avoid
 // compilation dependencies on Track, TrackPanel, and Scrubbing at low levels
@@ -37,6 +41,23 @@ mutable -> unsigned {
    Scrubber &scrubber = Scrubber::Get( *pProject );
    auto &viewport = Viewport::Get(*pProject);
    const auto steps = evt.steps;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Let the retained waveform region establish the wheel event's UI target.
+   // Audacity's project-aware zoom and scroll policy below remains authoritative.
+   if (auto* view = ProjectWindow::Get(*pProject).FindAlicornTimelineView()) {
+      uint32_t modifiers{};
+      if (event.ShiftDown()) modifiers |= 0x01;
+      if (event.ControlDown()) modifiers |= 0x02;
+      if (event.AltDown()) modifiers |= 0x04;
+      if (event.MetaDown()) modifiers |= 0x08;
+      (void)view->Scroll(
+         static_cast<float>(event.GetX()),
+         static_cast<float>(event.GetY()),
+         steps,
+         modifiers);
+   }
+#endif
 
    if (event.ShiftDown()
        // Don't pan during smooth scrolling.  That would conflict with keeping

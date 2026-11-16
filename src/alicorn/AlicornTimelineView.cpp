@@ -394,6 +394,16 @@ int32_t AlicornTimelineView::RulerPointer(
       mView, kind, x, y, button, &selection);
 }
 
+bool AlicornTimelineView::Scroll(
+   float x, float y, double steps, uint32_t modifiers)
+{
+   if (!mView || !std::isfinite(steps) ||
+       steps < -1'000'000.0 || steps > 1'000'000.0)
+      return false;
+   return audacity_alicorn_timeline_view_scroll(
+      mView, static_cast<float>(steps), x, y, modifiers) > 0;
+}
+
 bool AlicornTimelineView::DrawWaveform(
    wxDC& dc,
    const wxRect& clip,

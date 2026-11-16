@@ -69,6 +69,7 @@ public:
       float y,
       uint32_t button,
       AudacityWaveformSelection& selection);
+   bool Scroll(float x, float y, double steps, uint32_t modifiers);
    bool DrawWaveform(
       wxDC& dc,
       const wxRect& clip,

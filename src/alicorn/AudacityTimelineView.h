@@ -60,6 +60,18 @@ int32_t audacity_alicorn_timeline_view_ruler_pointer(
    uint32_t button,
    AudacityWaveformSelection* selection);
 
+/* Scroll input is hit-tested against Alicorn's retained waveform region.
+ * Positive step counts indicate wheel-up. The app applies Audacity's
+ * project-specific zoom and scroll policy. Modifiers are Shift=1, Control=2,
+ * Alt=4, Super=8. Returns 1 when captured, 0 outside the region, and -1 on
+ * invalid input. */
+int32_t audacity_alicorn_timeline_view_scroll(
+   AudacityAlicornTimelineView* view,
+   float steps,
+   float x,
+   float y,
+   uint32_t modifiers);
+
 /* Geometry arrays are borrowed only for the call. Colors are linear. */
 int32_t audacity_alicorn_timeline_view_update_waveform(
    AudacityAlicornTimelineView* view,
