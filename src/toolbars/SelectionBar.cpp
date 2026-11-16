@@ -450,6 +450,17 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
 
 void SelectionBar::Populate()
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Rebuild the popup with current labels and theme colors whenever the
+   // toolbar controls are recreated.
+   if (mSelectionModePopup) {
+      if (mSelectionModePopup->IsShown())
+         mSelectionModePopup->Dismiss();
+      mSelectionModePopup->Destroy();
+      mSelectionModePopup = nullptr;
+   }
+#endif
+
    SetBackgroundColour( theTheme.Colour( clrMedium  ) );
 
    mTimeControls[0] = mTimeControls[1] = {};
@@ -483,16 +494,6 @@ void SelectionBar::Populate()
 
 void SelectionBar::UpdatePrefs()
 {
-#ifdef AUDACITY_USE_ALICORN_SNAP_UI
-   // Rebuild the popup with the current localized labels and theme colors.
-   if (mSelectionModePopup) {
-      if (mSelectionModePopup->IsShown())
-         mSelectionModePopup->Dismiss();
-      mSelectionModePopup->Destroy();
-      mSelectionModePopup = nullptr;
-   }
-#endif
-
    // The project rate is no longer driven from here.
    // When preferences change, the Project learns about it too.
    // If necessary we can drive the SelectionBar mRate via the Project

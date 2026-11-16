@@ -1,9 +1,11 @@
 # Alicorn-backed Audacity controls
 
 This directory contains opt-in Alicorn views hosted by Audacity 3. The
-integration renders selected toolbar controls (including Pause/Play/Stop and
-Skip to Start/End,
-modifier-specific Play modes, and the Edit toolbar's Delete/Undo/Redo actions) and
+integration renders selected toolbar controls, including Pause/Play/Stop,
+Skip to Start/End, modifier-specific Play modes, and Edit toolbar actions. The
+File Actions toolbar uses Alicorn buttons in the opt-in build and wx buttons
+otherwise; both dispatch Audacity's existing commands. Audacity continues to
+own file dialogs, import, persistence, and export. The integration also renders
 a timeline containing the normal-zoom waveform, time-ruler ticks and labels,
 selection/background fills, selected-range edge strokes, playback indicator,
 and point-selection caret for selected tracks. It does not create an Alicorn
@@ -39,9 +41,9 @@ presents that geometry through wx `wxGraphicsContext`, so this is not yet a
 renderer migration. Waveform clip boundaries and selected-clip strokes also use
 retained line segments; the original wx path remains the fallback and continues
 to serve spectrum and note tracks. wx remains the fallback for sync-lock patterns and geometry batches
-that exceed the surface budget or cannot be submitted. Alicorn #201 tracks the
-dense-marker capability; native pixel and repaint-cost acceptance remains
-open. The rectangle payload closes the API gap tracked by Alicorn #200.
+that exceed the surface budget or cannot be submitted. Alicorn #201's compact-marker implementation and Metal/D3D12 readback
+validation have since landed upstream; Acetate's pinned revision predates
+the marker-center correction, so this renderer has not adopted it yet. The rectangle payload closes the API gap tracked by Alicorn #200.
 Waveform clip titles use retained Alicorn text nodes on a separate presentation
 output. The adapter preserves Audacity's truncation, font, color, and clip
 bounds; the C++ host still presents text through wx. Clipped or overlapping
@@ -82,16 +84,7 @@ selection and loop-region state remain authoritative; Alicorn retains only activ
 pointer gestures. Middle-button
 horizontal pan deltas are derived from the retained pointer gesture; wx retains
 mouse capture and Audacity's `Viewport` applies the horizontal scroll. Native wheel input is translated by wx to Alicorn `Scroll_Event`s and captured by a hidden waveform `Scroll_Region` before the existing Audacity modifier, scrubbing, zoom, and viewport policy runs. This establishes Alicorn hit testing and event routing; `ViewInfo` and `Viewport` still own the actual zoom/scroll state and policy.
-Selection-mode calculations are also exposed through
-`SelectionBar::ApplyTimeControlValue`, independent of the current wx numeric
-editor, so a future Alicorn editor can reuse Audacity's Start/End, Start/Length,
-Length/End, and Length/Center semantics. `GetSelectionMode` and
-`ApplySelectionMode` expose the selected mode to an adapter without requiring
-access to `SelectionBar`'s private state; the latter keeps preference updates,
-field labels, numeric formats, and layout in Audacity. The native mode menu
-remains in place for now: a control-sized wx surface clips Alicorn's anchored
-popup to its own bounds, and Acetate does not yet expose Alicorn popup semantics
-through the native accessibility tree. The Selection Toolbar's numeric-time
+Selection-mode calculations are also exposed through `SelectionBar::ApplyTimeControlValue`, independent of the current wx numeric editor, so a future Alicorn editor can reuse Audacity's Start/End, Start/Length, Length/End, and Length/Center semantics. `GetSelectionMode` and `ApplySelectionMode` expose the selected mode to an adapter without requiring access to private state; the latter retains preference updates, field labels, numeric formats, and layout in Audacity. The four-choice setup menu now opens a transient popup composed from Alicorn-rendered radio options, with Up/Down/Home/End navigation and Escape dismissal. `AlicornActionControl` exposes radio-button role and checked state through its native accessibility object. Selection and preference persistence still use the existing Audacity path; the wx menu remains the fallback when the opt-in surface is disabled. The popup compiles, but its native appearance, keyboard behavior, and screen-reader behavior have not been verified in a running application. The Selection Toolbar's numeric-time
 values now use a retained Alicorn view for segmented digits, formatted labels,
 focused-digit appearance, and the format chevron. Alicorn's hosted input owns
 digit-focus navigation, routes digit/Backspace/Delete/Up/Down edit intents, and

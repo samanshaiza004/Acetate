@@ -687,6 +687,8 @@ set( SOURCES
       toolbars/DeviceToolBar.h
       toolbars/EditToolBar.cpp
       toolbars/EditToolBar.h
+      toolbars/FileActionsToolBar.cpp
+      toolbars/FileActionsToolBar.h
       toolbars/MeterToolBar.cpp
       toolbars/MeterToolBar.h
       toolbars/SelectionBar.cpp
