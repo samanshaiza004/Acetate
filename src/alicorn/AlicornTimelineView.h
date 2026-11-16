@@ -37,6 +37,11 @@ public:
       wxColour color;
       wxFont font;
    };
+   struct ClipAffordance {
+      wxRect background;
+      int radius{};
+      wxColour fillColor;
+   };
    using WaveformFills = std::array<WaveformFill, 3>;
    using WaveformSegments = std::array<WaveformSegment, 4>;
 
@@ -88,6 +93,11 @@ public:
       wxDC& dc,
       const wxRect& clip,
       const std::vector<WaveformLabel>& labels);
+   bool DrawClipAffordances(
+      wxDC& dc,
+      const wxRect& clip,
+      const ClipAffordance* affordances,
+      size_t affordanceCount);
    bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,
@@ -120,6 +130,8 @@ private:
    std::unique_ptr<Ruler::DisplaySnapshot> mLastSnapshot;
    std::vector<AudacityRulerTick> mRulerTicks;
    std::vector<WaveformLabel> mWaveformLabels;
+   std::vector<AudacityWaveformRectangle> mClipAffordanceRectangles;
+   std::vector<AudacityWaveformPointMarker> mClipAffordanceMarkers;
    std::array<RulerFill, AUDACITY_RULER_MAX_FILLS> mLastRulerFills{};
    size_t mLastRulerFillCount{};
    bool mHasRulerFills{};

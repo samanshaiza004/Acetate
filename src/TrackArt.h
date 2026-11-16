@@ -18,6 +18,7 @@ class wxDC;
 class wxRect;
 class wxString;
 #include <wx/types.h>
+#include <wx/gdicmn.h>
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 class AlicornTimelineView;
@@ -26,6 +27,27 @@ class AlicornTimelineView;
 namespace TrackArt {
 
    static constexpr int ClipFrameRadius{ 6 };
+
+   struct ClipAffordanceGeometry {
+      wxRect background;
+      wxRect selectedOutline;
+      wxRect title;
+      int radius{};
+   };
+
+   // Computes the bounded clip-affordance geometry without painting it. The
+   // Alicorn adapter uses this to retain the decoration while the native path
+   // remains available as a fallback.
+   AUDACITY_DLL_API
+   ClipAffordanceGeometry GetClipAffordanceGeometry(
+      wxDC& dc, const wxRect& clipRect, bool selected = false);
+
+   // Paint only the native outlines over a retained Alicorn affordance fill.
+   AUDACITY_DLL_API
+   void DrawClipAffordanceOutline(
+      wxDC& dc,
+      const ClipAffordanceGeometry& geometry,
+      bool selected);
 
    //Draws clip affordance and title string, if not empty.
    //Returns affordance's rectangle.

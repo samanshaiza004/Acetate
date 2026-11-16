@@ -11,6 +11,7 @@
 #include "WaveTrackAffordanceControls.h"
 
 #include <algorithm>
+#include <array>
 #include <wx/dc.h>
 #include <wx/frame.h>
 
@@ -301,6 +302,7 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
          wxDCClipper dcClipper(context.dc, rect);
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
          std::vector<AlicornTimelineView::WaveformLabel> retainedTitleLabels;
+         bool retainedClipAffordancesDrawn = false;
 #endif
          
          context.dc.SetTextBackground(wxTransparentColor);
@@ -324,6 +326,60 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
          
          const auto overflowHandle = mOverflowButtonHandle.lock();
          const auto &intervals = waveTrack.Intervals();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         static constexpr auto MaxRetainedClipAffordances =
+            AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS / 6;
+         std::array<
+            AlicornTimelineView::ClipAffordance,
+            MaxRetainedClipAffordances> retainedClipAffordances{};
+         size_t retainedClipAffordanceCount{};
+         bool retainedClipAffordanceOverflow{};
+         if (artist->parent) {
+            if (auto* view = artist->parent->GetAlicornTimelineView()) {
+               for (auto it = intervals.begin(); it != intervals.end(); ++it) {
+                  const auto& clip = **it;
+                  const auto clipRect = ClipParameters::GetClipRect(
+                     clip, zoomInfo, rect);
+                  if (!WaveChannelView::ClipDetailsVisible(clip, zoomInfo, rect))
+                     continue;
+                  if (retainedClipAffordanceCount ==
+                      retainedClipAffordances.size()) {
+                     retainedClipAffordanceOverflow = true;
+                     break;
+                  }
+
+                  const auto selected = GetSelectedInterval() == it;
+                  const auto highlightAffordance =
+                     !overflowHandle && (selected || clipRect.Contains(px, py));
+                  const auto geometry = TrackArt::GetClipAffordanceGeometry(
+                     context.dc, clipRect, selected);
+                  const auto previousBrush = context.dc.GetBrush();
+                  const auto previousPen = context.dc.GetPen();
+                  AColor::UseThemeColour(
+                     &context.dc,
+                     highlightAffordance
+                        ? clrClipAffordanceActiveBrush
+                        : clrClipAffordanceInactiveBrush,
+                     clrClipAffordanceOutlinePen);
+                  const auto fillColor = context.dc.GetBrush().GetColour();
+                  context.dc.SetBrush(previousBrush);
+                  context.dc.SetPen(previousPen);
+                  retainedClipAffordances[retainedClipAffordanceCount++] = {
+                     geometry.background,
+                     geometry.radius,
+                     fillColor,
+                  };
+               }
+               if (retainedClipAffordanceOverflow)
+                  (void)view->DrawClipAffordances(context.dc, rect, nullptr, 0);
+               else
+                  retainedClipAffordancesDrawn = view->DrawClipAffordances(
+                     context.dc, rect,
+                     retainedClipAffordances.data(),
+                     retainedClipAffordanceCount);
+            }
+         }
+#endif
          for(auto it = intervals.begin(); it != intervals.end(); ++it)
          {
              auto interval = *it;
@@ -340,8 +396,23 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
              const auto selected = GetSelectedInterval() == it;
              const auto highlightAffordance =
                  !overflowHandle && (selected || clipRect.Contains(px, py));
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+             const auto affordanceGeometry =
+                TrackArt::GetClipAffordanceGeometry(
+                   context.dc, clipRect, selected);
+             wxRect affordanceRect;
+             if (retainedClipAffordancesDrawn) {
+                TrackArt::DrawClipAffordanceOutline(
+                   context.dc, affordanceGeometry, selected);
+                affordanceRect = affordanceGeometry.title;
+             }
+             else
+                affordanceRect = TrackArt::DrawClipAffordance(
+                   context.dc, clipRect, highlightAffordance, selected);
+#else
              auto affordanceRect = TrackArt::DrawClipAffordance(
                 context.dc, clipRect, highlightAffordance, selected);
+#endif
 
              if (
                 const auto overflowButtonRect =

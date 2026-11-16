@@ -49,6 +49,81 @@ wxColour ToWxColour(const AudacitySnapColor& color)
       static_cast<unsigned char>(std::lround(std::clamp(color.a, 0.0f, 1.0f) * 255.0f)));
 }
 
+bool AppendRectangle(
+   std::vector<AudacityWaveformRectangle>& rectangles,
+   const wxRect& bounds,
+   const wxColour& color)
+{
+   if (bounds.IsEmpty())
+      return true;
+   if (rectangles.size() >= AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS)
+      return false;
+   const auto linear = ToLinearColor(color);
+   rectangles.push_back({
+      static_cast<float>(bounds.x),
+      static_cast<float>(bounds.y),
+      static_cast<float>(bounds.width),
+      static_cast<float>(bounds.height),
+      linear.r,
+      linear.g,
+      linear.b,
+      linear.a,
+   });
+   return true;
+}
+
+bool AppendPointMarker(
+   std::vector<AudacityWaveformPointMarker>& markers,
+   float x,
+   float y,
+   float diameter,
+   const wxColour& color)
+{
+   if (markers.size() >= AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS)
+      return false;
+   const auto linear = ToLinearColor(color);
+   markers.push_back({
+      x, y, diameter, linear.r, linear.g, linear.b, linear.a
+   });
+   return true;
+}
+
+bool AppendRoundedRectangle(
+   std::vector<AudacityWaveformRectangle>& rectangles,
+   std::vector<AudacityWaveformPointMarker>& markers,
+   const wxRect& bounds,
+   int radius,
+   const wxColour& color)
+{
+   if (bounds.IsEmpty())
+      return true;
+   radius = std::clamp(radius, 0, std::min(bounds.width, bounds.height) / 2);
+   if (radius == 0)
+      return AppendRectangle(rectangles, bounds, color);
+
+   if (!AppendRectangle(
+          rectangles,
+          wxRect{bounds.x + radius, bounds.y,
+                 bounds.width - radius * 2, bounds.height},
+          color) ||
+       !AppendRectangle(
+          rectangles,
+          wxRect{bounds.x, bounds.y + radius,
+                 bounds.width, bounds.height - radius * 2},
+          color))
+      return false;
+
+   const auto diameter = static_cast<float>(radius * 2);
+   const auto left = static_cast<float>(bounds.x + radius);
+   const auto right = static_cast<float>(bounds.GetRight() - radius + 1);
+   const auto top = static_cast<float>(bounds.y + radius);
+   const auto bottom = static_cast<float>(bounds.GetBottom() - radius + 1);
+   return AppendPointMarker(markers, left, top, diameter, color) &&
+      AppendPointMarker(markers, right, top, diameter, color) &&
+      AppendPointMarker(markers, left, bottom, diameter, color) &&
+      AppendPointMarker(markers, right, bottom, diameter, color);
+}
+
 struct PaintContext {
    wxGraphicsContext* graphics{};
    wxRect clip;
@@ -484,6 +559,64 @@ bool AlicornTimelineView::DrawWaveformLabels(
          const auto painted = audacity_alicorn_timeline_view_paint_waveform_labels(
             mView, &DrawCommand, &context);
          return painted == static_cast<int32_t>(orderedLabels.size()) ? 1 : -1;
+      });
+}
+
+bool AlicornTimelineView::DrawClipAffordances(
+   wxDC& dc,
+   const wxRect& clip,
+   const ClipAffordance* affordances,
+   size_t affordanceCount)
+{
+   if (!mView || !ResizeWaveform(dc.GetSize()) ||
+       (affordanceCount > 0 && !affordances))
+      return false;
+
+   auto& rectangles = mClipAffordanceRectangles;
+   auto& markers = mClipAffordanceMarkers;
+   rectangles.clear();
+   markers.clear();
+   rectangles.reserve(std::min<size_t>(
+      affordanceCount * 2,
+      AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS));
+   markers.reserve(std::min<size_t>(
+      affordanceCount * 4,
+      AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS));
+
+   for (size_t i = 0; i < affordanceCount; ++i) {
+      const auto& affordance = affordances[i];
+      if (!AppendRoundedRectangle(
+             rectangles, markers, affordance.background,
+             affordance.radius, affordance.fillColor))
+         return false;
+   }
+
+   if (rectangles.size() + markers.size() >
+       AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS)
+      return false;
+   const auto* rectangleData = rectangles.empty() ? nullptr : rectangles.data();
+   const auto* markerData = markers.empty() ? nullptr : markers.data();
+   if (audacity_alicorn_timeline_view_update_clip_affordances(
+          mView,
+          rectangleData,
+          static_cast<uint64_t>(rectangles.size()),
+          markerData,
+          static_cast<uint64_t>(markers.size())) < 0)
+      return false;
+
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = clip;
+   context.yOrigin = mRulerSize.y;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_WAVEFORM,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_clip_affordances(
+            mView, &DrawGeometry, &context);
       });
 }
 

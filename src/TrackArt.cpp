@@ -225,11 +225,11 @@ wxRect GetClipAffordanceRect(
 }
 }
 
-wxRect TrackArt::DrawClipAffordance(
-   wxDC& dc, const wxRect& clipRect, bool highlight, bool selected)
+TrackArt::ClipAffordanceGeometry TrackArt::GetClipAffordanceGeometry(
+   wxDC& dc, const wxRect& clipRect, bool selected)
 {
    //To make sure that roundings do not overlap each other
-   auto clipFrameRadius = std::min(ClipFrameRadius, clipRect.width / 2);
+   const auto clipFrameRadius = std::min(ClipFrameRadius, clipRect.width / 2);
 
    std::optional<wxRect> clippedClipRect;
    const auto affordanceRect =
@@ -252,29 +252,56 @@ wxRect TrackArt::DrawClipAffordance(
           clippedClipRect->GetRight() + clipFrameRadius + 1));
    }
 
-   if (selected)
-   {
-      wxRect strokeRect{
+   const wxRect selectedOutline = selected
+      ? wxRect{
          drawingRect.x - ClipSelectionStrokeSize,
          drawingRect.y,
          drawingRect.width + ClipSelectionStrokeSize * 2,
-         drawingRect.height + clipFrameRadius };
+         drawingRect.height + clipFrameRadius }
+      : wxRect{};
+   const wxRect background{
+      drawingRect.x,
+      drawingRect.y + ClipSelectionStrokeSize,
+      drawingRect.width,
+      drawingRect.height + clipFrameRadius };
+   return { background, selectedOutline, affordanceRect, clipFrameRadius };
+}
+
+void TrackArt::DrawClipAffordanceOutline(
+   wxDC& dc,
+   const ClipAffordanceGeometry& geometry,
+   bool selected)
+{
+   if (selected) {
+      dc.SetBrush(*wxTRANSPARENT_BRUSH);
+      AColor::UseThemeColour(
+         &dc, clrClipAffordanceStroke, clrClipAffordanceStroke);
+      dc.DrawRoundedRectangle(geometry.selectedOutline, geometry.radius);
+   }
+
+   AColor::UseThemeColour(
+      &dc, -1, clrClipAffordanceOutlinePen);
+   dc.SetBrush(*wxTRANSPARENT_BRUSH);
+   dc.DrawRoundedRectangle(geometry.background, geometry.radius);
+}
+
+wxRect TrackArt::DrawClipAffordance(
+   wxDC& dc, const wxRect& clipRect, bool highlight, bool selected)
+{
+   const auto geometry =
+      GetClipAffordanceGeometry(dc, clipRect, selected);
+
+   if (selected)
+   {
       dc.SetBrush(*wxTRANSPARENT_BRUSH);
       AColor::UseThemeColour(&dc, clrClipAffordanceStroke, clrClipAffordanceStroke);
-      dc.DrawRoundedRectangle(strokeRect, clipFrameRadius);
+      dc.DrawRoundedRectangle(geometry.selectedOutline, geometry.radius);
    }
 
    AColor::UseThemeColour(&dc, highlight ? clrClipAffordanceActiveBrush : clrClipAffordanceInactiveBrush, clrClipAffordanceOutlinePen);
-   dc.DrawRoundedRectangle(
-      wxRect(
-         drawingRect.x,
-         drawingRect.y + ClipSelectionStrokeSize,
-         drawingRect.width,
-         drawingRect.height + clipFrameRadius
-      ), clipFrameRadius
-   );
+   dc.DrawRoundedRectangle(geometry.background, geometry.radius);
 
-   return affordanceRect;
+   return geometry.title;
 }
 
 namespace

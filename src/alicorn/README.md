@@ -45,8 +45,10 @@ open. The rectangle payload closes the API gap tracked by Alicorn #200.
 Waveform clip titles use retained Alicorn text nodes on a separate presentation
 output. The adapter preserves Audacity's truncation, font, color, and clip
 bounds; the C++ host still presents text through wx. Clipped or overlapping
-title rows fall back as a group to wx. Clip affordance backgrounds,
-overflow/pitch/speed buttons, and in-place title editing remain wx-owned. The
+title rows fall back as a group to wx. Rounded clip-affordance fills now use a
+separate bounded retained geometry owner; oversized or rejected batches fall
+back as a whole to wx. wx still draws the thin outlines, overflow/pitch/speed
+buttons, and in-place title editing. The
 playback indicator and
 point-selection caret use independent inert retained overlays after the
 cached track backing bitmap is presented. Audacity's playback scroller and
@@ -96,7 +98,7 @@ remain Acetate work. wx still owns the remaining ruler gestures and paints blank
 backgrounds and sync-lock selection patterns. The track panel currently has no
 play-region shading; loop-region visualization is on the ruler. wx also paints
 the track backing surface, envelope controls,
-clip affordance backgrounds/buttons and in-place title editing, high-zoom sample
+rounded clip-affordance fills, outlines/buttons, and in-place title editing, high-zoom sample
 editing, accessibility host objects, and
 native audio services. Delete/Undo/Redo
 buttons dispatch through Audacity's existing command system; this does not yet

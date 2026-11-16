@@ -67,6 +67,7 @@ Timeline_View :: struct {
 	ruler_geometry_id: alicorn.Node_ID,
 	ruler_overlay_geometry_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
+	clip_affordance_geometry_id: alicorn.Node_ID,
 	waveform_caret_overlay_geometry_id: alicorn.Node_ID,
 	waveform_playhead_overlay_geometry_id: alicorn.Node_ID,
 	width, ruler_height, waveform_height: f32,
@@ -280,6 +281,14 @@ timeline_view_build_description :: proc(
 	)
 	waveform_geometry_ok := view.waveform_geometry_id != 0 &&
 		alicorn.grid_cell(&ui, view.waveform_geometry_id, 0, 0)
+	view.clip_affordance_geometry_id = alicorn.gpu_geometry_surface(
+		&ui,
+		"audacity-alicorn-timeline-clip-affordances",
+		alicorn.layout_style(.Row, width=view.width, height=view.waveform_height),
+		1,
+	)
+	clip_affordance_geometry_ok := view.clip_affordance_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.clip_affordance_geometry_id, 0, 0)
 	view.waveform_caret_overlay_geometry_id = alicorn.gpu_geometry_surface(
 		&ui,
 		"audacity-alicorn-timeline-waveform-caret-overlay",
@@ -309,16 +318,16 @@ timeline_view_build_description :: proc(
 	waveform_labels_bound := waveform_labels_region != 0 &&
 		alicorn.presentation_output_bind_root(&view.runtime, view.waveform_labels_output, waveform_labels_region) == .Ok
 	view.waveform_label_text_count = 0
-	cursor_x: i32 = 0
+	waveform_label_cursor_x: i32 = 0
 	for label, index in waveform_labels {
 		if label.width <= 0 || label.height <= 0 || label.text_length == 0 { continue }
-		label_x := max(label.x, cursor_x)
-		if label_x > cursor_x {
+		label_x := max(label.x, waveform_label_cursor_x)
+		if label_x > waveform_label_cursor_x {
 			_ = alicorn.container_begin(
 				&ui,
 				.Container,
 				key=alicorn.key_u64(u64(index*2+1)),
-				style=alicorn.layout_style(.Row, width=f32(label_x-cursor_x), height=view.waveform_height),
+				style=alicorn.layout_style(.Row, width=f32(label_x-waveform_label_cursor_x), height=view.waveform_height),
 			)
 			alicorn.container_end(&ui)
 		}
@@ -353,7 +362,7 @@ timeline_view_build_description :: proc(
 			view.waveform_label_text_count += 1
 		}
 		alicorn.container_end(&ui)
-		cursor_x = label_x + label.width
+		waveform_label_cursor_x = label_x + label.width
 	}
 	alicorn.container_end(&ui)
 	waveform_labels_region_ok := waveform_labels_region != 0 &&
@@ -362,7 +371,7 @@ timeline_view_build_description :: proc(
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return ruler_output_bound && waveform_output_bound && waveform_labels_bound && ruler_grid != 0 && ruler_geometry_ok && ruler_labels_ok && ruler_overlay_ok &&
-		waveform_region_grid != 0 && waveform_grid != 0 && waveform_geometry_ok && waveform_caret_overlay_ok &&
+		waveform_region_grid != 0 && waveform_grid != 0 && waveform_geometry_ok && clip_affordance_geometry_ok && waveform_caret_overlay_ok &&
 		waveform_playhead_overlay_ok && waveform_content_ok && waveform_labels_region_ok
 }
 
@@ -773,6 +782,68 @@ audacity_alicorn_timeline_view_update_waveform :: proc "c" (
 	return 1
 }
 
+@(export, link_name="audacity_alicorn_timeline_view_update_clip_affordances")
+audacity_alicorn_timeline_view_update_clip_affordances :: proc "c" (
+	opaque_view: rawptr,
+	rectangle_input: ^AudacityWaveformRectangle,
+	rectangle_count: u64,
+	point_marker_input: ^AudacityWaveformPointMarker,
+	point_marker_count: u64,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) ||
+	   (rectangle_count > 0 && rectangle_input == nil) ||
+	   (point_marker_count > 0 && point_marker_input == nil) ||
+	   rectangle_count > u64(MAX_TIMELINE_GEOMETRY_RECTANGLES) ||
+	   point_marker_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) ||
+	   rectangle_count+point_marker_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) {
+		return -1
+	}
+	rectangle_input_slice := mem.slice_ptr(rectangle_input, int(rectangle_count))
+	input_markers := mem.slice_ptr(point_marker_input, int(point_marker_count))
+	rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]alicorn.GPU_Surface_Filled_Rectangle
+	for source, index in rectangle_input_slice {
+		if !alicorn.number_is_finite(source.x) || !alicorn.number_is_finite(source.y) ||
+		   !alicorn.number_is_finite(source.width) || !alicorn.number_is_finite(source.height) ||
+		   source.width < 0 || source.height < 0 ||
+		   !timeline_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
+			return -1
+		}
+		rectangles[index] = alicorn.GPU_Surface_Filled_Rectangle{
+			bounds=alicorn.Rect{source.x, source.y, source.width, source.height},
+			color=alicorn.Color{source.r, source.g, source.b, source.a},
+		}
+	}
+	point_markers: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Point_Marker
+	for source, index in input_markers {
+		if !alicorn.number_is_finite(source.center_x) || !alicorn.number_is_finite(source.center_y) ||
+		   !alicorn.number_is_finite(source.diameter) || source.diameter <= 0 ||
+		   !timeline_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
+			return -1
+		}
+		point_markers[index] = alicorn.GPU_Surface_Point_Marker{
+			center=alicorn.GPU_Surface_Point{source.center_x, source.center_y},
+			diameter=source.diameter,
+			color=alicorn.Color{source.r, source.g, source.b, source.a},
+		}
+	}
+	if !alicorn.gpu_surface_update_geometry_with_rectangles_and_markers(
+		&view.runtime,
+		view.clip_affordance_geometry_id,
+		rectangles[:int(rectangle_count)],
+		nil,
+		nil,
+		point_markers[:int(point_marker_count)],
+	) {
+		return -1
+	}
+	presentation, ready := alicorn.begin_presentation_frame(&view.runtime)
+	if !ready { return -1 }
+	alicorn.end_presentation_frame(&presentation)
+	return 1
+}
+
 timeline_color_valid :: proc(color: AudacitySnapColor) -> bool {
 	return alicorn.number_is_finite(color.r) && alicorn.number_is_finite(color.g) &&
 		alicorn.number_is_finite(color.b) && alicorn.number_is_finite(color.a) &&
@@ -1095,6 +1166,75 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 			u64(len(payload.rectangles)),
 			segment_pointer,
 			u64(len(payload.segments)),
+			marker_pointer,
+			u64(len(payload.point_markers)),
+			snap_rect(command.bounds),
+			snap_rect(command.clip),
+			command.translation[0],
+			command.translation[1],
+		)
+		delivered += 1
+	}
+	view.callback_active = false
+	return delivered
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_paint_clip_affordances")
+audacity_alicorn_timeline_view_paint_clip_affordances :: proc "c" (
+	opaque_view: rawptr,
+	callback: AudacityWaveformPaintCallback,
+	callback_context: rawptr,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) || callback == nil { return -1 }
+	display, ok := alicorn.paint_display_list(&view.runtime)
+	if !ok { return -1 }
+
+	view.callback_active = true
+	delivered := i32(0)
+	for command in display.commands {
+		if command.owner != view.clip_affordance_geometry_id { continue }
+		geometry, geometry_ok := command.payload.(alicorn.Geometry_Paint)
+		if !geometry_ok { continue }
+		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
+		if !payload_ok || (len(payload.rectangles) == 0 && len(payload.point_markers) == 0) { continue }
+
+		output_rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]AudacityWaveformRectangle
+		for source, index in payload.rectangles {
+			output_rectangles[index] = AudacityWaveformRectangle{
+				x=source.bounds.x,
+				y=source.bounds.y,
+				width=source.bounds.w,
+				height=source.bounds.h,
+				r=source.color.r,
+				g=source.color.g,
+				b=source.color.b,
+				a=source.color.a,
+			}
+		}
+		output_markers: [MAX_TIMELINE_GEOMETRY_SEGMENTS]AudacityWaveformPointMarker
+		for source, index in payload.point_markers {
+			output_markers[index] = AudacityWaveformPointMarker{
+				center_x=source.center.x,
+				center_y=source.center.y,
+				diameter=source.diameter,
+				r=source.color.r,
+				g=source.color.g,
+				b=source.color.b,
+				a=source.color.a,
+			}
+		}
+		rectangle_pointer: ^AudacityWaveformRectangle = nil
+		if len(payload.rectangles) > 0 { rectangle_pointer = &output_rectangles[0] }
+		marker_pointer: ^AudacityWaveformPointMarker = nil
+		if len(payload.point_markers) > 0 { marker_pointer = &output_markers[0] }
+		callback(
+			callback_context,
+			rectangle_pointer,
+			u64(len(payload.rectangles)),
+			nil,
+			0,
 			marker_pointer,
 			u64(len(payload.point_markers)),
 			snap_rect(command.bounds),

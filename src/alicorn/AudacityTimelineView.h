@@ -69,6 +69,14 @@ int32_t audacity_alicorn_timeline_view_update_waveform(
    uint64_t segment_count,
    const AudacityWaveformPointMarker* point_markers,
    uint64_t point_marker_count);
+/* Clip affordances have a separate retained geometry owner so their update
+ * cannot replace waveform or selection geometry. */
+int32_t audacity_alicorn_timeline_view_update_clip_affordances(
+   AudacityAlicornTimelineView* view,
+   const AudacityWaveformRectangle* rectangles,
+   uint64_t rectangle_count,
+   const AudacityWaveformPointMarker* point_markers,
+   uint64_t point_marker_count);
 /* Transient playhead and caret geometry have independent retained owners. */
 int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
    AudacityAlicornTimelineView* view,
@@ -107,6 +115,10 @@ int32_t audacity_alicorn_timeline_view_update_ruler_overlay(
  * Waveform geometry and label bounds/clip are translated to track-panel local
  * coordinates; ruler commands remain ruler-panel local. */
 int32_t audacity_alicorn_timeline_view_paint_waveform(
+   AudacityAlicornTimelineView* view,
+   AudacityWaveformPaintCallback callback,
+   void* context);
+int32_t audacity_alicorn_timeline_view_paint_clip_affordances(
    AudacityAlicornTimelineView* view,
    AudacityWaveformPaintCallback callback,
    void* context);
