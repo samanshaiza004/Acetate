@@ -12,8 +12,8 @@ window or GPU renderer.
 ## Timeline runtime and ownership
 
 `ProjectWindow` lazily owns one `AlicornTimelineView` for the ruler and
-TrackPanel waveform. Its Odin `Timeline_View` contains the retained ruler and
-waveform geometry in one Alicorn runtime. The view is destroyed after project
+TrackPanel waveform. Its Odin `Timeline_View` contains the retained ruler,
+waveform geometry, and passive clip-title text in one Alicorn runtime. The view is destroyed after project
 window children are destroyed and before the project is closed. Toolbar
 controls still use separate runtimes, so this is a timeline consolidation,
 not a window-wide Alicorn host.
@@ -41,7 +41,12 @@ retained line segments; the original wx path remains the fallback and continues
 to serve spectrum and note tracks. wx remains the fallback for sync-lock patterns and geometry batches
 that exceed the surface budget or cannot be submitted. Alicorn #201 tracks the
 dense-marker capability; native pixel and repaint-cost acceptance remains
-open. The rectangle payload closes the API gap tracked by Alicorn #200. The
+open. The rectangle payload closes the API gap tracked by Alicorn #200.
+Waveform clip titles use retained Alicorn text nodes on a separate presentation
+output. The adapter preserves Audacity's truncation, font, color, and clip
+bounds; the C++ host still presents text through wx. Clipped or overlapping
+title rows fall back as a group to wx. Clip affordance backgrounds,
+overflow/pitch/speed buttons, and in-place title editing remain wx-owned. The
 playback indicator and
 point-selection caret use independent inert retained overlays after the
 cached track backing bitmap is presented. Audacity's playback scroller and
@@ -91,7 +96,8 @@ remain Acetate work. wx still owns the remaining ruler gestures and paints blank
 backgrounds and sync-lock selection patterns. The track panel currently has no
 play-region shading; loop-region visualization is on the ruler. wx also paints
 the track backing surface, envelope controls,
-clip decorations, high-zoom sample editing, accessibility host objects, and
+clip affordance backgrounds/buttons and in-place title editing, high-zoom sample
+editing, accessibility host objects, and
 native audio services. Delete/Undo/Redo
 buttons dispatch through Audacity's existing command system; this does not yet
 prove the complete single-track editing workflow. The original wx waveform,
@@ -115,8 +121,9 @@ teardown. Acetate uses it for the Snap checkbox and individual action controls,
 each hosted on its own wx surface. wx still owns the windows and event loop,
 forwards the native input and resize calls, and synchronously presents retained
 commands through `wxGraphicsContext`. The timeline uses one retained Runtime
-with disjoint ruler and waveform output roots; each synchronous wx paint path
-captures and acknowledges that output's exact pending revision after drawing.
+with disjoint ruler, waveform-geometry, and waveform-label output roots; each
+synchronous wx paint path captures and acknowledges that output's exact pending
+revision after drawing.
 This exercises Alicorn [#205's multi-output scheduling contract](https://github.com/samanshaiza004/alicorn/issues/205)
 without duplicating the Runtime. It does not prove SDL surface interoperation
 or GPU presentation. A native session still needs to confirm independent update

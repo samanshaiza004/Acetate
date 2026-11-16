@@ -294,21 +294,38 @@ wxRect GetClipTruncatedTitleRect(
 bool TrackArt::DrawClipTitle(
    wxDC& dc, const wxRect& affordanceRect, const wxString& title)
 {
-   if (affordanceRect.IsEmpty())
+   wxString displayText;
+   wxRect labelBounds;
+   if (!GetClipTitleLabel(dc, affordanceRect, title, displayText, labelBounds))
       return false;
-   else if (title.empty())
+   else if (displayText.empty())
       return true;
-   const auto truncatedTitle = ::GetTruncatedTitle(dc, title, affordanceRect);
-   if (truncatedTitle.empty())
-      return false;
-   const auto titleRect =
-      GetClipTruncatedTitleRect(dc, affordanceRect, truncatedTitle);
    const auto alignLeft =
       wxTheApp->GetLayoutDirection() == wxLayout_LeftToRight;
    dc.DrawLabel(
-      truncatedTitle, titleRect,
+      displayText, labelBounds,
       (alignLeft ? wxALIGN_LEFT : wxALIGN_RIGHT) | wxALIGN_CENTER_VERTICAL);
    return true;
+}
+
+bool TrackArt::GetClipTitleLabel(
+   wxDC& dc,
+   const wxRect& affordanceRect,
+   const wxString& title,
+   wxString& displayText,
+   wxRect& labelBounds)
+{
+   displayText.clear();
+   labelBounds = {};
+   if (affordanceRect.IsEmpty())
+      return false;
+   if (title.empty())
+      return true;
+   displayText = ::GetTruncatedTitle(dc, title, affordanceRect);
+   if (displayText.empty())
+      return false;
+   labelBounds = GetClipTruncatedTitleRect(dc, affordanceRect, displayText);
+   return !labelBounds.IsEmpty();
 }
 
 void TrackArt::DrawClipEdges(wxDC& dc, const wxRect& clipRect, bool selected)

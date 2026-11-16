@@ -10,6 +10,7 @@
 
 #include "WaveTrackAffordanceControls.h"
 
+#include <algorithm>
 #include <wx/dc.h>
 #include <wx/frame.h>
 
@@ -47,6 +48,10 @@
 #include "../../../../HitTestResult.h"
 #include "../../../../TrackPanel.h"
 #include "TrackFocus.h"
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../../../alicorn/AlicornTimelineView.h"
+#endif
 
 #include "ClipOverflowButtonHandle.h"
 #include "ClipPitchAndSpeedButtonHandle.h"
@@ -294,10 +299,25 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
       const auto& zoomInfo = *artist->pZoomInfo;
       {
          wxDCClipper dcClipper(context.dc, rect);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         std::vector<AlicornTimelineView::WaveformLabel> retainedTitleLabels;
+#endif
          
          context.dc.SetTextBackground(wxTransparentColor);
          context.dc.SetTextForeground(theTheme.Colour(clrClipNameText));
          context.dc.SetFont(mClipNameFont);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         const auto appendRetainedTitle = [&](const wxString& text, wxRect bounds) {
+            if (text.empty())
+               return;
+            const auto textSize = context.dc.GetTextExtent(text);
+            bounds.y += (bounds.height - textSize.y) / 2;
+            bounds.height = textSize.y;
+            retainedTitleLabels.push_back({
+               bounds, text, context.dc.GetTextForeground(), mClipNameFont
+            });
+         };
+#endif
          
          auto px = context.lastState.m_x;
          auto py = context.lastState.m_y;
@@ -344,14 +364,72 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
                    if (!mTextEditHelper->Draw(context.dc, affordanceRect))
                    {
                       mTextEditHelper->Cancel(nullptr);
-                      TrackArt::DrawClipTitle(
-                         context.dc, affordanceRect, interval->GetName());
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+                      wxString displayText;
+                      wxRect titleBounds;
+                      if (TrackArt::GetClipTitleLabel(
+                             context.dc, affordanceRect, interval->GetName(),
+                             displayText, titleBounds)) {
+                         mVisibleIntervals.push_back(it);
+                         appendRetainedTitle(displayText, titleBounds);
+                      }
+#else
+                      TrackArt::DrawClipTitle(context.dc, affordanceRect, interval->GetName());
+#endif
                    }
                 }
-                else if (TrackArt::DrawClipTitle(
-                            context.dc, affordanceRect, interval->GetName()))
-                   mVisibleIntervals.push_back(it);
+                else {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+                   wxString displayText;
+                   wxRect titleBounds;
+                   if (TrackArt::GetClipTitleLabel(
+                          context.dc, affordanceRect, interval->GetName(),
+                          displayText, titleBounds)) {
+                      mVisibleIntervals.push_back(it);
+                      appendRetainedTitle(displayText, titleBounds);
+                   }
+#else
+                   if (TrackArt::DrawClipTitle(
+                          context.dc, affordanceRect, interval->GetName()))
+                      mVisibleIntervals.push_back(it);
+#endif
+                }
          }
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         bool retainedTitlesDrawn = false;
+         if (artist->parent) {
+            if (auto* view = artist->parent->GetAlicornTimelineView()) {
+               auto orderedLabels = retainedTitleLabels;
+               std::stable_sort(
+                  orderedLabels.begin(), orderedLabels.end(),
+                  [](const auto& left, const auto& right) {
+                     return left.bounds.x < right.bounds.x;
+                  });
+               bool labelsFit = true;
+               int previousRight = rect.GetLeft();
+               for (const auto& label : orderedLabels) {
+                  if (!rect.Contains(label.bounds) || label.bounds.x < previousRight) {
+                     labelsFit = false;
+                     break;
+                  }
+                  previousRight = label.bounds.GetRight() + 1;
+               }
+               static const std::vector<AlicornTimelineView::WaveformLabel> noLabels;
+               const auto presented = view->DrawWaveformLabels(
+                  context.dc, rect, labelsFit ? retainedTitleLabels : noLabels);
+               retainedTitlesDrawn = labelsFit && presented;
+            }
+         }
+         if (!retainedTitlesDrawn) {
+            const auto alignLeft =
+               wxTheApp->GetLayoutDirection() == wxLayout_LeftToRight;
+            for (const auto& label : retainedTitleLabels)
+               context.dc.DrawLabel(
+                  label.text,
+                  label.bounds,
+                  (alignLeft ? wxALIGN_LEFT : wxALIGN_RIGHT) | wxALIGN_CENTER_VERTICAL);
+         }
+#endif
       }      
    }
 }

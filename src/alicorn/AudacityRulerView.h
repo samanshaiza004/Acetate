@@ -23,18 +23,6 @@ typedef struct AudacityRulerTick {
    AudacitySnapColor color;
 } AudacityRulerTick;
 
-typedef struct AudacityRulerLabel {
-   int32_t x;
-   int32_t y;
-   int32_t width;
-   int32_t height;
-   float font_size;
-   float font_weight;
-   AudacitySnapColor color;
-   const uint8_t* text_utf8;
-   uint64_t text_length;
-} AudacityRulerLabel;
-
 typedef void (*AudacityRulerDrawCallback)(
    void* context,
    const AudacitySnapDrawCommand* command);

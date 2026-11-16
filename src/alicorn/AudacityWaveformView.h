@@ -48,6 +48,19 @@ typedef struct AudacityWaveformSelection {
    float current_x;
 } AudacityWaveformSelection;
 
+/* A bounded, copied-on-description text label in timeline coordinates. */
+typedef struct AudacityTimelineLabel {
+   int32_t x;
+   int32_t y;
+   int32_t width;
+   int32_t height;
+   float font_size;
+   float font_weight;
+   AudacitySnapColor color;
+   const uint8_t* text_utf8;
+   uint64_t text_length;
+} AudacityTimelineLabel;
+
 enum {
    /* Alicorn's retained geometry surface accepts at most 8192 vertices. */
    AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS = 8192 / 6,

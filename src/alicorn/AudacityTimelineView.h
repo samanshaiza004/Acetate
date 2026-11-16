@@ -21,9 +21,10 @@ typedef enum AudacityWaveformIndicatorKind {
 typedef enum AudacityTimelineOutputKind {
    AUDACITY_TIMELINE_OUTPUT_RULER = 0,
    AUDACITY_TIMELINE_OUTPUT_WAVEFORM = 1,
+   AUDACITY_TIMELINE_OUTPUT_WAVEFORM_LABELS = 2,
 } AudacityTimelineOutputKind;
 
-/* One retained runtime contains both the ruler and track-panel regions. */
+/* One retained runtime contains ruler, waveform, and waveform-label outputs. */
 AudacityAlicornTimelineView* audacity_alicorn_timeline_view_create(
    float ruler_width,
    float ruler_height,
@@ -73,12 +74,20 @@ int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
    AudacityAlicornTimelineView* view,
    uint32_t indicator_kind,
    const AudacityWaveformSegment* segment);
-int32_t audacity_alicorn_timeline_view_update_ruler(
+int32_t audacity_alicorn_timeline_view_update_description(
    AudacityAlicornTimelineView* view,
    const AudacityRulerTick* ticks,
    uint64_t tick_count,
-   const AudacityRulerLabel* labels,
-   uint64_t label_count);
+   const AudacityTimelineLabel* ruler_labels,
+   uint64_t ruler_label_count,
+   const AudacityTimelineLabel* waveform_labels,
+   uint64_t waveform_label_count);
+
+/* Paints retained text labels in waveform-local coordinates. */
+int32_t audacity_alicorn_timeline_view_paint_waveform_labels(
+   AudacityAlicornTimelineView* view,
+   AudacitySnapDrawCallback callback,
+   void* context);
 
 /* Presentation-only update for ruler fills and ticks. This does not rebuild
  * the retained description, so selection drags can update without layout. */
@@ -95,8 +104,8 @@ int32_t audacity_alicorn_timeline_view_update_ruler_overlay(
    const AudacityWaveformSegment* segment);
 
 /* Paint callbacks are synchronous and may not reenter or destroy the view.
- * Waveform bounds/clip are translated to track-panel local coordinates;
- * ruler commands remain ruler-panel local. */
+ * Waveform geometry and label bounds/clip are translated to track-panel local
+ * coordinates; ruler commands remain ruler-panel local. */
 int32_t audacity_alicorn_timeline_view_paint_waveform(
    AudacityAlicornTimelineView* view,
    AudacityWaveformPaintCallback callback,

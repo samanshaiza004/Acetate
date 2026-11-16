@@ -44,7 +44,7 @@ AudacityRulerTick :: struct {
 	color: AudacitySnapColor,
 }
 
-AudacityRulerLabel :: struct {
+AudacityTimelineLabel :: struct {
 	x, y, width, height: i32,
 	font_size, font_weight: f32,
 	color: AudacitySnapColor,
@@ -61,6 +61,9 @@ Timeline_View :: struct {
 	runtime: alicorn.Runtime,
 	ruler_output: alicorn.Presentation_Output_ID,
 	waveform_output: alicorn.Presentation_Output_ID,
+	waveform_labels_output: alicorn.Presentation_Output_ID,
+	waveform_label_text_ids: [MAX_TIMELINE_LABELS]alicorn.Node_ID,
+	waveform_label_text_count: int,
 	ruler_geometry_id: alicorn.Node_ID,
 	ruler_overlay_geometry_id: alicorn.Node_ID,
 	waveform_geometry_id: alicorn.Node_ID,
@@ -85,6 +88,7 @@ AUDACITY_WAVEFORM_INDICATOR_CARET :: u32(0)
 AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD :: u32(1)
 AUDACITY_TIMELINE_OUTPUT_RULER :: u32(0)
 AUDACITY_TIMELINE_OUTPUT_WAVEFORM :: u32(1)
+AUDACITY_TIMELINE_OUTPUT_WAVEFORM_LABELS :: u32(2)
 
 valid_timeline_view :: proc(view: ^Timeline_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
@@ -92,7 +96,8 @@ valid_timeline_view :: proc(view: ^Timeline_View) -> bool {
 
 timeline_view_build_description :: proc(
 	view: ^Timeline_View,
-	labels: []AudacityRulerLabel,
+	ruler_labels: []AudacityTimelineLabel,
+	waveform_labels: []AudacityTimelineLabel,
 ) -> bool {
 	ui, should_build := alicorn.begin_frame(&view.runtime)
 	if !should_build { return false }
@@ -154,7 +159,7 @@ timeline_view_build_description :: proc(
 		),
 	)
 	cursor_x: i32 = 0
-	for label, index in labels {
+	for label, index in ruler_labels {
 		if label.width <= 0 || label.height <= 0 || label.text_length == 0 { continue }
 		label_x := max(label.x, cursor_x)
 		if label_x > cursor_x {
@@ -216,7 +221,7 @@ timeline_view_build_description :: proc(
 		cursor_x = label_x + label.width
 	}
 	alicorn.container_end(&ui)
-	labels_ok := alicorn.grid_cell(&ui, labels_row, 0, 0)
+	ruler_labels_ok := alicorn.grid_cell(&ui, labels_row, 0, 0)
 	view.ruler_overlay_geometry_id = alicorn.gpu_geometry_surface(
 		&ui,
 		"audacity-alicorn-timeline-ruler-overlay",
@@ -233,15 +238,25 @@ timeline_view_build_description :: proc(
 		&ui,
 		.Container,
 		key=alicorn.key_string("audacity-alicorn-timeline-waveform-region"),
-		style=alicorn.layout_style(
-			.Column,
-			width=view.width,
-			height=view.waveform_height,
-			align=.Stretch,
-		),
+		style=alicorn.layout_style(.Row, width=view.width, height=view.waveform_height, align=.Stretch),
 	)
-	waveform_output_bound := waveform_region != 0 &&
-		alicorn.presentation_output_bind_root(&view.runtime, view.waveform_output, waveform_region) == .Ok
+	waveform_region_columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.width)}
+	waveform_region_rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.waveform_height)}
+	waveform_region_grid := alicorn.grid_begin(
+		&ui,
+		alicorn.key_string("audacity-alicorn-timeline-waveform-region-grid"),
+		waveform_region_columns[:],
+		waveform_region_rows[:],
+		style=alicorn.layout_style(.Row, width=view.width, height=view.waveform_height, align=.Stretch),
+	)
+	waveform_content_region := alicorn.container_begin(
+		&ui,
+		.Container,
+		key=alicorn.key_string("audacity-alicorn-timeline-waveform-content"),
+		style=alicorn.layout_style(.Row, width=view.width, height=view.waveform_height, align=.Stretch),
+	)
+	waveform_output_bound := waveform_content_region != 0 &&
+		alicorn.presentation_output_bind_root(&view.runtime, view.waveform_output, waveform_content_region) == .Ok
 	waveform_columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.width)}
 	waveform_rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(view.waveform_height)}
 	waveform_grid := alicorn.grid_begin(
@@ -283,11 +298,72 @@ timeline_view_build_description :: proc(
 		alicorn.grid_cell(&ui, view.waveform_playhead_overlay_geometry_id, 0, 0)
 	alicorn.grid_end(&ui)
 	alicorn.container_end(&ui)
+	waveform_content_ok := waveform_content_region != 0 &&
+		alicorn.grid_cell(&ui, waveform_content_region, 0, 0)
+	waveform_labels_region := alicorn.container_begin(
+		&ui,
+		.Container,
+		key=alicorn.key_string("audacity-alicorn-timeline-waveform-labels"),
+		style=alicorn.layout_style(.Row, width=view.width, height=view.waveform_height, align=.Start, clip=true),
+	)
+	waveform_labels_bound := waveform_labels_region != 0 &&
+		alicorn.presentation_output_bind_root(&view.runtime, view.waveform_labels_output, waveform_labels_region) == .Ok
+	view.waveform_label_text_count = 0
+	cursor_x: i32 = 0
+	for label, index in waveform_labels {
+		if label.width <= 0 || label.height <= 0 || label.text_length == 0 { continue }
+		label_x := max(label.x, cursor_x)
+		if label_x > cursor_x {
+			_ = alicorn.container_begin(
+				&ui,
+				.Container,
+				key=alicorn.key_u64(u64(index*2+1)),
+				style=alicorn.layout_style(.Row, width=f32(label_x-cursor_x), height=view.waveform_height),
+			)
+			alicorn.container_end(&ui)
+		}
+		_ = alicorn.container_begin(
+			&ui,
+			.Container,
+			key=alicorn.key_u64(u64(index*2+2)),
+			style=alicorn.layout_style(.Column, width=f32(label.width), height=view.waveform_height, align=.Start),
+		)
+		if label.y > 0 {
+			_ = alicorn.container_begin(
+				&ui,
+				.Container,
+				key=alicorn.key_u64(1),
+				style=alicorn.layout_style(.Row, width=f32(label.width), height=min(f32(label.y), view.waveform_height)),
+			)
+			alicorn.container_end(&ui)
+		}
+		text_height := min(f32(label.height), max(view.waveform_height-f32(max(label.y, 0)), 0.0))
+		text_style := alicorn.Text_Style{font_weight=label.font_weight, font_size=label.font_size, overflow=.Clip}
+		text_value := string(mem.slice_ptr(label.text_utf8, int(label.text_length)))
+		text_id := alicorn.text(
+			&ui,
+			text_value,
+			key=alicorn.key_u64(2),
+			style=alicorn.layout_style(width=f32(label.width), height=text_height),
+			text_style=text_style,
+			color=alicorn.Color{label.color.r, label.color.g, label.color.b, label.color.a},
+		)
+		if text_id != 0 && view.waveform_label_text_count < MAX_TIMELINE_LABELS {
+			view.waveform_label_text_ids[view.waveform_label_text_count] = text_id
+			view.waveform_label_text_count += 1
+		}
+		alicorn.container_end(&ui)
+		cursor_x = label_x + label.width
+	}
+	alicorn.container_end(&ui)
+	waveform_labels_region_ok := waveform_labels_region != 0 &&
+		alicorn.grid_cell(&ui, waveform_labels_region, 0, 0)
+	alicorn.grid_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	return ruler_output_bound && waveform_output_bound && ruler_grid != 0 && ruler_geometry_ok && labels_ok && ruler_overlay_ok &&
-		waveform_grid != 0 && waveform_geometry_ok && waveform_caret_overlay_ok &&
-		waveform_playhead_overlay_ok
+	return ruler_output_bound && waveform_output_bound && waveform_labels_bound && ruler_grid != 0 && ruler_geometry_ok && ruler_labels_ok && ruler_overlay_ok &&
+		waveform_region_grid != 0 && waveform_grid != 0 && waveform_geometry_ok && waveform_caret_overlay_ok &&
+		waveform_playhead_overlay_ok && waveform_content_ok && waveform_labels_region_ok
 }
 
 timeline_waveform_indicator_id :: proc(
@@ -310,6 +386,8 @@ timeline_output_id :: proc(view: ^Timeline_View, output_kind: u32) -> (id: alico
 		return view.ruler_output, true
 	case AUDACITY_TIMELINE_OUTPUT_WAVEFORM:
 		return view.waveform_output, true
+	case AUDACITY_TIMELINE_OUTPUT_WAVEFORM_LABELS:
+		return view.waveform_labels_output, true
 	}
 	return
 }
@@ -350,9 +428,22 @@ audacity_alicorn_timeline_view_create :: proc "c" (
 		free(view)
 		return nil
 	}
+	waveform_labels_output, waveform_labels_status := alicorn.presentation_output_register(&view.runtime)
+	if waveform_labels_status != .Ok {
+		_ = alicorn.presentation_output_unregister(&view.runtime, waveform_output)
+		_ = alicorn.presentation_output_unregister(&view.runtime, ruler_output)
+		alicorn.destroy_runtime(&view.runtime)
+		view.runtime_initialized = false
+		free(view)
+		return nil
+	}
 	view.ruler_output = ruler_output
 	view.waveform_output = waveform_output
-	if !timeline_view_build_description(view, nil) {
+	view.waveform_labels_output = waveform_labels_output
+	if !timeline_view_build_description(view, nil, nil) {
+		_ = alicorn.presentation_output_unregister(&view.runtime, waveform_labels_output)
+		_ = alicorn.presentation_output_unregister(&view.runtime, waveform_output)
+		_ = alicorn.presentation_output_unregister(&view.runtime, ruler_output)
 		alicorn.destroy_runtime(&view.runtime)
 		view.runtime_initialized = false
 		free(view)
@@ -401,7 +492,7 @@ audacity_alicorn_timeline_view_resize :: proc "c" (
 		alicorn.Rect{0, 0, width, ruler_height+waveform_height},
 	)
 	alicorn.invalidate_root(&view.runtime, "Audacity timeline regions resized")
-	if !timeline_view_build_description(view, nil) {
+	if !timeline_view_build_description(view, nil, nil) {
 		return -1
 	}
 	return 1
@@ -732,23 +823,29 @@ audacity_alicorn_timeline_view_update_waveform_overlay :: proc "c" (
 	return 1
 }
 
-@(export, link_name="audacity_alicorn_timeline_view_update_ruler")
-audacity_alicorn_timeline_view_update_ruler :: proc "c" (
+@(export, link_name="audacity_alicorn_timeline_view_update_description")
+audacity_alicorn_timeline_view_update_description :: proc "c" (
 	opaque_view: rawptr,
 	ticks: ^AudacityRulerTick,
 	tick_count: u64,
-	labels: ^AudacityRulerLabel,
-	label_count: u64,
+	ruler_labels: ^AudacityTimelineLabel,
+	ruler_label_count: u64,
+	waveform_labels: ^AudacityTimelineLabel,
+	waveform_label_count: u64,
 ) -> i32 {
 	context = odin_runtime.default_context()
 	view := transmute(^Timeline_View)opaque_view
 	if !valid_timeline_view(view) || (tick_count > 0 && ticks == nil) ||
-	   (label_count > 0 && labels == nil) || tick_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) ||
-	   label_count > u64(MAX_TIMELINE_LABELS) {
+	   (ruler_label_count > 0 && ruler_labels == nil) ||
+	   (waveform_label_count > 0 && waveform_labels == nil) ||
+	   tick_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) ||
+	   ruler_label_count > u64(MAX_TIMELINE_LABELS) ||
+	   waveform_label_count > u64(MAX_TIMELINE_LABELS) {
 		return -1
 	}
 	tick_input := mem.slice_ptr(ticks, int(tick_count))
-	label_input := mem.slice_ptr(labels, int(label_count))
+	ruler_label_input := mem.slice_ptr(ruler_labels, int(ruler_label_count))
+	waveform_label_input := mem.slice_ptr(waveform_labels, int(waveform_label_count))
 	for tick in tick_input {
 		if !alicorn.number_is_finite(tick.x) || !alicorn.number_is_finite(tick.y0) ||
 		   !alicorn.number_is_finite(tick.y1) || !alicorn.number_is_finite(tick.thickness) ||
@@ -756,7 +853,17 @@ audacity_alicorn_timeline_view_update_ruler :: proc "c" (
 			return -1
 		}
 	}
-	for label in label_input {
+	for label in ruler_label_input {
+		if label.text_length > MAX_TIMELINE_LABEL_BYTES ||
+		   (label.text_length > 0 && label.text_utf8 == nil) ||
+		   label.width < 0 || label.height < 0 ||
+		   !alicorn.number_is_finite(label.font_size) || !alicorn.number_is_finite(label.font_weight) ||
+		   label.font_size < 0 || label.font_size > 512 || label.font_weight < 1 || label.font_weight > 1000 ||
+		   !timeline_color_valid(label.color) {
+			return -1
+		}
+	}
+	for label in waveform_label_input {
 		if label.text_length > MAX_TIMELINE_LABEL_BYTES ||
 		   (label.text_length > 0 && label.text_utf8 == nil) ||
 		   label.width < 0 || label.height < 0 ||
@@ -767,8 +874,8 @@ audacity_alicorn_timeline_view_update_ruler :: proc "c" (
 		}
 	}
 
-	alicorn.invalidate_root(&view.runtime, "Audacity ruler snapshot changed")
-	if !timeline_view_build_description(view, label_input) { return -1 }
+	alicorn.invalidate_root(&view.runtime, "Audacity timeline labels changed")
+	if !timeline_view_build_description(view, ruler_label_input, waveform_label_input) { return -1 }
 	geometry: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Line_Segment
 	for tick, index in tick_input {
 		geometry[index] = alicorn.GPU_Surface_Line_Segment{
@@ -911,6 +1018,21 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 	display, ok := alicorn.paint_display_list(&view.runtime)
 	if !ok { return -1 }
 
+	matched_labels := 0
+	for command in display.commands {
+		payload, is_text := command.payload.(alicorn.Text_Paint)
+		if !is_text { continue }
+		for i in 0..<view.waveform_label_text_count {
+			if command.owner == view.waveform_label_text_ids[i] {
+				_, run_ok := alicorn.paint_text_run_resolve(&view.runtime, payload.run)
+				if !run_ok { return -1 }
+				matched_labels += 1
+				break
+			}
+		}
+	}
+	if matched_labels != view.waveform_label_text_count { return -1 }
+
 	view.callback_active = true
 	delivered := i32(0)
 	for command in display.commands {
@@ -980,6 +1102,46 @@ audacity_alicorn_timeline_view_paint_waveform :: proc "c" (
 			command.translation[0],
 			command.translation[1],
 		)
+		delivered += 1
+	}
+	view.callback_active = false
+	return delivered
+}
+
+@(export, link_name="audacity_alicorn_timeline_view_paint_waveform_labels")
+audacity_alicorn_timeline_view_paint_waveform_labels :: proc "c" (
+	opaque_view: rawptr,
+	callback: AudacitySnapDrawCallback,
+	callback_context: rawptr,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Timeline_View)opaque_view
+	if !valid_timeline_view(view) || callback == nil { return -1 }
+	display, ok := alicorn.paint_display_list(&view.runtime)
+	if !ok { return -1 }
+
+	view.callback_active = true
+	delivered := i32(0)
+	for command in display.commands {
+		payload, is_text := command.payload.(alicorn.Text_Paint)
+		is_waveform_label := false
+		for i in 0..<view.waveform_label_text_count {
+			if command.owner == view.waveform_label_text_ids[i] {
+				is_waveform_label = true
+				break
+			}
+		}
+		if !is_text || !is_waveform_label {
+			continue
+		}
+		run, run_ok := alicorn.paint_text_run_resolve(&view.runtime, payload.run)
+		if !run_ok { continue }
+		output := snap_view_command_base(command, AUDACITY_SNAP_DRAW_TEXT)
+		output.text_color = snap_color(payload.color)
+		output.font_size = run.size
+		output.text_length = u64(len(run.value))
+		if len(run.value) > 0 { output.text_utf8 = raw_data(run.value) }
+		callback(callback_context, &output)
 		delivered += 1
 	}
 	view.callback_active = false

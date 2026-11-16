@@ -38,6 +38,16 @@ namespace TrackArt {
    bool
    DrawClipTitle(wxDC& dc, const wxRect& affordanceRect, const wxString& title);
 
+   // Returns false when no title fits; an empty title is still editable and
+   // therefore returns true with empty displayText.
+   AUDACITY_DLL_API
+   bool GetClipTitleLabel(
+      wxDC& dc,
+      const wxRect& affordanceRect,
+      const wxString& title,
+      wxString& displayText,
+      wxRect& labelBounds);
+
    AUDACITY_DLL_API
    void DrawClipEdges(wxDC& dc, const wxRect& clipRect, bool selected = false);
 

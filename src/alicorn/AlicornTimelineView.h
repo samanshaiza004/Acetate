@@ -9,6 +9,7 @@
 #include <wx/dc.h>
 #include <wx/gdicmn.h>
 #include <wx/colour.h>
+#include <wx/font.h>
 #include <wx/pen.h>
 
 #include "AudacityTimelineView.h"
@@ -29,6 +30,12 @@ public:
       wxPoint end;
       wxColour color;
       float thickness{ 1.0f };
+   };
+   struct WaveformLabel {
+      wxRect bounds;
+      wxString text;
+      wxColour color;
+      wxFont font;
    };
    using WaveformFills = std::array<WaveformFill, 3>;
    using WaveformSegments = std::array<WaveformSegment, 4>;
@@ -77,6 +84,10 @@ public:
       const wxRect& clip,
       const WaveformSegments& segments,
       size_t segmentCount);
+   bool DrawWaveformLabels(
+      wxDC& dc,
+      const wxRect& clip,
+      const std::vector<WaveformLabel>& labels);
    bool DrawVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,
@@ -100,13 +111,15 @@ public:
       size_t fillCount = 0);
 
 private:
-   bool UpdateRuler(const Ruler::DisplaySnapshot& snapshot, bool force = false);
+   bool UpdateDescription(const Ruler::DisplaySnapshot* snapshot, bool force = false);
+   bool SameWaveformLabels(const std::vector<WaveformLabel>& labels) const;
 
    AudacityAlicornTimelineView* mView{};
    wxSize mRulerSize;
    wxSize mWaveformSize;
    std::unique_ptr<Ruler::DisplaySnapshot> mLastSnapshot;
    std::vector<AudacityRulerTick> mRulerTicks;
+   std::vector<WaveformLabel> mWaveformLabels;
    std::array<RulerFill, AUDACITY_RULER_MAX_FILLS> mLastRulerFills{};
    size_t mLastRulerFillCount{};
    bool mHasRulerFills{};
