@@ -153,6 +153,22 @@ endif()
 # Define option() prefix
 set( _OPT "audacity_" )
 
+# Acetate's MVP does not host third-party plug-ins, and scanning installed
+# Audio Unit/VST3/LADSPA/LV2 plug-ins can stall application startup. Default
+# these formats off; pass the usual -Daudacity_* options to opt back in. The
+# options are only seeded when the caller has not already provided a value.
+foreach( _acetate_plugin_option has_vst3 use_ladspa use_audio_units )
+   if( NOT DEFINED ${_OPT}${_acetate_plugin_option} )
+      set( ${_OPT}${_acetate_plugin_option} OFF CACHE BOOL
+         "Third-party plug-in hosting is disabled by default in Acetate" )
+   endif()
+endforeach()
+if( NOT DEFINED ${_OPT}use_lv2 )
+   set( ${_OPT}use_lv2 off CACHE STRING
+      "Third-party plug-in hosting is disabled by default in Acetate" )
+endif()
+unset( _acetate_plugin_option )
+
 # Our very own project
 project( Audacity )
 
