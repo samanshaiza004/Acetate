@@ -23,6 +23,10 @@
 #include <wx/defs.h>
 #include <wx/control.h> // to inherit
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornNumericFormatPopup;
+#endif
+
 // One event type for each type of control.  Event is raised when a control
 // changes its format.  Owners of controls of the same type can listen and
 // update their formats to agree.
@@ -174,6 +178,9 @@ private:
    bool           mAutoPos;
    // If true, render the numeric time control through the retained Alicorn view.
    bool           mAlicornPaint;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornNumericFormatPopup* mAlicornFormatPopup{};
+#endif
 
    // Keeps track of extra fractional scrollwheel steps
    double         mScrollRemainder;

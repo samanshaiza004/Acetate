@@ -101,9 +101,10 @@ digit-focus navigation, routes digit/Backspace/Delete/Up/Down edit intents, and
 performs physical pointer hit testing for digit and format-chevron clicks.
 `NumericTextCtrl` applies edits through its existing formatter/converter, mirrors
 the selected digit for Audacity's native accessibility object, and continues to
-own format changes, tab traversal, and the context menu. The existing wx context
-menu opens from Alicorn's retained chevron hit result, with wx coordinate hit
-testing as fallback. wx still translates native
+own format changes and tab traversal. In the opt-in path, the retained chevron
+hit opens an Alicorn-rendered radio-option popup with pointer selection,
+Up/Down/Home/End navigation, Escape dismissal, and focus restoration. wx
+coordinate hit testing and the native wx menu remain fallbacks. wx still translates native
 events and retains its paint path as a fallback. Native text input, IME handling,
 and accessibility have not moved to Alicorn, and visual parity has not yet been
 checked in a running application. Alicorn #196

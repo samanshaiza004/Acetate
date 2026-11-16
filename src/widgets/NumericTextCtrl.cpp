@@ -25,6 +25,7 @@
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "../alicorn/AudacityNumericTimeView.h"
 #include "../toolbars/AlicornPaint.h"
+#include "../toolbars/AlicornActionControl.h"
 #endif
 
 #include <algorithm>
@@ -35,6 +36,13 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <utility>
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include <functional>
+#include <wx/popupwin.h>
+#include <wx/weakref.h>
+#endif
 
 #include <wx/setup.h> // for wxUSE_* macros
 
@@ -46,7 +54,150 @@
 #include <wx/tooltip.h>
 #include <wx/toplevel.h>
 
+struct NumericFormatChoice {
+   NumericFormatID symbol;
+   wxString label;
+};
+
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornNumericFormatPopup final : public wxPopupTransientWindow
+{
+public:
+   using Choice = NumericFormatChoice;
+   using OnSelection = std::function<void(const NumericFormatID&)>;
+
+   explicit AlicornNumericFormatPopup(wxWindow* parent)
+      : wxPopupTransientWindow(parent, wxBORDER_SIMPLE)
+   {
+      SetBackgroundColour(theTheme.Colour(clrMedium));
+      Bind(wxEVT_CHAR_HOOK, &AlicornNumericFormatPopup::OnCharHook, this);
+   }
+
+   void SetChoices(const std::vector<Choice>& choices)
+   {
+      if (auto* oldSizer = GetSizer()) {
+         SetSizer(nullptr);
+         oldSizer->Clear(true);
+         delete oldSizer;
+      }
+      mChoices = choices;
+      mOptions.clear();
+
+      wxCoord width = 220;
+      wxCoord rowHeight = 30;
+      for (const auto& choice : mChoices) {
+         wxCoord textWidth{}, textHeight{};
+         GetTextExtent(choice.label, &textWidth, &textHeight);
+         width = std::max(width, textWidth + 36);
+         rowHeight = std::max(rowHeight, textHeight + 12);
+      }
+
+      auto* sizer = safenew wxBoxSizer(wxVERTICAL);
+      for (size_t index = 0; index < mChoices.size(); ++index) {
+         auto* option = safenew AlicornActionControl(
+            this,
+            wxID_ANY,
+            mChoices[index].label,
+            AUDACITY_ACTION_ICON_NONE,
+            wxSize{ width, rowHeight });
+         option->SetRadioOption(true);
+         option->Bind(wxEVT_BUTTON, [this, index](wxCommandEvent&) {
+            if (index < mChoices.size() && mOnSelection)
+               mOnSelection(mChoices[index].symbol);
+            Dismiss();
+         });
+         sizer->Add(option, 0, wxEXPAND | wxALL, 1);
+         mOptions.push_back(option);
+      }
+      SetSizerAndFit(sizer);
+   }
+
+   void Close()
+   {
+      mAnchor = nullptr;
+      mOnSelection = {};
+      if (IsShown())
+         Dismiss();
+      Destroy();
+   }
+
+   void PopupFor(
+      wxWindow* anchor,
+      const NumericFormatID& selected,
+      OnSelection onSelection)
+   {
+      if (!anchor || mOptions.empty())
+         return;
+
+      mAnchor = anchor;
+      mOnSelection = std::move(onSelection);
+      size_t selectedIndex = 0;
+      for (size_t index = 0; index < mChoices.size(); ++index) {
+         const bool active = mChoices[index].symbol == selected;
+         mOptions[index]->SetPressed(active);
+         if (active)
+            selectedIndex = index;
+      }
+
+      const auto origin = anchor->ClientToScreen(
+         wxPoint{ 0, anchor->GetClientSize().y });
+      Position(origin, GetSize());
+      Popup(mOptions[selectedIndex]);
+   }
+
+protected:
+   void OnDismiss() override
+   {
+      wxPopupTransientWindow::OnDismiss();
+      if (mAnchor)
+         mAnchor->SetFocus();
+      mAnchor = nullptr;
+      mOnSelection = {};
+   }
+
+private:
+   void OnCharHook(wxKeyEvent& event)
+   {
+      const auto key = event.GetKeyCode();
+      if (key == WXK_ESCAPE) {
+         Dismiss();
+         return;
+      }
+
+      const auto current = FocusedOptionIndex();
+      if (key == WXK_UP || key == WXK_DOWN) {
+         const auto delta = key == WXK_UP ? -1 : 1;
+         const auto count = static_cast<int>(mOptions.size());
+         const auto next = (current + delta + count) % count;
+         mOptions[static_cast<size_t>(next)]->SetFocus();
+         return;
+      }
+      if (key == WXK_HOME) {
+         mOptions.front()->SetFocus();
+         return;
+      }
+      if (key == WXK_END) {
+         mOptions.back()->SetFocus();
+         return;
+      }
+      event.Skip();
+   }
+
+   int FocusedOptionIndex() const
+   {
+      for (size_t index = 0; index < mOptions.size(); ++index) {
+         if (mOptions[index]->HasFocus())
+            return static_cast<int>(index);
+      }
+      return 0;
+   }
+
+   std::vector<Choice> mChoices;
+   std::vector<AlicornActionControl*> mOptions;
+   wxWeakRef<wxWindow> mAnchor;
+   OnSelection mOnSelection;
+};
+
 namespace {
 std::unordered_map<NumericTextCtrl*, AudacityAlicornNumericTimeView*> gAlicornNumericTimeViews;
 std::unordered_set<NumericTextCtrl*> gAlicornNumericTimeViewFailures;
@@ -253,6 +404,10 @@ NumericTextCtrl::NumericTextCtrl(
 NumericTextCtrl::~NumericTextCtrl()
 {
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornFormatPopup) {
+      mAlicornFormatPopup->Close();
+      mAlicornFormatPopup = nullptr;
+   }
    DestroyAlicornNumericTimeView(this);
 #endif
 }
@@ -755,39 +910,20 @@ void NumericTextCtrl::OnContext(wxContextMenuEvent &event)
       return;
    }
 
-   wxMenu menu;
-
    SetFocus();
 
    std::vector<NumericFormatID> symbols;
+   std::vector<NumericFormatChoice> choices;
 
    NumericConverterRegistry::Visit(
       mContext,
       mType,
-      [&menu, &symbols, this, i = ID_MENU](auto& item) mutable
+      [&symbols, &choices](auto& item)
       {
          const auto ID = item.symbol.Internal();
          symbols.push_back(ID);
-         menu.AppendRadioItem(i, item.symbol.Translation());
-
-         if (mFormatID == ID)
-            menu.Check(i, true);
-
-         ++i;
+         choices.push_back({ ID, item.symbol.Translation() });
       });
-
-   menu.Bind(wxEVT_MENU, [](auto&){});
-   BasicMenu::Handle{ &menu }.Popup(
-      wxWidgetsWindowPlacement{ this },
-      { 0, 0 }
-   );
-
-   // This used to be in an EVT_MENU() event handler, but GTK
-   // is sensitive to what is done within the handler if the
-   // user happens to check the first menuitem and then is
-   // moving down the menu when the ...CTRL_UPDATED event
-   // handler kicks in.
-   auto menuIndex = ID_MENU;
 
    int eventType = 0;
 
@@ -802,6 +938,50 @@ void NumericTextCtrl::OnContext(wxContextMenuEvent &event)
       assert(false); // unsupported control type, skip it
       return;
    }
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornPaint &&
+       gAlicornNumericTimeViewFailures.find(this) == gAlicornNumericTimeViewFailures.end() &&
+       !choices.empty()) {
+      if (!mAlicornFormatPopup)
+         mAlicornFormatPopup = safenew AlicornNumericFormatPopup(this);
+      if (mAlicornFormatPopup) {
+         mAlicornFormatPopup->SetChoices(choices);
+         mAlicornFormatPopup->PopupFor(
+            this,
+            mFormatID,
+            [this, eventType](const NumericFormatID& symbol) {
+               if (mFormatID == symbol || !SetFormatName(symbol))
+                  return;
+               wxCommandEvent changed(eventType, GetId());
+               changed.SetString(symbol.GET());
+               GetParent()->GetEventHandler()->AddPendingEvent(changed);
+            });
+         return;
+      }
+   }
+#endif
+
+   wxMenu menu;
+   auto menuIndex = ID_MENU;
+   for (const auto& choice : choices) {
+      menu.AppendRadioItem(menuIndex, choice.label);
+      if (mFormatID == choice.symbol)
+         menu.Check(menuIndex, true);
+      ++menuIndex;
+   }
+   menu.Bind(wxEVT_MENU, [](auto&){});
+   BasicMenu::Handle{ &menu }.Popup(
+      wxWidgetsWindowPlacement{ this },
+      { 0, 0 }
+   );
+
+   // This used to be in an EVT_MENU() event handler, but GTK
+   // is sensitive to what is done within the handler if the
+   // user happens to check the first menuitem and then is
+   // moving down the menu when the ...CTRL_UPDATED event
+   // handler kicks in.
+   menuIndex = ID_MENU;
 
    for (const auto& symbol : symbols)
    {
