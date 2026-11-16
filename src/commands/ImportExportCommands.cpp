@@ -135,7 +135,7 @@ bool ExportCommand::Apply(const CommandContext & context)
          .SetParameters(ExportUtils::ParametersFromEditor(*editor))
          .SetNumChannels(std::max(0, mnChannels))
          .SetSampleRate(ProjectRate::Get(context.project).GetRate())
-         .SetPlugin(plugin)
+         .SetPlugin(plugin, formatIndex)
          .SetFileName(mFileName)
          .SetRange(t0, t1, true);
 
