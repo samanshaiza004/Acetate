@@ -1,6 +1,7 @@
 package audacity_alicorn_snap_view
 
 import alicorn "alicorn:runtime"
+import "core:fmt"
 import "core:mem"
 import odin_runtime "base:runtime"
 import "core:strings"
@@ -977,12 +978,15 @@ Numeric_Time_Segment :: struct {
 	digit_index: i32,
 }
 
+NUMERIC_TIME_MAX_SEGMENTS :: 128
+
 Numeric_Time_View :: struct {
 	hosted: alicorn.Hosted_Runtime,
 	width, height: int,
 	pixel_width, pixel_height: int,
 	dpi_scale: f32,
 	segments: []Numeric_Time_Segment,
+	digit_target_ids: [NUMERIC_TIME_MAX_SEGMENTS]alicorn.Node_ID,
 	style: AudacityNumericTimeStyle,
 	focused_digit: i32,
 	digit_count: i32,
@@ -992,7 +996,6 @@ Numeric_Time_View :: struct {
 	runtime_initialized: bool,
 }
 
-NUMERIC_TIME_MAX_SEGMENTS :: 128
 NUMERIC_TIME_MAX_TEXT_BYTES :: 4096
 
 AUDACITY_NUMERIC_TIME_KEY_LEFT :: u32(1)
@@ -1046,6 +1049,9 @@ numeric_time_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, 
 	view := transmute(^Numeric_Time_View)state
 	if view == nil || ui == nil { return }
 	_ = dpi_scale
+	for i in 0..<NUMERIC_TIME_MAX_SEGMENTS {
+		view.digit_target_ids[i] = 0
+	}
 	style := view.style
 	outer_stroke := alicorn.Paint_Stroke{}
 	if style.focused != 0 {
@@ -1073,6 +1079,16 @@ numeric_time_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, 
 		for index in 0..<len(view.segments) {
 			segment := view.segments[index]
 			if segment.digit_index >= 0 {
+				columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(segment.width)}
+				rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(style.digit_height)}
+				digit_grid := alicorn.grid_begin(
+					ui,
+					alicorn.key_u64(u64(index+1) | 0x4000_0000_0000_0000),
+					columns[:],
+					rows[:],
+					style=alicorn.layout_style(.Column, width=segment.width, height=style.digit_height),
+				)
+				if digit_grid == 0 { continue }
 				focused_digit := style.focused != 0 && segment.digit_index == style.focused_digit
 				fill := numeric_time_color(style.digit_background)
 				text_color := numeric_time_color(style.text_color)
@@ -1099,7 +1115,21 @@ numeric_time_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, 
 						color=text_color,
 					)
 					alicorn.surface_end(ui)
+					_ = alicorn.grid_cell(ui, digit, 0, 0)
 				}
+				digit_target := alicorn.gpu_geometry_surface(
+					ui,
+					fmt.tprintf("audacity-alicorn-numeric-time-digit-target-%d", segment.digit_index),
+					alicorn.layout_style(.Row, width=segment.width, height=style.digit_height),
+					surface_interaction=.Pointer,
+				)
+				if digit_target != 0 {
+					_ = alicorn.grid_cell(ui, digit_target, 0, 0)
+					if segment.digit_index < NUMERIC_TIME_MAX_SEGMENTS {
+						view.digit_target_ids[segment.digit_index] = digit_target
+					}
+				}
+				alicorn.grid_end(ui)
 			} else {
 				literal := alicorn.container_begin(
 					ui,
@@ -1173,6 +1203,33 @@ numeric_time_on_key :: proc(
 	return true
 }
 
+numeric_time_digit_for_target :: proc(view: ^Numeric_Time_View, target: alicorn.Node_ID) -> i32 {
+	if view == nil || target == 0 { return -1 }
+	for digit in 0..<NUMERIC_TIME_MAX_SEGMENTS {
+		if view.digit_target_ids[digit] == target {
+			return i32(digit)
+		}
+	}
+	return -1
+}
+
+numeric_time_on_pointer :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	event: alicorn.Pointer_Event,
+	target: alicorn.Node_ID,
+) {
+	_ = rt
+	view := transmute(^Numeric_Time_View)state
+	if view == nil || event.kind != .Down || event.button != alicorn.POINTER_BUTTON_PRIMARY {
+		return
+	}
+	digit := numeric_time_digit_for_target(view, target)
+	if digit < 0 || digit >= view.digit_count { return }
+	view.focused_digit = digit
+	view.style.focused_digit = digit
+}
+
 numeric_time_initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
 	view := transmute(^Numeric_Time_View)state
 	if view != nil && rt != nil {
@@ -1214,6 +1271,7 @@ audacity_alicorn_numeric_time_view_create :: proc "c" (
 		render=numeric_time_render,
 		on_initialize=numeric_time_initialize,
 		post_wake=numeric_time_post_wake,
+		on_pointer=numeric_time_on_pointer,
 		on_key=numeric_time_on_key,
 	})
 	if status != .Ok || !view.fonts_initialized {
@@ -1368,6 +1426,39 @@ audacity_alicorn_numeric_time_view_key :: proc "c" (
 		return -1
 	}
 	return 1 if handled else 0
+}
+
+@(export, link_name="audacity_alicorn_numeric_time_view_pointer")
+audacity_alicorn_numeric_time_view_pointer :: proc "c" (
+	opaque_view: rawptr,
+	kind: u32,
+	x, y: f32,
+	button: u32,
+) -> i32 {
+	context = odin_runtime.default_context()
+	view := transmute(^Numeric_Time_View)opaque_view
+	if !valid_numeric_time_view(view) || !alicorn.number_is_finite(x) ||
+		!alicorn.number_is_finite(y) || button > alicorn.POINTER_BUTTON_SECONDARY {
+		return -1
+	}
+	pointer_kind: alicorn.Pointer_Kind
+	switch kind {
+	case AUDACITY_SNAP_POINTER_DOWN: pointer_kind = .Down
+	case AUDACITY_SNAP_POINTER_UP: pointer_kind = .Up
+	case:
+		return -1
+	}
+	if button != alicorn.POINTER_BUTTON_PRIMARY { return 0 }
+	target, status := alicorn.hosted_runtime_pointer(&view.hosted, alicorn.Pointer_Event{
+		kind=pointer_kind,
+		x=x,
+		y=y,
+		button=int(button),
+	})
+	if status != .Ok { return -1 }
+	digit := numeric_time_digit_for_target(view, target)
+	if numeric_time_step(view).status != .Ok { return -1 }
+	return 1 if digit >= 0 else 0
 }
 
 @(export, link_name="audacity_alicorn_numeric_time_view_focused_digit")

@@ -827,6 +827,47 @@ void NumericTextCtrl::OnMouse(wxMouseEvent &event)
    else if (event.LeftDown()) {
       SetFocus();
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      bool alicornHit = false;
+      if (mAlicornPaint &&
+          gAlicornNumericTimeViewFailures.find(this) == gAlicornNumericTimeViewFailures.end()) {
+         const auto view = gAlicornNumericTimeViews.find(this);
+         if (view != gAlicornNumericTimeViews.end()) {
+            const auto pointerResult = audacity_alicorn_numeric_time_view_pointer(
+               view->second,
+               AUDACITY_SNAP_POINTER_DOWN,
+               static_cast<float>(event.GetX()),
+               static_cast<float>(event.GetY()),
+               AUDACITY_SNAP_BUTTON_PRIMARY);
+            if (pointerResult < 0) {
+               DestroyAlicornNumericTimeView(this);
+               gAlicornNumericTimeViewFailures.insert(this);
+            }
+            else if (pointerResult > 0) {
+               const auto focusedDigit =
+                  audacity_alicorn_numeric_time_view_focused_digit(view->second);
+               if (audacity_alicorn_numeric_time_view_pointer(
+                      view->second,
+                      AUDACITY_SNAP_POINTER_UP,
+                      static_cast<float>(event.GetX()),
+                      static_cast<float>(event.GetY()),
+                      AUDACITY_SNAP_BUTTON_PRIMARY) < 0) {
+                  DestroyAlicornNumericTimeView(this);
+                  gAlicornNumericTimeViewFailures.insert(this);
+               }
+               if (focusedDigit >= 0 && focusedDigit < static_cast<int32_t>(mBoxes.size())) {
+                  mFocusedDigit = focusedDigit;
+                  SetFieldFocus(mFocusedDigit);
+                  Refresh(false);
+                  alicornHit = true;
+               }
+            }
+         }
+      }
+      if (alicornHit)
+         return;
+#endif
+
       int bestDist = 9999;
       unsigned int i;
 

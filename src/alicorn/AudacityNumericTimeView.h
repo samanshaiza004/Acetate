@@ -68,6 +68,14 @@ int32_t audacity_alicorn_numeric_time_view_update(
     const AudacityNumericTimeSegment *segments,
     uint64_t segment_count,
     const AudacityNumericTimeStyle *style);
+/* Route a native pointer transition through Alicorn hit testing. Returns 1
+ * when a time digit was hit, 0 when no digit was hit, and -1 on invalid input. */
+int32_t audacity_alicorn_numeric_time_view_pointer(
+    AudacityAlicornNumericTimeView *view,
+    uint32_t kind,
+    float x,
+    float y,
+    uint32_t button);
 /* Route digit-focus navigation through the hosted Alicorn key callback.
  * Returns 1 when handled, 0 when unhandled, and -1 on an invalid view. */
 int32_t audacity_alicorn_numeric_time_view_key(
