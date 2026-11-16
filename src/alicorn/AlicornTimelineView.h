@@ -117,6 +117,8 @@ public:
       int firstX,
       int secondX,
       const wxColour& color);
+   bool UpdateZoomPreview(bool active, int firstX, int secondX);
+   bool DrawZoomPreview(wxDC& dc, const wxRect& clip);
    bool ClearVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,

@@ -73,8 +73,8 @@ Audacity still decides snap targets and styling. If the retained overlay cannot
 be updated or painted, the existing wx snap-line path remains the fallback.
 Alicorn also tracks the Zoom tool's press, drag, release, and cancel gesture on
 the waveform. Audacity's `ZoomHandle` still applies its established click/drag
-rules and updates `ViewInfo`; wx continues to draw the dashed zoom-region
-preview.
+rules and updates `ViewInfo`; the dashed zoom-region preview uses a separate
+retained geometry overlay with wx fallback.
 Alicorn routes ruler pointer gestures that create, resize, and move loop regions;
 Audacity's `PlayRegionAdjustingHandle` subclasses retain hit-target priority,
 snapping, loop-region mutation, selection-sync, and rollback policy. Project

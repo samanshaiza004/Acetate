@@ -16,7 +16,8 @@ typedef enum AudacityWaveformIndicatorKind {
    AUDACITY_WAVEFORM_INDICATOR_CARET = 0,
    AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD = 1,
    AUDACITY_WAVEFORM_INDICATOR_SNAP_GUIDES = 2,
-   AUDACITY_WAVEFORM_INDICATOR_COUNT = 3,
+   AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW = 3,
+   AUDACITY_WAVEFORM_INDICATOR_COUNT = 4,
 } AudacityWaveformIndicatorKind;
 
 typedef enum AudacityTimelineOutputKind {
@@ -101,7 +102,8 @@ int32_t audacity_alicorn_timeline_view_update_clip_affordances(
    const AudacityWaveformPointMarker* point_markers,
    uint64_t point_marker_count);
 /* Transient indicators have independent retained owners. Snap guides accept
- * up to two line segments; caret and playhead accept at most one. */
+ * up to two line segments; zoom preview accepts a bounded geometry batch;
+ * caret and playhead accept at most one. */
 int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
    AudacityAlicornTimelineView* view,
    uint32_t indicator_kind,

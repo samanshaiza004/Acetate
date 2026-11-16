@@ -73,6 +73,7 @@ private:
    wxRect mRect{};
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
    bool mAlicornZoomActive{};
+   bool mAlicornZoomPreviewReady{};
    std::uint32_t mAlicornZoomButton{};
 #endif
 };

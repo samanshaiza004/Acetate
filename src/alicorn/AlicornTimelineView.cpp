@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -761,6 +762,94 @@ bool AlicornTimelineView::DrawSnapGuides(
    if (painted)
       mHasWaveformIndicators[indicatorIndex] = count > 0;
    return painted;
+}
+
+bool AlicornTimelineView::UpdateZoomPreview(
+   bool active,
+   int firstX,
+   int secondX)
+{
+   if (!mView || mWaveformSize.y <= 0)
+      return false;
+
+   constexpr int dashLength = 4;
+   constexpr int dashPeriod = 8;
+   const auto height = mWaveformSize.y;
+   const int64_t distance = std::abs(
+      static_cast<int64_t>(secondX) - static_cast<int64_t>(firstX));
+   const bool showPreview = active && distance > 3;
+   std::array<AudacityWaveformSegment,
+      AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS> segments{};
+   size_t count{};
+
+   if (showPreview) {
+      const auto dashesPerLine = static_cast<size_t>(
+         (height + dashPeriod - 1) / dashPeriod);
+      const auto lineCount = firstX == secondX ? size_t{1} : size_t{2};
+      if (dashesPerLine > segments.size() / lineCount)
+         return false;
+
+      const auto black = ToLinearColor(wxColour(0, 0, 0));
+      for (const auto x : { firstX, secondX }) {
+         if (count > 0 && x == firstX)
+            continue;
+         for (int y = 0; y < height; y += dashPeriod) {
+            const auto end = std::min(y + dashLength, height);
+            segments[count++] = AudacityWaveformSegment{
+               static_cast<float>(x),
+               static_cast<float>(y),
+               static_cast<float>(x),
+               static_cast<float>(end),
+               1.0f,
+               black.r,
+               black.g,
+               black.b,
+               black.a
+            };
+         }
+      }
+   }
+
+   if (audacity_alicorn_timeline_view_update_waveform_overlay(
+          mView,
+          AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW,
+          count > 0 ? segments.data() : nullptr,
+          static_cast<uint64_t>(count)) < 0)
+      return false;
+
+   mHasWaveformIndicators[
+      AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW] = count > 0;
+   return true;
+}
+
+bool AlicornTimelineView::DrawZoomPreview(
+   wxDC& dc,
+   const wxRect& clip)
+{
+   constexpr auto kind = AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW;
+   if (!mView || !ResizeWaveform(dc.GetSize()))
+      return false;
+   if (!mHasWaveformIndicators[kind])
+      return true;
+
+   const auto rect = clip.Intersect(wxRect{ wxPoint{0, 0}, dc.GetSize() });
+   if (rect.IsEmpty())
+      return true;
+
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = rect;
+   context.yOrigin = mRulerSize.y;
+   return PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_WAVEFORM,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_waveform_overlay(
+            mView, kind, &DrawGeometry, &context);
+      });
 }
 
 bool AlicornTimelineView::ClearVerticalIndicator(

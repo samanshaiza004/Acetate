@@ -124,6 +124,7 @@ UIHandle::Result ZoomHandle::Click
       mRect = evt.rect;
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
       mAlicornZoomActive = false;
+      mAlicornZoomPreviewReady = false;
       mAlicornZoomButton = AlicornButton(event);
       if (mAlicornZoomButton != 0) {
          AudacityWaveformSelection gesture{};
@@ -137,7 +138,11 @@ UIHandle::Result ZoomHandle::Click
                mAlicornZoomActive = true;
                mZoomStart = static_cast<int>(gesture.anchor_x);
                mZoomEnd = static_cast<int>(gesture.current_x);
+               mAlicornZoomPreviewReady = view->UpdateZoomPreview(
+                  true, mZoomStart, mZoomEnd);
             }
+            else
+               view->UpdateZoomPreview(false, 0, 0);
          }
       }
 #endif
@@ -174,6 +179,16 @@ UIHandle::Result ZoomHandle::Drag
    else if (event.m_x > right) {
       mZoomEnd = right;
    }
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mAlicornZoomActive) {
+      if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView())
+         mAlicornZoomPreviewReady = view->UpdateZoomPreview(
+            true, mZoomStart, mZoomEnd);
+      else
+         mAlicornZoomPreviewReady = false;
+   }
+#endif
 
    // Refresh tracks ALWAYS.  Even if IsDragZooming() becomes false, make the
    // dashed lines disappear. -- PRL
@@ -257,6 +272,12 @@ UIHandle::Result ZoomHandle::Release
 
    mZoomEnd = mZoomStart = 0;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mAlicornZoomPreviewReady = false;
+   if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView())
+      view->UpdateZoomPreview(false, 0, 0);
+#endif
+
    using namespace RefreshCode;
    return RefreshAll | FixScrollbars;
 }
@@ -267,11 +288,14 @@ UIHandle::Result ZoomHandle::Cancel(AudacityProject* pProject)
    if (mAlicornZoomActive) {
       AudacityWaveformSelection gesture{};
       if (pProject) {
-         if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView())
+         if (auto* view = TrackPanel::Get(*pProject).GetAlicornTimelineView()) {
             view->ZoomPointer(
                AUDACITY_SNAP_POINTER_CANCEL, 0.0f, 0.0f, 0, gesture);
+            view->UpdateZoomPreview(false, 0, 0);
+         }
       }
       mAlicornZoomActive = false;
+      mAlicornZoomPreviewReady = false;
       mAlicornZoomButton = 0;
    }
 #endif
@@ -290,6 +314,18 @@ void ZoomHandle::Draw(
        // for button up.
        IsDragZooming() ) {
       auto &dc = context.dc;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (mAlicornZoomActive && mAlicornZoomPreviewReady) {
+         if (auto* artist = TrackArtist::Get(context)) {
+            if (artist->parent) {
+               if (auto* view = artist->parent->GetAlicornTimelineView()) {
+                  if (view->DrawZoomPreview(dc, rect))
+                     return;
+               }
+            }
+         }
+      }
+#endif
       dc.SetBrush(*wxTRANSPARENT_BRUSH);
       dc.SetPen(*wxBLACK_DASHED_PEN);
       // Make the top and bottom of the dashed rectangle disappear out of

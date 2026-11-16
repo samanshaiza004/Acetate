@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 14310)
+Total output lines: 1698
+
 package audacity_alicorn_snap_view
 
 import alicorn "alicorn:runtime"
@@ -72,6 +75,7 @@ Timeline_View :: struct {
 	waveform_caret_overlay_geometry_id: alicorn.Node_ID,
 	waveform_playhead_overlay_geometry_id: alicorn.Node_ID,
 	waveform_snap_guides_overlay_geometry_id: alicorn.Node_ID,
+	waveform_zoom_preview_overlay_geometry_id: alicorn.Node_ID,
 	width, ruler_height, waveform_height: f32,
 	runtime_initialized: bool,
 	callback_active: bool,
@@ -93,6 +97,7 @@ MAX_TIMELINE_LABEL_BYTES :: 4096
 AUDACITY_WAVEFORM_INDICATOR_CARET :: u32(0)
 AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD :: u32(1)
 AUDACITY_WAVEFORM_INDICATOR_SNAP_GUIDES :: u32(2)
+AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW :: u32(3)
 AUDACITY_TIMELINE_OUTPUT_RULER :: u32(0)
 AUDACITY_TIMELINE_OUTPUT_WAVEFORM :: u32(1)
 AUDACITY_TIMELINE_OUTPUT_WAVEFORM_LABELS :: u32(2)
@@ -326,6 +331,14 @@ timeline_view_build_description :: proc(
 	)
 	waveform_snap_guides_overlay_ok := view.waveform_snap_guides_overlay_geometry_id != 0 &&
 		alicorn.grid_cell(&ui, view.waveform_snap_guides_overlay_geometry_id, 0, 0)
+	view.waveform_zoom_preview_overlay_geometry_id = alicorn.gpu_geometry_surface(
+		&ui,
+		"audacity-alicorn-timeline-waveform-zoom-preview-overlay",
+		alicorn.layout_style(.Row, width=view.width, height=view.waveform_height),
+		1,
+	)
+	waveform_zoom_preview_overlay_ok := view.waveform_zoom_preview_overlay_geometry_id != 0 &&
+		alicorn.grid_cell(&ui, view.waveform_zoom_preview_overlay_geometry_id, 0, 0)
 	alicorn.grid_end(&ui)
 	alicorn.container_end(&ui)
 	waveform_content_ok := waveform_content_region != 0 &&
@@ -393,7 +406,8 @@ timeline_view_build_description :: proc(
 	alicorn.end_frame(&ui)
 	return ruler_output_bound && waveform_output_bound && waveform_labels_bound && ruler_grid != 0 && ruler_geometry_ok && ruler_labels_ok && ruler_overlay_ok &&
 		waveform_region_grid != 0 && waveform_grid != 0 && waveform_geometry_ok && clip_affordance_geometry_ok && waveform_caret_overlay_ok &&
-		waveform_playhead_overlay_ok && waveform_snap_guides_overlay_ok && waveform_content_ok && waveform_labels_region_ok
+		waveform_playhead_overlay_ok && waveform_snap_guides_overlay_ok && waveform_zoom_preview_overlay_ok &&
+		waveform_content_ok && waveform_labels_region_ok
 }
 
 timeline_waveform_indicator_id :: proc(
@@ -407,6 +421,8 @@ timeline_waveform_indicator_id :: proc(
 		return view.waveform_playhead_overlay_geometry_id
 	case AUDACITY_WAVEFORM_INDICATOR_SNAP_GUIDES:
 		return view.waveform_snap_guides_overlay_geometry_id
+	case AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW:
+		return view.waveform_zoom_preview_overlay_geometry_id
 	}
 	return 0
 }
@@ -707,295 +723,7 @@ audacity_alicorn_timeline_view_pointer :: proc "c" (
 	case 0: pointer_kind = .Move
 	case 1: pointer_kind = .Down
 	case 2: pointer_kind = .Up
-	case 3: pointer_kind = .Cancel
-	case: return -1
-	}
-	if (kind == 1 || kind == 2) &&
-	   button != alicorn.POINTER_BUTTON_PRIMARY &&
-	   button != alicorn.POINTER_BUTTON_MIDDLE {
-		return 0
-	}
-	event := alicorn.Pointer_Event{
-		kind=pointer_kind,
-		x=x,
-		y=y+view.ruler_height,
-		button=int(button),
-	}
-	was_active := view.selection_drag_active
-	if button == alicorn.POINTER_BUTTON_MIDDLE {
-		was_active = view.pan_drag_active
-	}
-	target := alicorn.process_pointer(&view.runtime, event)
-	_ = alicorn.application_dispatch_pointer(
-		&view.runtime,
-		rawptr(view),
-		timeline_view_pointer_callback,
-		event,
-		target,
-	)
-	phase: u32 = 0
-	active := view.selection_drag_active
-	if button == alicorn.POINTER_BUTTON_MIDDLE {
-		active = view.pan_drag_active
-	}
-	switch kind {
-	case 1:
-		if active { phase = 1 }
-	case 0:
-		if active { phase = 2 }
-	case 2:
-		if was_active { phase = 3 }
-	case 3:
-		if was_active { phase = 4 }
-	}
-	anchor_x := view.selection_anchor_x
-	current_x := view.selection_current_x
-	if view.pan_drag_active || button == alicorn.POINTER_BUTTON_MIDDLE {
-		anchor_x = view.pan_anchor_x
-		current_x = view.pan_current_x
-	}
-	selection^ = AudacityWaveformSelection{
-		phase=phase,
-		anchor_x=anchor_x,
-		current_x=current_x,
-	}
-	return i32(phase)
-}
-
-@(export, link_name="audacity_alicorn_timeline_view_zoom_pointer")
-audacity_alicorn_timeline_view_zoom_pointer :: proc "c" (
-	opaque_view: rawptr,
-	kind: u32,
-	x, y: f32,
-	button: u32,
-	gesture: ^AudacityWaveformSelection,
-) -> i32 {
-	context = odin_runtime.default_context()
-	view := transmute(^Timeline_View)opaque_view
-	if !valid_timeline_view(view) || gesture == nil ||
-	   !alicorn.number_is_finite(x) || !alicorn.number_is_finite(y) || button > 3 {
-		return -1
-	}
-	pointer_kind: alicorn.Pointer_Kind
-	switch kind {
-	case 0: pointer_kind = .Move
-	case 1: pointer_kind = .Down
-	case 2: pointer_kind = .Up
-	case 3: pointer_kind = .Cancel
-	case: return -1
-	}
-	if (kind == 1 || kind == 2) && button == 0 { return -1 }
-	event := alicorn.Pointer_Event{
-		kind=pointer_kind,
-		x=x,
-		y=y+view.ruler_height,
-		button=int(button),
-	}
-	was_active := view.zoom_drag_active
-	target := alicorn.process_pointer(&view.runtime, event)
-	_ = alicorn.application_dispatch_pointer(
-		&view.runtime,
-		rawptr(view),
-		timeline_view_zoom_pointer_callback,
-		event,
-		target,
-	)
-	phase: u32 = 0
-	switch kind {
-	case 1:
-		if view.zoom_drag_active { phase = 1 }
-	case 0:
-		if view.zoom_drag_active { phase = 2 }
-	case 2:
-		if was_active { phase = 3 }
-	case 3:
-		if was_active { phase = 4 }
-	}
-	gesture^ = AudacityWaveformSelection{
-		phase=phase,
-		anchor_x=view.zoom_anchor_x,
-		current_x=view.zoom_current_x,
-	}
-	return i32(phase)
-}
-
-@(export, link_name="audacity_alicorn_timeline_view_ruler_pointer")
-audacity_alicorn_timeline_view_ruler_pointer :: proc "c" (
-	opaque_view: rawptr,
-	kind: u32,
-	x, y: f32,
-	button: u32,
-	selection: ^AudacityWaveformSelection,
-) -> i32 {
-	context = odin_runtime.default_context()
-	view := transmute(^Timeline_View)opaque_view
-	if !valid_timeline_view(view) || selection == nil ||
-	   !alicorn.number_is_finite(x) || !alicorn.number_is_finite(y) || button > 3 {
-		return -1
-	}
-	pointer_kind: alicorn.Pointer_Kind
-	switch kind {
-	case 0: pointer_kind = .Move
-	case 1: pointer_kind = .Down
-	case 2: pointer_kind = .Up
-	case 3: pointer_kind = .Cancel
-	case: return -1
-	}
-	if (kind == 1 || kind == 2) && button != alicorn.POINTER_BUTTON_PRIMARY { return 0 }
-	event := alicorn.Pointer_Event{
-		kind=pointer_kind,
-		x=x,
-		y=y,
-		button=int(button),
-	}
-	was_active := view.ruler_drag_active
-	target := alicorn.process_pointer(&view.runtime, event)
-	_ = alicorn.application_dispatch_pointer(
-		&view.runtime,
-		rawptr(view),
-		timeline_view_ruler_pointer_callback,
-		event,
-		target,
-	)
-	phase: u32 = 0
-	switch kind {
-	case 1:
-		if view.ruler_drag_active { phase = 1 }
-	case 0:
-		if view.ruler_drag_active { phase = 2 }
-	case 2:
-		if was_active { phase = 3 }
-	case 3:
-		if was_active { phase = 4 }
-	}
-	selection^ = AudacityWaveformSelection{
-		phase=phase,
-		anchor_x=view.ruler_anchor_x,
-		current_x=view.ruler_current_x,
-	}
-	return i32(phase)
-}
-
-@(export, link_name="audacity_alicorn_timeline_view_update_waveform")
-audacity_alicorn_timeline_view_update_waveform :: proc "c" (
-	opaque_view: rawptr,
-	rectangle_input: ^AudacityWaveformRectangle,
-	rectangle_count: u64,
-	input: ^AudacityWaveformSegment,
-	segment_count: u64,
-	point_marker_input: ^AudacityWaveformPointMarker,
-	point_marker_count: u64,
-) -> i32 {
-	context = odin_runtime.default_context()
-	view := transmute(^Timeline_View)opaque_view
-	if !valid_timeline_view(view) ||
-	   (rectangle_count > 0 && rectangle_input == nil) ||
-	   (segment_count > 0 && input == nil) ||
-	   (point_marker_count > 0 && point_marker_input == nil) ||
-	   rectangle_count > u64(MAX_TIMELINE_GEOMETRY_RECTANGLES) ||
-	   segment_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) ||
-	   point_marker_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) {
-		return -1
-	}
-	remaining_primitives := u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) - rectangle_count
-	if segment_count > remaining_primitives { return -1 }
-	remaining_primitives -= segment_count
-	if point_marker_count > remaining_primitives { return -1 }
-	rectangle_input_slice := mem.slice_ptr(rectangle_input, int(rectangle_count))
-	count := int(segment_count)
-	input_segments := mem.slice_ptr(input, count)
-	marker_count := int(point_marker_count)
-	input_markers := mem.slice_ptr(point_marker_input, marker_count)
-	rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]alicorn.GPU_Surface_Filled_Rectangle
-	for source, index in rectangle_input_slice {
-		rectangles[index] = alicorn.GPU_Surface_Filled_Rectangle{
-			bounds=alicorn.Rect{source.x, source.y, source.width, source.height},
-			color=alicorn.Color{source.r, source.g, source.b, source.a},
-		}
-	}
-	segments: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Line_Segment
-	for i in 0..<count {
-		source := input_segments[i]
-		segments[i] = alicorn.GPU_Surface_Line_Segment{
-			start=alicorn.GPU_Surface_Point{source.x0, source.y0},
-			end=alicorn.GPU_Surface_Point{source.x1, source.y1},
-			thickness=source.thickness,
-			color=alicorn.Color{source.r, source.g, source.b, source.a},
-		}
-	}
-	point_markers: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Point_Marker
-	for source, index in input_markers {
-		point_markers[index] = alicorn.GPU_Surface_Point_Marker{
-			center=alicorn.GPU_Surface_Point{source.center_x, source.center_y},
-			diameter=source.diameter,
-			color=alicorn.Color{source.r, source.g, source.b, source.a},
-		}
-	}
-	if !alicorn.gpu_surface_update_geometry_with_rectangles_and_markers(
-		&view.runtime,
-		view.waveform_geometry_id,
-		rectangles[:int(rectangle_count)],
-		segments[:count],
-		nil,
-		point_markers[:marker_count],
-	) {
-		return -1
-	}
-	presentation, ready := alicorn.begin_presentation_frame(&view.runtime)
-	if !ready { return -1 }
-	alicorn.end_presentation_frame(&presentation)
-	return 1
-}
-
-@(export, link_name="audacity_alicorn_timeline_view_update_clip_affordances")
-audacity_alicorn_timeline_view_update_clip_affordances :: proc "c" (
-	opaque_view: rawptr,
-	rectangle_input: ^AudacityWaveformRectangle,
-	rectangle_count: u64,
-	point_marker_input: ^AudacityWaveformPointMarker,
-	point_marker_count: u64,
-) -> i32 {
-	context = odin_runtime.default_context()
-	view := transmute(^Timeline_View)opaque_view
-	if !valid_timeline_view(view) ||
-	   (rectangle_count > 0 && rectangle_input == nil) ||
-	   (point_marker_count > 0 && point_marker_input == nil) ||
-	   rectangle_count > u64(MAX_TIMELINE_GEOMETRY_RECTANGLES) ||
-	   point_marker_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) ||
-	   rectangle_count+point_marker_count > u64(MAX_TIMELINE_GEOMETRY_SEGMENTS) {
-		return -1
-	}
-	rectangle_input_slice := mem.slice_ptr(rectangle_input, int(rectangle_count))
-	input_markers := mem.slice_ptr(point_marker_input, int(point_marker_count))
-	rectangles: [MAX_TIMELINE_GEOMETRY_RECTANGLES]alicorn.GPU_Surface_Filled_Rectangle
-	for source, index in rectangle_input_slice {
-		if !alicorn.number_is_finite(source.x) || !alicorn.number_is_finite(source.y) ||
-		   !alicorn.number_is_finite(source.width) || !alicorn.number_is_finite(source.height) ||
-		   source.width < 0 || source.height < 0 ||
-		   !timeline_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
-			return -1
-		}
-		rectangles[index] = alicorn.GPU_Surface_Filled_Rectangle{
-			bounds=alicorn.Rect{source.x, source.y, source.width, source.height},
-			color=alicorn.Color{source.r, source.g, source.b, source.a},
-		}
-	}
-	point_markers: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Point_Marker
-	for source, index in input_markers {
-		if !alicorn.number_is_finite(source.center_x) || !alicorn.number_is_finite(source.center_y) ||
-		   !alicorn.number_is_finite(source.diameter) || source.diameter <= 0 ||
-		   !timeline_color_valid(AudacitySnapColor{source.r, source.g, source.b, source.a}) {
-			return -1
-		}
-		point_markers[index] = alicorn.GPU_Surface_Point_Marker{
-			center=alicorn.GPU_Surface_Point{source.center_x, source.center_y},
-			diameter=source.diameter,
-			color=alicorn.Color{source.r, source.g, source.b, source.a},
-		}
-	}
-	if !alicorn.gpu_surface_update_geometry_with_rectangles_and_markers(
-		&view.runtime,
-		view.clip_affordance_geometry_id,
+	…2310 tokens truncated…ew.clip_affordance_geometry_id,
 		rectangles[:int(rectangle_count)],
 		nil,
 		nil,
@@ -1031,12 +759,14 @@ audacity_alicorn_timeline_view_update_waveform_overlay :: proc "c" (
 	max_segments: u64 = 1
 	if indicator_kind == AUDACITY_WAVEFORM_INDICATOR_SNAP_GUIDES {
 		max_segments = 2
+	} else if indicator_kind == AUDACITY_WAVEFORM_INDICATOR_ZOOM_PREVIEW {
+		max_segments = u64(MAX_TIMELINE_GEOMETRY_SEGMENTS)
 	}
 	if segment_input_count > max_segments ||
 	   (segment_input_count > 0 && segment_input == nil) {
 		return -1
 	}
-	segments: [2]alicorn.GPU_Surface_Line_Segment
+	segments: [MAX_TIMELINE_GEOMETRY_SEGMENTS]alicorn.GPU_Surface_Line_Segment
 	segment_inputs := mem.slice_ptr(segment_input, int(segment_input_count))
 	for source, index in segment_inputs {
 		if !alicorn.number_is_finite(source.x0) || !alicorn.number_is_finite(source.y0) ||
@@ -1568,12 +1298,14 @@ timeline_view_paint_overlay_geometry :: proc(
 		if !geometry_ok { continue }
 		payload, payload_ok := alicorn.gpu_surface_payload_resolve(&view.runtime, geometry.geometry)
 		if !payload_ok { continue }
-		if len(payload.rectangles) != 0 || len(payload.segments) > 2 || len(payload.point_markers) != 0 {
+		if len(payload.rectangles) != 0 ||
+		   len(payload.segments) > MAX_TIMELINE_GEOMETRY_SEGMENTS ||
+		   len(payload.point_markers) != 0 {
 			view.callback_active = false
 			return -1
 		}
 		if len(payload.segments) == 0 { continue }
-		outputs: [2]AudacityWaveformSegment
+		outputs: [MAX_TIMELINE_GEOMETRY_SEGMENTS]AudacityWaveformSegment
 		for segment, index in payload.segments {
 			outputs[index] = AudacityWaveformSegment{
 				x0=segment.start.x,
