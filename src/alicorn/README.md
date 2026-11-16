@@ -98,10 +98,12 @@ Selection-mode calculations are also exposed through `SelectionBar::ApplyTimeCon
 values now use a retained Alicorn view for segmented digits, formatted labels,
 focused-digit appearance, and the format chevron. Alicorn's hosted input owns
 digit-focus navigation, routes digit/Backspace/Delete/Up/Down edit intents, and
-performs physical pointer hit testing for digit clicks. `NumericTextCtrl` applies
-those edits through its existing formatter/converter, mirrors the selected digit
-for Audacity's native accessibility object, and continues to own format changes,
-tab traversal, and the context menu. wx still translates native
+performs physical pointer hit testing for digit and format-chevron clicks.
+`NumericTextCtrl` applies edits through its existing formatter/converter, mirrors
+the selected digit for Audacity's native accessibility object, and continues to
+own format changes, tab traversal, and the context menu. The existing wx context
+menu opens from Alicorn's retained chevron hit result, with wx coordinate hit
+testing as fallback. wx still translates native
 events and retains its paint path as a fallback. Native text input, IME handling,
 and accessibility have not moved to Alicorn, and visual parity has not yet been
 checked in a running application. Alicorn #196

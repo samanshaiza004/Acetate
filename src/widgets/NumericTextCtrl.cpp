@@ -820,15 +820,8 @@ void NumericTextCtrl::OnContext(wxContextMenuEvent &event)
 
 void NumericTextCtrl::OnMouse(wxMouseEvent &event)
 {
-   if (event.LeftDown() && event.GetX() >= mWidth) {
-      wxContextMenuEvent e;
-      OnContext(e);
-   }
-   else if (event.LeftDown()) {
-      SetFocus();
-
+   if (event.LeftDown()) {
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
-      bool alicornHit = false;
       if (mAlicornPaint &&
           gAlicornNumericTimeViewFailures.find(this) == gAlicornNumericTimeViewFailures.end()) {
          const auto view = gAlicornNumericTimeViews.find(this);
@@ -843,9 +836,11 @@ void NumericTextCtrl::OnMouse(wxMouseEvent &event)
                DestroyAlicornNumericTimeView(this);
                gAlicornNumericTimeViewFailures.insert(this);
             }
-            else if (pointerResult > 0) {
-               const auto focusedDigit =
-                  audacity_alicorn_numeric_time_view_focused_digit(view->second);
+            else {
+               const auto focusedDigit = pointerResult ==
+                     AUDACITY_NUMERIC_TIME_POINTER_RESULT_DIGIT
+                  ? audacity_alicorn_numeric_time_view_focused_digit(view->second)
+                  : -1;
                if (audacity_alicorn_numeric_time_view_pointer(
                       view->second,
                       AUDACITY_SNAP_POINTER_UP,
@@ -855,18 +850,34 @@ void NumericTextCtrl::OnMouse(wxMouseEvent &event)
                   DestroyAlicornNumericTimeView(this);
                   gAlicornNumericTimeViewFailures.insert(this);
                }
-               if (focusedDigit >= 0 && focusedDigit < static_cast<int32_t>(mBoxes.size())) {
+               else if (pointerResult == AUDACITY_NUMERIC_TIME_POINTER_RESULT_FORMAT_MENU) {
+                  wxContextMenuEvent e;
+                  OnContext(e);
+                  return;
+               }
+               else if (pointerResult == AUDACITY_NUMERIC_TIME_POINTER_RESULT_DIGIT &&
+                        focusedDigit >= 0 && focusedDigit < static_cast<int32_t>(mBoxes.size())) {
+                  SetFocus();
                   mFocusedDigit = focusedDigit;
                   SetFieldFocus(mFocusedDigit);
                   Refresh(false);
-                  alicornHit = true;
+                  return;
                }
             }
          }
       }
-      if (alicornHit)
-         return;
 #endif
+
+      // Keep the native coordinate path when Alicorn is disabled or cannot
+      // resolve a target, while the opt-in path opens the menu from its
+      // retained chevron hit target above.
+      if (event.GetX() >= mWidth) {
+         wxContextMenuEvent e;
+         OnContext(e);
+         return;
+      }
+
+      SetFocus();
 
       int bestDist = 9999;
       unsigned int i;

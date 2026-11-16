@@ -1007,6 +1007,7 @@ Numeric_Time_View :: struct {
 	dpi_scale: f32,
 	segments: []Numeric_Time_Segment,
 	digit_target_ids: [NUMERIC_TIME_MAX_SEGMENTS]alicorn.Node_ID,
+	menu_target_id: alicorn.Node_ID,
 	style: AudacityNumericTimeStyle,
 	focused_digit: i32,
 	digit_count: i32,
@@ -1031,6 +1032,9 @@ AUDACITY_NUMERIC_TIME_KEY_DOWN :: u32(35)
 AUDACITY_NUMERIC_TIME_KEY_RESULT_UNHANDLED :: i32(0)
 AUDACITY_NUMERIC_TIME_KEY_RESULT_FOCUS_CHANGED :: i32(1)
 AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT :: i32(2)
+AUDACITY_NUMERIC_TIME_POINTER_RESULT_UNHANDLED :: i32(0)
+AUDACITY_NUMERIC_TIME_POINTER_RESULT_DIGIT :: i32(1)
+AUDACITY_NUMERIC_TIME_POINTER_RESULT_FORMAT_MENU :: i32(2)
 
 valid_numeric_time_view :: proc(view: ^Numeric_Time_View) -> bool {
 	return view != nil && view.runtime_initialized && !view.callback_active
@@ -1081,6 +1085,7 @@ numeric_time_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, 
 	for i in 0..<NUMERIC_TIME_MAX_SEGMENTS {
 		view.digit_target_ids[i] = 0
 	}
+	view.menu_target_id = 0
 	style := view.style
 	outer_stroke := alicorn.Paint_Stroke{}
 	if style.focused != 0 {
@@ -1181,15 +1186,31 @@ numeric_time_render :: proc(state: rawptr, ui: ^alicorn.UI, width, height: int, 
 			}
 		}
 		if style.menu_enabled != 0 && style.menu_width > 0 {
-			menu := alicorn.container_begin(
+			columns := [1]alicorn.Grid_Track{alicorn.grid_fixed(style.menu_width)}
+			rows := [1]alicorn.Grid_Track{alicorn.grid_fixed(f32(height))}
+			menu := alicorn.grid_begin(
 				ui,
-				.Container,
-				key=alicorn.key_string("audacity-alicorn-numeric-time-menu"),
+				alicorn.key_string("audacity-alicorn-numeric-time-menu"),
+				columns[:],
+				rows[:],
 				style=alicorn.layout_style(.Row, width=style.menu_width, height=f32(height), align=.Center, justify=.Center),
 			)
 			if menu != 0 {
-				_ = alicorn.icon(ui, .Chevron_Down, key=alicorn.key_string("audacity-alicorn-numeric-time-chevron"), size=min(10.0, f32(height)*0.45), color_role=.Muted_Text)
-				alicorn.container_end(ui)
+				chevron := alicorn.icon(ui, .Chevron_Down, key=alicorn.key_string("audacity-alicorn-numeric-time-chevron"), size=min(10.0, f32(height)*0.45), color_role=.Muted_Text)
+				if chevron != 0 {
+					_ = alicorn.grid_cell(ui, chevron, 0, 0)
+				}
+				target := alicorn.gpu_geometry_surface(
+					ui,
+					"audacity-alicorn-numeric-time-menu-target",
+					alicorn.layout_style(.Row, width=style.menu_width, height=f32(height)),
+					surface_interaction=.Pointer,
+				)
+				if target != 0 {
+					_ = alicorn.grid_cell(ui, target, 0, 0)
+					view.menu_target_id = target
+				}
+				alicorn.grid_end(ui)
 			}
 		}
 		alicorn.container_end(ui)
@@ -1506,7 +1527,11 @@ audacity_alicorn_numeric_time_view_pointer :: proc "c" (
 	if status != .Ok { return -1 }
 	digit := numeric_time_digit_for_target(view, target)
 	if numeric_time_step(view).status != .Ok { return -1 }
-	return 1 if digit >= 0 else 0
+	if digit >= 0 { return AUDACITY_NUMERIC_TIME_POINTER_RESULT_DIGIT }
+	if target != 0 && target == view.menu_target_id {
+		return AUDACITY_NUMERIC_TIME_POINTER_RESULT_FORMAT_MENU
+	}
+	return AUDACITY_NUMERIC_TIME_POINTER_RESULT_UNHANDLED
 }
 
 @(export, link_name="audacity_alicorn_numeric_time_view_focused_digit")

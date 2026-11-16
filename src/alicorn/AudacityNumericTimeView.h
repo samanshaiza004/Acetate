@@ -59,6 +59,12 @@ enum {
     AUDACITY_NUMERIC_TIME_KEY_RESULT_EDIT = 2
 };
 
+enum {
+    AUDACITY_NUMERIC_TIME_POINTER_RESULT_UNHANDLED = 0,
+    AUDACITY_NUMERIC_TIME_POINTER_RESULT_DIGIT = 1,
+    AUDACITY_NUMERIC_TIME_POINTER_RESULT_FORMAT_MENU = 2
+};
+
 AudacityAlicornNumericTimeView *audacity_alicorn_numeric_time_view_create(
     float width,
     float height,
@@ -79,8 +85,8 @@ int32_t audacity_alicorn_numeric_time_view_update(
     const AudacityNumericTimeSegment *segments,
     uint64_t segment_count,
     const AudacityNumericTimeStyle *style);
-/* Route a native pointer transition through Alicorn hit testing. Returns 1
- * when a time digit was hit, 0 when no digit was hit, and -1 on invalid input. */
+/* Route a native pointer transition through Alicorn hit testing. Returns the
+ * matching pointer result, or -1 on invalid input. */
 int32_t audacity_alicorn_numeric_time_view_pointer(
     AudacityAlicornNumericTimeView *view,
     uint32_t kind,
