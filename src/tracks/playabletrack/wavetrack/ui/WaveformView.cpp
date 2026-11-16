@@ -935,9 +935,26 @@ void DrawWaveformBackground(TrackPanelDrawingContext &context,
 
             if (zeroLevelYCoordinate >= rect.GetTop() &&
                 zeroLevelYCoordinate <= rect.GetBottom()) {
-               dc.SetPen(*wxBLACK_PEN);
-               AColor::Line(dc, rect.x, zeroLevelYCoordinate,
-                  rect.x + rect.width - 1, zeroLevelYCoordinate);
+               // Keep the zero line above the native sync-lock pattern while
+               // still sending its geometry through Alicorn.
+               const auto black = toSnapColor(*wxBLACK);
+               const AudacityWaveformSegment zeroLine{
+                  static_cast<float>(rect.x),
+                  static_cast<float>(zeroLevelYCoordinate),
+                  static_cast<float>(rect.x + rect.width - 1),
+                  static_cast<float>(zeroLevelYCoordinate),
+                  1.0f,
+                  black.r,
+                  black.g,
+                  black.b,
+                  black.a,
+               };
+               if (!view->DrawWaveform(
+                      dc, rect, nullptr, 0, &zeroLine, 1, nullptr, 0)) {
+                  dc.SetPen(*wxBLACK_PEN);
+                  AColor::Line(dc, rect.x, zeroLevelYCoordinate,
+                     rect.x + rect.width - 1, zeroLevelYCoordinate);
+               }
             }
             return;
          }
