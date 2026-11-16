@@ -661,7 +661,7 @@ bool AlicornTimelineView::DrawVerticalIndicator(
       linear.a
    };
    if (audacity_alicorn_timeline_view_update_waveform_overlay(
-          mView, static_cast<uint32_t>(kind), &line) < 0)
+          mView, static_cast<uint32_t>(kind), &line, 1) < 0)
       return false;
    mHasWaveformIndicators[indicatorIndex] = true;
 
@@ -681,6 +681,74 @@ bool AlicornTimelineView::DrawVerticalIndicator(
       });
 }
 
+bool AlicornTimelineView::DrawSnapGuides(
+   wxDC& dc,
+   const wxRect& clip,
+   int firstX,
+   int secondX,
+   const wxColour& color)
+{
+   if (!mView || !ResizeWaveform(dc.GetSize()))
+      return false;
+
+   constexpr auto kind = AUDACITY_WAVEFORM_INDICATOR_SNAP_GUIDES;
+   const auto indicatorIndex = static_cast<size_t>(kind);
+   if (indicatorIndex >= mHasWaveformIndicators.size())
+      return false;
+
+   const auto rect = clip.Intersect(wxRect{wxPoint{0, 0}, dc.GetSize()});
+   if (rect.IsEmpty())
+      return true;
+
+   std::array<AudacityWaveformSegment, 2> lines{};
+   uint64_t count{};
+   const auto linear = ToLinearColor(color);
+   for (const auto x : { firstX, secondX }) {
+      if (x < 0 || (count > 0 && x == firstX))
+         continue;
+      lines[count++] = AudacityWaveformSegment{
+         static_cast<float>(x),
+         0.0f,
+         static_cast<float>(x),
+         static_cast<float>(dc.GetSize().GetHeight()),
+         1.0f,
+         linear.r,
+         linear.g,
+         linear.b,
+         linear.a
+      };
+   }
+
+   if (count == 0 && !mHasWaveformIndicators[indicatorIndex])
+      return true;
+   if (audacity_alicorn_timeline_view_update_waveform_overlay(
+          mView,
+          static_cast<uint32_t>(kind),
+          count > 0 ? lines.data() : nullptr,
+          count) < 0)
+      return false;
+   if (count > 0)
+      mHasWaveformIndicators[indicatorIndex] = true;
+
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = rect;
+   context.yOrigin = mRulerSize.y;
+   const auto painted = PaintOutputAndAcknowledge(
+      mView,
+      AUDACITY_TIMELINE_OUTPUT_WAVEFORM,
+      [&] {
+         return audacity_alicorn_timeline_view_paint_waveform_overlay(
+            mView, static_cast<uint32_t>(kind), &DrawGeometry, &context);
+      });
+   if (painted)
+      mHasWaveformIndicators[indicatorIndex] = count > 0;
+   return painted;
+}
+
 bool AlicornTimelineView::ClearVerticalIndicator(
    wxDC& dc,
    const wxRect& clip,
@@ -695,7 +763,7 @@ bool AlicornTimelineView::ClearVerticalIndicator(
       return false;
 
    if (audacity_alicorn_timeline_view_update_waveform_overlay(
-          mView, static_cast<uint32_t>(kind), nullptr) < 0)
+          mView, static_cast<uint32_t>(kind), nullptr, 0) < 0)
       return false;
    mHasWaveformIndicators[indicatorIndex] = false;
 

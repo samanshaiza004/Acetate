@@ -1102,11 +1102,23 @@ void SelectHandle::Draw(
    if ( iPass == TrackArtist::PassSnapping ) {
       auto &dc = context.dc;
       // Draw snap guidelines if we have any
-      if ( mSnapManager ) {
-         auto coord1 = (mUseSnap || IsDragging()) ? mSnapStart.outCoord : -1;
-         auto coord2 = (!mUseSnap || !IsDragging()) ? -1 : mSnapEnd.outCoord;
-         TrackArt::DrawSnapLines(&dc, coord1, coord2);
+      auto coord1 = mSnapManager && (mUseSnap || IsDragging())
+         ? mSnapStart.outCoord : -1;
+      auto coord2 = mSnapManager && (!mUseSnap || !IsDragging())
+         ? mSnapEnd.outCoord : -1;
+      bool alicornDrawn = false;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      AColor::SnapGuidePen(&dc);
+      const auto artist = TrackArtist::Get(context);
+      if (artist && artist->parent) {
+         if (auto *view = artist->parent->GetAlicornTimelineView())
+            alicornDrawn = view->DrawSnapGuides(
+               dc, rect, static_cast<int>(coord1), static_cast<int>(coord2),
+               dc.GetPen().GetColour());
       }
+#endif
+      if (!alicornDrawn && mSnapManager)
+         TrackArt::DrawSnapLines(&dc, coord1, coord2);
    }
 }
 

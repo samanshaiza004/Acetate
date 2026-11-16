@@ -67,6 +67,10 @@ It does not reimplement ruler policy.
 Alicorn hit testing routes plain audio-track range drags. wx `SelectHandle`
 continues to enforce track eligibility, snapping, time conversion, selection
 mutation, undo history, and cancel rollback. Project selection is authoritative.
+During snapping, `SelectHandle` also supplies up to two transient guide lines to
+independent retained Alicorn overlay geometry. This moves presentation only;
+Audacity still decides snap targets and styling. If the retained overlay cannot
+be updated or painted, the existing wx snap-line path remains the fallback.
 Alicorn routes ruler pointer gestures that create, resize, and move loop regions;
 Audacity's `PlayRegionAdjustingHandle` subclasses retain hit-target priority,
 snapping, loop-region mutation, selection-sync, and rollback policy. Project

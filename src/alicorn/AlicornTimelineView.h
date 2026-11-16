@@ -105,6 +105,12 @@ public:
       AudacityWaveformIndicatorKind kind,
       int x,
       const wxColour& color);
+   bool DrawSnapGuides(
+      wxDC& dc,
+      const wxRect& clip,
+      int firstX,
+      int secondX,
+      const wxColour& color);
    bool ClearVerticalIndicator(
       wxDC& dc,
       const wxRect& clip,

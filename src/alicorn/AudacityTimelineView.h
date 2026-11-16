@@ -15,7 +15,8 @@ typedef struct AudacityAlicornTimelineView AudacityAlicornTimelineView;
 typedef enum AudacityWaveformIndicatorKind {
    AUDACITY_WAVEFORM_INDICATOR_CARET = 0,
    AUDACITY_WAVEFORM_INDICATOR_PLAYHEAD = 1,
-   AUDACITY_WAVEFORM_INDICATOR_COUNT = 2,
+   AUDACITY_WAVEFORM_INDICATOR_SNAP_GUIDES = 2,
+   AUDACITY_WAVEFORM_INDICATOR_COUNT = 3,
 } AudacityWaveformIndicatorKind;
 
 typedef enum AudacityTimelineOutputKind {
@@ -89,11 +90,13 @@ int32_t audacity_alicorn_timeline_view_update_clip_affordances(
    uint64_t rectangle_count,
    const AudacityWaveformPointMarker* point_markers,
    uint64_t point_marker_count);
-/* Transient playhead and caret geometry have independent retained owners. */
+/* Transient indicators have independent retained owners. Snap guides accept
+ * up to two line segments; caret and playhead accept at most one. */
 int32_t audacity_alicorn_timeline_view_update_waveform_overlay(
    AudacityAlicornTimelineView* view,
    uint32_t indicator_kind,
-   const AudacityWaveformSegment* segment);
+   const AudacityWaveformSegment* segments,
+   uint64_t segment_count);
 int32_t audacity_alicorn_timeline_view_update_description(
    AudacityAlicornTimelineView* view,
    const AudacityRulerTick* ticks,
