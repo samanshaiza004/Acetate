@@ -28,8 +28,10 @@ clipping marks, and draggable sample points use retained geometry. Point glyphs
 use Alicorn's compact six-vertex marker payload rather than its 48-vertex
 filled-circle primitive. High-zoom waveform background, envelope, and selection
 fills also use bounded retained rectangles when the complete batch fits. The
-high-zoom background path draws its zero line through retained geometry after
-any sync-lock pattern; wx remains the fallback. The C++ paint callback still
+same bounded background adapter is used for normal-zoom envelope-highlight and
+sync-lock-selected cases when that background is painted separately. Successful
+background paths draw the zero line through retained geometry after any
+sync-lock pattern; wx remains the fallback. The C++ paint callback still
 presents that geometry through wx `wxGraphicsContext`, so this is not yet a
 renderer migration. wx remains the fallback for sync-lock patterns and geometry batches
 that exceed the surface budget or cannot be submitted. Alicorn #201 tracks the

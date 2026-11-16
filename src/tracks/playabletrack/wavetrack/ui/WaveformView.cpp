@@ -723,7 +723,7 @@ void DrawWaveform(
          context, leftOffset, backgroundRect, backgroundEnvelope,
          zoomMin, zoomMax, backgroundZeroLevelY, dB, dBRange,
          backgroundSelectionT0, backgroundSelectionT1,
-         bIsSyncLockSelected, highlightEnvelope);
+         bIsSyncLockSelected, highlightEnvelope, true);
    }
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
@@ -751,7 +751,7 @@ void DrawWaveform(
             context, leftOffset, backgroundRect, backgroundEnvelope,
             zoomMin, zoomMax, backgroundZeroLevelY, dB, dBRange,
             backgroundSelectionT0, backgroundSelectionT1,
-            bIsSyncLockSelected, highlightEnvelope);
+            bIsSyncLockSelected, highlightEnvelope, true);
       }
       clipPainter.Draw(
          channelIndex, context.dc, paintParameters, zoomInfo, rect, leftOffset,
