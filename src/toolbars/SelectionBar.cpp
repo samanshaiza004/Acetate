@@ -414,7 +414,7 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
       mSelectionModePopup->PopupFor(setupBtn, mSelectionMode);
    });
 #else
-   auto showMenu = [this, setupBtn]()
+   auto showMenu = [this, setupBtn, choices]()
    {
       wxMenu menu;
       int selectionMode {};
