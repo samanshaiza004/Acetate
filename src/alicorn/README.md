@@ -142,11 +142,12 @@ and idle behavior.
 Acetate has not adopted `Sdl_GPU_Presenter`.
 
 Alicorn #196, which introduced the host-owned Runtime API, and Alicorn
-#162's renderer-neutral presenter are complete. Acetate has not adopted
-`Sdl_GPU_Presenter`; its use still depends on the swapchain-safe failure
-recovery tracked by Alicorn #204 and Acetate's own native validation of wx/SDL
-surface compatibility, event fairness, focus/IME, accessibility, resize/DPI,
-frame retirement, wake delivery, and shutdown. Keep wx controls and the wx
+#162's renderer-neutral presenter and #204's swapchain-safe failure recovery
+are complete upstream. Acetate remains pinned to a revision predating #204 and
+has not adopted `Sdl_GPU_Presenter`; before doing so, advance the pin to include
+the fix and complete native validation of wx/SDL surface compatibility, event
+fairness, focus/IME, accessibility, resize/DPI, frame retirement, wake delivery,
+and shutdown. Keep wx controls and the wx
 paint path as fallbacks until those checks pass.
 
 ## Build
