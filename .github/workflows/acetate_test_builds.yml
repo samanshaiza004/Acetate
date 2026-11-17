@@ -278,10 +278,9 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           $common = @('build', $src, "-collection:alicorn=$root", '-no-entry-point', '-target:windows_amd64', '-show-system-calls')
           $variants = [ordered]@{
-            'lib-baseline' = @('-build-mode:lib')
-            'lib-minimal'  = @('-build-mode:lib', '-no-entry-point')
-            'obj'          = @('-build-mode:obj')
-            'dll'          = @('-build-mode:dll')
+            'lib-lld'      = @('-build-mode:lib', '-linker:lld')
+            'lib-default'  = @('-build-mode:lib', '-linker:default')
+            'lib-msvc-env' = @('-build-mode:lib', '-linker:default', '-extra-linker-flags:/lib')
           }
           foreach ($name in $variants.Keys) {
             $out = "$((Get-Location).Path)/out/$name.lib" -replace '\\', '/'
@@ -303,3 +302,17 @@ jobs:
           odin build src/alicorn -collection:alicorn=alicorn -build-mode:lib -no-entry-point -target:windows_amd64 -show-system-calls -out:out/vcvars-lib.lib
           echo RESULT vcvars exit=%ERRORLEVEL%
           dir out
+
+      - name: Object files archived with lib.exe
+        shell: cmd
+        continue-on-error: true
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          mkdir objout
+          odin build src/alicorn -collection:alicorn=alicorn -build-mode:obj -no-entry-point -target:windows_amd64 -out:objout/alicorn.obj
+          echo RESULT obj exit=%ERRORLEVEL%
+          dir objout
+          lib /nologo /OUT:objout\alicorn.lib objout\*.obj
+          echo RESULT lib.exe exit=%ERRORLEVEL%
+          dir objout\alicorn.lib
+          dumpbin /symbols objout\alicorn.lib | findstr /C:"audacity_alicorn_timeline_view_create"
