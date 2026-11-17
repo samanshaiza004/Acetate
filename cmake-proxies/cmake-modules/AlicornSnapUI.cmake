@@ -117,3 +117,8 @@ target_link_libraries( audacity-alicorn-snap-ui INTERFACE Threads::Threads ${CMA
 if( CMAKE_SYSTEM_NAME STREQUAL "Linux" )
    target_link_libraries( audacity-alicorn-snap-ui INTERFACE m )
 endif()
+if( WIN32 )
+   # Odin normally passes these to its own link; with an archive we must.
+   target_link_libraries( audacity-alicorn-snap-ui INTERFACE
+      bcrypt ntdll userenv kernel32 advapi32 )
+endif()
