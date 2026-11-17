@@ -18,7 +18,7 @@ extern "C" {
 typedef struct AcetateBackend AcetateBackend;
 
 // Bumped whenever the exported surface changes shape.
-#define ACETATE_BACKEND_ABI_VERSION 3
+#define ACETATE_BACKEND_ABI_VERSION 4
 
 ACETATE_BACKEND_API int acetate_backend_abi_version(void);
 
@@ -77,6 +77,24 @@ ACETATE_BACKEND_API int acetate_backend_is_playing(
 // Current playback position in seconds, or a negative value when idle.
 ACETATE_BACKEND_API double acetate_backend_play_position(
    const AcetateBackend *backend);
+
+// Selection and edits. The time selection lives in Audacity's ViewInfo, edits
+// run Audacity's own Clear on the wave tracks and push an undo state, and
+// undo/redo use its UndoManager, so history matches the wx application. Edits
+// are refused while the audio engine is busy, as the app's menu does.
+// Each successful edit, undo or redo bumps acetate_backend_revision.
+ACETATE_BACKEND_API void acetate_backend_set_selection(
+   AcetateBackend *backend, double t0, double t1);
+ACETATE_BACKEND_API void acetate_backend_get_selection(
+   const AcetateBackend *backend, double *t0, double *t1);
+// Deletes the selected range from every wave track (ripple, like Edit >
+// Delete) and collapses the selection to its start. Returns 0 on success.
+ACETATE_BACKEND_API int acetate_backend_delete_selection(
+   AcetateBackend *backend);
+ACETATE_BACKEND_API int acetate_backend_can_undo(const AcetateBackend *backend);
+ACETATE_BACKEND_API int acetate_backend_can_redo(const AcetateBackend *backend);
+ACETATE_BACKEND_API int acetate_backend_undo(AcetateBackend *backend);
+ACETATE_BACKEND_API int acetate_backend_redo(AcetateBackend *backend);
 
 #ifdef __cplusplus
 }

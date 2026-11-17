@@ -3,23 +3,33 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <deque>
 #include <exception>
+#include <functional>
 #include <filesystem>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
 #include <sndfile.h>
 
 #include "MockedPrefs.h"
+#include "Internat.h"
 #include "Prefs.h"
+#include "ProjectHistory.h"
 #include "Project.h"
 #include "ProjectFileIO.h"
 #include "AudioIO.h"
+#include "BasicUI.h"
 #include "FileNames.h"
 #include "SampleFormat.h"
 #include "StretchingSequence.h"
 #include "TempDirectory.h"
+#include "UndoManager.h"
+#include "ViewInfo.h"
 #include "sqlite/SQLiteUtils.h"
 #include "Track.h"
 #include "WaveChannelUtilities.h"
@@ -28,6 +38,109 @@
 // Matches the unit-test fixtures: PortAudio is only initialised so lib-audio-io
 // static state is valid; no stream is opened by this slice.
 #include <portaudio.h>
+
+namespace {
+// Audacity code reports errors and asks for progress dialogs through
+// BasicUI::Services. This host has no dialogs yet, so errors are logged and
+// recorded, progress dialogs do nothing, and CallAfter work is queued for the
+// host's main-thread update tick.
+class HeadlessServices final : public BasicUI::Services {
+public:
+   HeadlessServices() : mUiThread{ std::this_thread::get_id() } {}
+
+   std::string TakeError()
+   {
+      std::lock_guard<std::mutex> lock{ mMutex };
+      return std::exchange(mError, {});
+   }
+   void RunQueued()
+   {
+      for (;;) {
+         BasicUI::Action action;
+         {
+            std::lock_guard<std::mutex> lock{ mMutex };
+            if (mQueue.empty())
+               return;
+            action = std::move(mQueue.front());
+            mQueue.pop_front();
+         }
+         action();
+      }
+   }
+
+   void DoCallAfter(const BasicUI::Action &action) override
+   {
+      std::lock_guard<std::mutex> lock{ mMutex };
+      mQueue.push_back(action);
+   }
+   void DoYield() override {}
+   void DoProcessIdle() override {}
+   void DoShowErrorDialog(const BasicUI::WindowPlacement &,
+      const TranslatableString &title, const TranslatableString &message,
+      const ManualPageID &, const BasicUI::ErrorDialogOptions &) override
+   {
+      Record(title.Translation(), message.Translation());
+   }
+   BasicUI::MessageBoxResult DoMessageBox(
+      const TranslatableString &message, BasicUI::MessageBoxOptions) override
+   {
+      Record("Message", message.Translation());
+      return BasicUI::MessageBoxResult::Ok;
+   }
+   std::unique_ptr<BasicUI::ProgressDialog> DoMakeProgress(
+      const TranslatableString &, const TranslatableString &, unsigned,
+      const TranslatableString &) override
+   {
+      struct Silent final : BasicUI::ProgressDialog {
+         BasicUI::ProgressResult Poll(unsigned long long, unsigned long long,
+            const TranslatableString &) override
+         { return BasicUI::ProgressResult::Success; }
+         void SetMessage(const TranslatableString &) override {}
+         void SetDialogTitle(const TranslatableString &) override {}
+         void Reinit() override {}
+      };
+      return std::make_unique<Silent>();
+   }
+   std::unique_ptr<BasicUI::GenericProgressDialog> DoMakeGenericProgress(
+      const BasicUI::WindowPlacement &, const TranslatableString &,
+      const TranslatableString &, int) override
+   {
+      struct Silent final : BasicUI::GenericProgressDialog {
+         BasicUI::ProgressResult Pulse() override
+         { return BasicUI::ProgressResult::Success; }
+      };
+      return std::make_unique<Silent>();
+   }
+   int DoMultiDialog(const TranslatableString &message,
+      const TranslatableString &, const TranslatableStrings &,
+      const ManualPageID &, const TranslatableString &, bool) override
+   {
+      Record("Choice", message.Translation());
+      return 0;
+   }
+   bool DoOpenInDefaultBrowser(const wxString &) override { return false; }
+   std::unique_ptr<BasicUI::WindowPlacement> DoFindFocus() override
+   { return nullptr; }
+   void DoSetFocus(const BasicUI::WindowPlacement &) override {}
+   bool IsUsingRtlLayout() const override { return false; }
+   bool IsUiThread() const override
+   { return std::this_thread::get_id() == mUiThread; }
+
+private:
+   void Record(const wxString &title, const wxString &message)
+   {
+      std::fprintf(stderr, "[acetate-host] %s: %s\n",
+         title.utf8_str().data(), message.utf8_str().data());
+      std::lock_guard<std::mutex> lock{ mMutex };
+      mError = message.utf8_str().data();
+   }
+
+   const std::thread::id mUiThread;
+   std::mutex mMutex;
+   std::deque<BasicUI::Action> mQueue;
+   std::string mError;
+};
+}
 
 struct AcetateBackend {
    // The headless spike keeps settings in memory instead of touching the
@@ -38,9 +151,12 @@ struct AcetateBackend {
    unsigned long long revision{ 0 };
    std::string error;
    std::filesystem::path tempDir;
+   HeadlessServices services;
+   BasicUI::Services *previousServices{};
 
    AcetateBackend()
    {
+      previousServices = BasicUI::Install(&services);
       // Sample blocks need a writable scratch directory; the application
       // normally chooses one at start-up.
       std::error_code ec;
@@ -57,18 +173,24 @@ struct AcetateBackend {
       project = AudacityProject::Create();
       // A temporary database backs the sample blocks, as for a new project.
       ProjectFileIO::Get(*project).OpenProject();
+      // Gives undo a base state, as ProjectManager does for a new project.
+      ProjectHistory::Get(*project).InitialState();
    }
    ~AcetateBackend()
    {
       if (auto *audioIO = AudioIO::Get())
          if (audioIO->IsBusy())
             audioIO->StopStream();
-      if (project)
+      if (project) {
+         // The application clears history before closing a project.
+         UndoManager::Get(*project).ClearStates();
          ProjectFileIO::Get(*project).CloseProject();
+      }
       project.reset();
       AudioIO::Deinit();
       if (paInitialized)
          Pa_Terminate();
+      BasicUI::Install(previousServices);
       std::error_code ec;
       std::filesystem::remove_all(tempDir, ec);
    }
@@ -153,6 +275,8 @@ int acetate_backend_import(AcetateBackend *backend, const char *utf8Path)
       }
       track->Flush();
       TrackList::Get(*backend->project).Add(track);
+      ProjectHistory::Get(*backend->project).PushState(
+         XO("Imported audio"), XO("Import"));
       ++backend->revision;
       return 0;
    }
@@ -301,6 +425,8 @@ void acetate_backend_stop(AcetateBackend *backend)
 
 void acetate_backend_update(AcetateBackend *backend)
 {
+   if (backend)
+      backend->services.RunQueued();
    auto *audioIO = backend ? AudioIO::Get() : nullptr;
    if (audioIO && audioIO->IsBusy() && !audioIO->IsStreamActive())
       audioIO->StopStream();
@@ -318,4 +444,126 @@ double acetate_backend_play_position(const AcetateBackend *backend)
    if (!audioIO || !audioIO->IsStreamActive())
       return -1.0;
    return audioIO->GetStreamTime();
+}
+
+void acetate_backend_set_selection(
+   AcetateBackend *backend, double t0, double t1)
+{
+   if (!backend)
+      return;
+   auto &region = ViewInfo::Get(*backend->project).selectedRegion;
+   if (t1 < t0)
+      std::swap(t0, t1);
+   region.setTimes(std::max(0.0, t0), std::max(0.0, t1));
+}
+
+void acetate_backend_get_selection(
+   const AcetateBackend *backend, double *t0, double *t1)
+{
+   double a = 0.0, b = 0.0;
+   if (backend) {
+      const auto &region = ViewInfo::Get(*backend->project).selectedRegion;
+      a = region.t0();
+      b = region.t1();
+   }
+   if (t0)
+      *t0 = a;
+   if (t1)
+      *t1 = b;
+}
+
+namespace {
+// Shared guard for edits: Audacity's menus are disabled while audio is busy.
+bool CanEdit(AcetateBackend &backend)
+{
+   backend.error.clear();
+   if (auto *audioIO = AudioIO::Get(); audioIO && audioIO->IsBusy()) {
+      acetate_backend_update(&backend);
+      if (audioIO->IsBusy()) {
+         backend.error = "stop playback before editing";
+         return false;
+      }
+   }
+   return true;
+}
+}
+
+int acetate_backend_delete_selection(AcetateBackend *backend)
+{
+   if (!backend)
+      return 1;
+   if (!CanEdit(*backend))
+      return 2;
+   try {
+      auto &project = *backend->project;
+      auto &region = ViewInfo::Get(project).selectedRegion;
+      const double t0 = region.t0(), t1 = region.t1();
+      if (!(t1 > t0)) {
+         backend->error = "no time selected";
+         return 3;
+      }
+      // Mirrors OnDelete in src/menus/EditMenus.cpp.
+      for (auto *track : TrackList::Get(project).Any<WaveTrack>())
+         track->Clear(t0, t1);
+      const double seconds = region.duration();
+      region.collapseToT0();
+      ProjectHistory::Get(project).PushState(
+         XO("Deleted %.2f seconds at t=%.2f").Format(seconds, region.t0()),
+         XO("Delete"));
+      ++backend->revision;
+      return 0;
+   }
+   catch (const std::exception &e) {
+      backend->error = e.what();
+   }
+   catch (...) {
+      backend->error = "unexpected error while deleting";
+   }
+   return 4;
+}
+
+int acetate_backend_can_undo(const AcetateBackend *backend)
+{
+   return backend && ProjectHistory::Get(*backend->project).UndoAvailable();
+}
+
+int acetate_backend_can_redo(const AcetateBackend *backend)
+{
+   return backend && ProjectHistory::Get(*backend->project).RedoAvailable();
+}
+
+int acetate_backend_undo(AcetateBackend *backend)
+{
+   if (!backend)
+      return 1;
+   if (!CanEdit(*backend))
+      return 2;
+   auto &project = *backend->project;
+   if (!ProjectHistory::Get(project).UndoAvailable()) {
+      backend->error = "nothing to undo";
+      return 3;
+   }
+   UndoManager::Get(project).Undo([&](const UndoStackElem &elem) {
+      ProjectHistory::Get(project).PopState(elem.state);
+   });
+   ++backend->revision;
+   return 0;
+}
+
+int acetate_backend_redo(AcetateBackend *backend)
+{
+   if (!backend)
+      return 1;
+   if (!CanEdit(*backend))
+      return 2;
+   auto &project = *backend->project;
+   if (!ProjectHistory::Get(project).RedoAvailable()) {
+      backend->error = "nothing to redo";
+      return 3;
+   }
+   UndoManager::Get(project).Redo([&](const UndoStackElem &elem) {
+      ProjectHistory::Get(project).PopState(elem.state);
+   });
+   ++backend->revision;
+   return 0;
 }

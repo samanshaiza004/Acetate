@@ -24,6 +24,8 @@ target_link_libraries( acetate-host-backend
       lib-project-file-io
       lib-wave-track
       lib-audio-io
+      lib-project-history
+      lib-time-frequency-selection
       lib-stretching-sequence
       lib-preferences-interface
       lib-file-formats
