@@ -4,7 +4,7 @@ Goal: everything wxWidgets draws or manages that is not the native window/event 
 
 ## Already on Alicorn (opt-in build)
 
-The Time toolbar's audio-position clock, the record and playback meters, both scrollbars and the status bar, track headers and the waveform vertical ruler (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
+The Time toolbar's audio-position clock, the record and playback meters, both scrollbars, the status bar and the tempo/time-signature fields, track headers and the waveform vertical ruler (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
 
 ## Still wx-drawn or wx-managed
 
@@ -13,7 +13,7 @@ The Time toolbar's audio-position clock, the record and playback meters, both sc
 | Track header remnants: sync-lock icon (theme bitmap), keyboard-focus ring, drag-to-reorder affordances | `tracks/ui/CommonTrackInfo.cpp`, `TrackInfo.cpp` | small | The title bar, buttons, sliders and background moved to a retained `Track_Controls_View` (first slice). Theme bitmap icons are replaced by vector glyphs; pixel parity with the stock bevel buttons is not claimed. |
 | Vertical ruler: zoom-drag preview, other scale modes | `tracks/ui/ChannelVRulerControls.cpp`, `widgets/Ruler.cpp` | small | The waveform-scale ruler axis, ticks and labels now use the retained track-controls scene; the dashed zoom preview and non-waveform modes are unchecked. |
 | Scrollbar arrow buttons and accessibility, panel backgrounds | `ProjectWindow.cpp`, `widgets/AlicornScrollBar.cpp` | small | Both scrollbars (thumb, track, thumb drag, track paging) and the status-bar text now paint through retained scenes; the native scrollbar remains the non-Alicorn fallback. Line-step arrows and a screen-reader value/role are not implemented. |
-| Tempo / time signature toolbar | `toolbars/TimeSignatureToolBar.cpp` | ~0.3k | Needs Alicorn text field + stepper + select. |
+| Tempo/time-signature leftovers: static labels, text caret blink, IME | `toolbars/TimeSignatureToolBar.cpp`, `widgets/AlicornFields.cpp` | small | The tempo and upper-signature spin fields and the lower-signature drop-down now paint through retained scenes (`AlicornSpinField`, `AlicornChoiceField`). Number entry is handled in the control (no native text input), so there is no IME composition path; the caret does not blink and the "Tempo"/"Time Signature" labels are still wx. |
 | Spectral selection bar | `toolbars/SpectralSelectionBar.cpp` | ~0.5k | Same one-line opt-in as the Time toolbar (`AlicornPaint(true)`), not applied because it could not be opened and checked in this session. |
 | Meter remnants: Mixer-board meter style, level slider interaction | `widgets/MeterPanel.cpp`, `toolbars/MeterToolBar.cpp` | small | Meter bars, clip indicators, strokes, ruler and slider now paint through a retained scene (`MeterPanel::PaintRetained`) on the UI thread from the values the existing timer already copies; the audio thread is untouched. |
 | Device, transcription, mixer toolbars | `toolbars/DeviceToolBar.cpp`, `TranscriptionToolBar.cpp` | ~2.0k | Selects, slider, buttons. Blocked in part by Alicorn grouped options (#198). |
@@ -25,7 +25,7 @@ The Time toolbar's audio-position clock, the record and playback meters, both sc
 ## Order
 
 1. Track header and vertical ruler (done for the waveform view; see validation).
-2. Remaining default toolbars: tempo/time signature, snap units, play-at-speed (time clock and meters done).
+2. Remaining default toolbars: snap units, play-at-speed, device (time clock, meters, tempo/time signature done).
 3. Panel backgrounds (scrollbars and status bar done; see validation).
 4. Device/transcription toolbars, then dock chrome.
 5. Menu bar and context menus.

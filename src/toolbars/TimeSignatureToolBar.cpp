@@ -38,6 +38,9 @@
 #include "UndoManager.h"
 
 #include "SpinControl.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornFields.h"
+#endif
 
 #if wxUSE_ACCESSIBILITY
 #include "WindowAccessible.h"
@@ -123,9 +126,15 @@ void TimeSignatureToolBar::Populate()
    AddTitle(XO("Tempo"), sizer);
    AddTitle(XO("Time Signature"), sizer);
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mTempoControl = safenew AlicornSpinField(
+      this, wxID_ANY, projectTimeSignature.GetTempo(), 1.0, 999.0, 1.0, true,
+      wxDefaultPosition, tempoSigSize);
+#else
    mTempoControl = safenew SpinControl(
       this, wxID_ANY, projectTimeSignature.GetTempo(), 1.0, 999.0, 1.0, true,
       wxDefaultPosition, tempoSigSize);
+#endif
 
    mTempoControl->SetName(XO("Tempo"));
 
@@ -134,9 +143,15 @@ void TimeSignatureToolBar::Populate()
    auto tempoSizer = safenew wxBoxSizer(wxHORIZONTAL);
    sizer->Add(tempoSizer, 0, wxEXPAND | wxRIGHT, 5);
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mUpperSignatureControl = safenew AlicornSpinField(
+      this, wxID_ANY, projectTimeSignature.GetUpperTimeSignature(), 1.0, 128.0, 1.0, false,
+      wxDefaultPosition, timeSigSize);
+#else
    mUpperSignatureControl = safenew SpinControl(
       this, wxID_ANY, projectTimeSignature.GetUpperTimeSignature(), 1.0, 128.0, 1.0, false,
       wxDefaultPosition, timeSigSize);
+#endif
 
    mUpperSignatureControl->SetName(XO("Upper Time Signature"));
 
@@ -147,6 +162,14 @@ void TimeSignatureToolBar::Populate()
 
    timeSigSize.y = mUpperSignatureControl->GetSize().y;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   mLowerSignatureControl = safenew AlicornChoiceField(
+      this, wxID_ANY,
+      wxString::Format(
+         "%d", ProjectTimeSignature::Get(mProject).GetLowerTimeSignature()),
+      wxDefaultPosition, timeSigSize,
+      std::vector<wxString> { L"2", L"4", L"8", L"16", L"32", L"64" });
+#else
    mLowerSignatureControl = safenew wxComboBox(
       this, wxID_ANY,
       wxString::Format(
@@ -154,6 +177,7 @@ void TimeSignatureToolBar::Populate()
       wxDefaultPosition, timeSigSize,
       wxArrayStringEx { L"2", L"4", L"8", L"16", L"32", L"64" },
       wxCB_READONLY);
+#endif
 
    mLowerSignatureControl->SetName(XO("Lower Time Signature").Translation());
 

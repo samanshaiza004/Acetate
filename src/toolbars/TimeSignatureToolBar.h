@@ -23,7 +23,16 @@
 
 class wxComboBox;
 class wxSizeEvent;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornSpinField;
+class AlicornChoiceField;
+using TimeSignatureSpin = AlicornSpinField;
+using TimeSignatureChoice = AlicornChoiceField;
+#else
 class SpinControl;
+using TimeSignatureSpin = SpinControl;
+using TimeSignatureChoice = wxComboBox;
+#endif
 
 class AudacityProject;
 
@@ -66,9 +75,9 @@ class TimeSignatureToolBar final : public ToolBar
    Observer::Subscription mTimeSignatureChangedSubscription;
    Observer::Subscription mPlaybackStateChangedSubscription;
 
-   wxWeakRef<SpinControl> mTempoControl;
-   wxWeakRef<SpinControl> mUpperSignatureControl;
-   wxWeakRef<wxComboBox> mLowerSignatureControl;
+   wxWeakRef<TimeSignatureSpin> mTempoControl;
+   wxWeakRef<TimeSignatureSpin> mUpperSignatureControl;
+   wxWeakRef<TimeSignatureChoice> mLowerSignatureControl;
 
  public:
     
