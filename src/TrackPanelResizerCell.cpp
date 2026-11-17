@@ -8,6 +8,7 @@ Paul Licameli split from TrackPanel.cpp
 
 **********************************************************************/
 #include "TrackPanelResizerCell.h"
+#include "tracks/ui/RetainedTrackControls.h"
 
 #include "AColor.h"
 #include "ChannelAttachments.h"
@@ -54,6 +55,37 @@ void TrackPanelResizerCell::Draw(
          auto dc = &context.dc;
          const auto &channels = pTrack->Channels();
          const bool last = (pChannel == *channels.rbegin());
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         {
+            const auto artist = TrackArtist::Get(context);
+            const auto labelw = artist->pZoomInfo->GetLeftOffset() - 1;
+            if (RetainedTrackControls::Paint(
+                   context, wxRect(rect).Inflate(2), [&](auto &scene) {
+                      using namespace RetainedTrackControls;
+                      if (last) {
+                         scene.Fill(rect, TrackPanelBackgroundColour());
+                         return;
+                      }
+                      scene.Fill(
+                         wxRect(rect.GetX(), rect.GetY(), labelw, rect.GetHeight()),
+                         AColor::darkPen[0].GetColour());
+                      scene.Fill(
+                         wxRect(rect.GetLeft(), rect.GetTop(), 1, rect.GetHeight()),
+                         *wxBLACK);
+                      wxRect rec{ rect };
+                      rec.width -= labelw - rec.x;
+                      rec.x = labelw;
+                      scene.Fill(
+                         wxRect(rec).Inflate(0, -kBorderThickness),
+                         TrackPanelBackgroundColour());
+                      scene.Fill(
+                         wxRect(rec.GetLeft(), rec.GetTop(), rec.width, 1), *wxBLACK);
+                      scene.Fill(
+                         wxRect(rec.GetLeft(), rec.GetBottom(), rec.width, 1), *wxBLACK);
+                   }))
+               return;
+         }
+#endif
          if (last) {
             // Fill in separator area below a track
             AColor::TrackPanelBackground( dc, false );

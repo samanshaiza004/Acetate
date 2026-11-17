@@ -47,6 +47,7 @@ is time to refresh some aspect of the screen.
 #include "TrackPanel.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "AlicornTimelineView.h"
+#include "tracks/ui/RetainedTrackControls.h"
 #endif
 #include "TrackPanelConstants.h"
 
@@ -1223,7 +1224,12 @@ struct EmptyCell final : CommonTrackPanelCell {
       if ( iPass == TrackArtist::PassMargins ) {
          // Draw a margin area of TrackPanel
          auto dc = &context.dc;
-
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         if (RetainedTrackControls::Paint(context, rect, [&](auto &scene) {
+                scene.Fill(rect, RetainedTrackControls::TrackPanelBackgroundColour());
+             }))
+            return;
+#endif
          AColor::TrackPanelBackground( dc, false );
          dc->DrawRectangle( rect );
       }
@@ -1281,6 +1287,21 @@ struct VRulersAndChannels final : TrackPanelGroup {
          if (mRefinement.size() > 1) {
             // Draw lines separating sub-views
             auto &dc = context.dc;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+            if (RetainedTrackControls::Paint(
+                   context, wxRect(rect).Inflate(2), [&](auto &scene) {
+                      const auto colour = AColor::cursorPen.GetColour();
+                      for (auto iter = mRefinement.begin() + 1;
+                           iter != mRefinement.end(); ++iter) {
+                         const auto yy = iter->first;
+                         scene.Fill(wxRect(rect.x, yy, mLeftOffset - rect.x, 1), colour);
+                         scene.Fill(
+                            wxRect(mLeftOffset, yy, rect.GetRight() - mLeftOffset + 1, 1),
+                            colour);
+                      }
+                   }))
+               return;
+#endif
             AColor::CursorColor( &dc );
             auto iter = mRefinement.begin() + 1, end = mRefinement.end();
             for ( ; iter != end; ++iter ) {
@@ -1372,6 +1393,33 @@ struct ChannelStack final : TrackPanelGroup {
 
          auto dc = &context.dc;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         {
+            const auto channelsForView = mpTrack->Channels();
+            auto& firstView = ChannelView::Get(**channelsForView.begin());
+            const bool hasAffordance = firstView.GetAffordanceControls() != nullptr;
+            if (RetainedTrackControls::Paint(
+                   context, wxRect(vRulerRect).Inflate(1), [&](auto &scene) {
+                      scene.Fill(
+                         vRulerRect,
+                         RetainedTrackControls::PanelColour(mpTrack->GetSelected()));
+                      if (hasAffordance)
+                         scene.Fill(
+                            wxRect(
+                               vRulerRect.GetLeft(),
+                               vRulerRect.y + kAffordancesAreaHeight - 1,
+                               vRulerRect.width, 1),
+                            AColor::darkPen[0].GetColour());
+                      scene.Fill(
+                         wxRect(vRulerRect.GetLeft(), vRulerRect.GetTop(), 1,
+                                vRulerRect.height), *wxBLACK);
+                      scene.Fill(
+                         wxRect(vRulerRect.GetRight(), vRulerRect.GetTop(), 1,
+                                vRulerRect.height), *wxBLACK);
+                   }))
+               return;
+         }
+#endif
          // Paint the background;
          AColor::MediumTrackInfo(dc, mpTrack->GetSelected() );
          dc->DrawRectangle( vRulerRect );
@@ -1437,6 +1485,25 @@ struct LabeledChannelGroup final : TrackPanelGroup {
    {
       if (iPass == TrackArtist::PassBorders) {
          auto &dc = context.dc;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         if (RetainedTrackControls::Paint(
+                context, wxRect(rect).Inflate(4), [&](auto &scene) {
+                   RetainedTrackControls::Outline(
+                      scene,
+                      wxRect(rect.x, rect.y, rect.width - kShadowThickness,
+                             rect.height - kShadowThickness),
+                      *wxBLACK);
+                   if constexpr (kShadowThickness > 0) {
+                      scene.Fill(
+                         wxRect(rect.x + 2, rect.GetBottom(),
+                                rect.GetRight() - rect.x - 1, 1), *wxBLACK);
+                      scene.Fill(
+                         wxRect(rect.GetRight(), rect.y + 2, 1,
+                                rect.GetBottom() - rect.y - 1), *wxBLACK);
+                   }
+                }))
+            return;
+#endif
          dc.SetBrush(*wxTRANSPARENT_BRUSH);
          dc.SetPen(*wxBLACK_PEN);
 
@@ -1475,6 +1542,18 @@ struct LabeledChannelGroup final : TrackPanelGroup {
             /// Draw a three-level highlight gradient around the focused track.
             wxRect theRect = rect;
             auto &dc = context.dc;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+            if (RetainedTrackControls::Paint(
+                   context, wxRect(rect).Inflate(2), [&](auto &scene) {
+                      wxRect r = rect;
+                      for (int level = 2; level >= 0; --level) {
+                         RetainedTrackControls::Outline(
+                            scene, r, AColor::trackFocusPens[level].GetColour());
+                         r.Deflate(1);
+                      }
+                   }))
+               return;
+#endif
             dc.SetBrush(*wxTRANSPARENT_BRUSH);
 
             AColor::TrackFocusPen(&dc, 2);

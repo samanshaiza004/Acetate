@@ -335,6 +335,20 @@ void CommonTrackInfo::SyncLockDrawFunction
       wxRect syncLockIconRect = rect;
 	
       GetSyncLockHorizontalBounds( rect, syncLockIconRect );
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto *scene = RetainedTrackControls::Current()) {
+         // A padlock: body, shackle and keyhole in the panel text colour.
+         const auto colour = theTheme.Colour(clrTrackPanelText);
+         const int x = syncLockIconRect.x + 3, y = syncLockIconRect.y + 2;
+         scene->Fill(wxRect(x + 1, y + 5, 10, 7), colour);
+         scene->Fill(wxRect(x + 3, y, 1, 6), colour);
+         scene->Fill(wxRect(x + 8, y, 1, 6), colour);
+         scene->Fill(wxRect(x + 3, y, 6, 1), colour);
+         scene->Fill(
+            wxRect(x + 5, y + 7, 2, 3), RetainedTrackControls::PanelColour(true));
+         return;
+      }
+#endif
       wxBitmap syncLockBitmap(theTheme.Image(bmpSyncLockIcon));
       // Icon is 12x12 and syncLockIconRect is 16x16.
       dc->DrawBitmap(syncLockBitmap,

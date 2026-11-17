@@ -17,6 +17,7 @@
 #include "Theme.h"
 #include "TrackArtist.h"
 #include "TrackPanel.h"
+#include "AColor.h"
 #include "TrackPanelDrawingContext.h"
 #include "alicorn/AlicornTimelineView.h"
 
@@ -52,6 +53,63 @@ inline AlicornTimelineView* ViewFor(TrackPanelDrawingContext& context)
    const auto artist = TrackArtist::Get(context);
    return artist && artist->parent ? artist->parent->GetAlicornTimelineView()
                                    : nullptr;
+}
+
+// Builds a scene and paints it through the project's retained runtime.
+// Returns false when the retained path is unavailable so the caller can draw
+// with wx. `clip` bounds the paint in track-panel coordinates.
+template<typename Build>
+inline bool Paint(
+   TrackPanelDrawingContext& context, const wxRect& clip, Build&& build)
+{
+   auto* view = ViewFor(context);
+   if (!view)
+      return false;
+   Scene scene;
+   build(scene);
+   if (scene.Empty())
+      return true;
+   return view->DrawTrackControls(context.dc, clip, scene);
+}
+
+// A one-pixel outline inside `r`, matching wxDC::DrawRectangle with a 1 px pen.
+inline void Outline(Scene& scene, const wxRect& r, const wxColour& colour)
+{
+   if (r.width <= 0 || r.height <= 0)
+      return;
+   scene.Fill(wxRect(r.x, r.y, r.width, 1), colour);
+   if (r.height > 1)
+      scene.Fill(wxRect(r.x, r.y + r.height - 1, r.width, 1), colour);
+   if (r.height > 2) {
+      scene.Fill(wxRect(r.x, r.y + 1, 1, r.height - 2), colour);
+      if (r.width > 1)
+         scene.Fill(wxRect(r.x + r.width - 1, r.y + 1, 1, r.height - 2), colour);
+   }
+}
+
+// A dashed outline, as wxBLACK_DASHED_PEN draws a rectangle.
+inline void DashedOutline(Scene& scene, const wxRect& r, const wxColour& colour)
+{
+   constexpr int dash = 3;
+   const auto horizontal = [&](int x0, int x1, int y) {
+      for (int x = x0; x <= x1; x += 2 * dash)
+         scene.Fill(wxRect(x, y, std::min(dash, x1 - x + 1), 1), colour);
+   };
+   const auto vertical = [&](int x, int y0, int y1) {
+      for (int y = y0; y <= y1; y += 2 * dash)
+         scene.Fill(wxRect(x, y, 1, std::min(dash, y1 - y + 1)), colour);
+   };
+   if (r.width <= 0 || r.height <= 0)
+      return;
+   horizontal(r.x, r.GetRight(), r.y);
+   horizontal(r.x, r.GetRight(), r.GetBottom());
+   vertical(r.x, r.y, r.GetBottom());
+   vertical(r.GetRight(), r.y, r.GetBottom());
+}
+
+inline wxColour TrackPanelBackgroundColour(bool selected = false)
+{
+   return theTheme.Colour(selected ? clrMediumSelected : clrTrackBackground);
 }
 
 inline wxColour Mix(const wxColour& from, const wxColour& to, double amount)

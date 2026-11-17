@@ -10,6 +10,7 @@ Paul Licameli split from TrackPanel.cpp
 
 
 #include "BackgroundCell.h"
+#include "RetainedTrackControls.h"
 
 #include "AColor.h"
 #include "../../HitTestResult.h"
@@ -129,6 +130,12 @@ void BackgroundCell::Draw(
 {
    if ( iPass == TrackArtist::PassBackground ) {
       auto &dc = context.dc;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (RetainedTrackControls::Paint(context, rect, [&](auto &scene) {
+             scene.Fill(rect, RetainedTrackControls::TrackPanelBackgroundColour());
+          }))
+         return;
+#endif
       // Paint over the part below the tracks
       AColor::TrackPanelBackground( &dc, false );
       dc.DrawRectangle( rect );

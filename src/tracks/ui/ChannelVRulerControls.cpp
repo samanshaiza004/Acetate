@@ -12,6 +12,7 @@ Paul Licameli split from TrackPanel.cpp
 #include "ChannelVRulerControls.h"
 
 #include "ChannelView.h"
+#include "RetainedTrackControls.h"
 
 #include "AColor.h"
 #include "Track.h"
@@ -68,15 +69,22 @@ void ChannelVRulerControls::DrawZooming(
    // border of the track area, which is not part of this cell but right of it.
    auto &dc = context.dc;
 
-   dc.SetBrush(*wxTRANSPARENT_BRUSH);
-   dc.SetPen(*wxBLACK_DASHED_PEN);
-
    wxRect rect {
       rect_.x,
       std::min( zoomStart, zoomEnd),
       rect_.width,
       1 + abs( zoomEnd - zoomStart)
    };
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (RetainedTrackControls::Paint(
+          context, wxRect(rect).Inflate(2), [&](auto &scene) {
+             RetainedTrackControls::DashedOutline(scene, rect, *wxBLACK);
+          }))
+      return;
+#endif
+
+   dc.SetBrush(*wxTRANSPARENT_BRUSH);
+   dc.SetPen(*wxBLACK_DASHED_PEN);
 
    dc.DrawRectangle(rect);
 }
