@@ -17,6 +17,7 @@ on:
           - both
           - macos
           - windows
+          - windows-odin-probe
 
 permissions:
   contents: read
@@ -176,8 +177,9 @@ jobs:
           cmake --version
           odin version
 
-      - name: Cache Conan packages
-        uses: actions/cache@v4
+      - name: Restore Conan packages
+        id: conan-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.conan2
           key: conan-windows-x64-${{ hashFiles('conan/**', 'cmake-proxies/cmake-modules/AudacityDependencies.cmake', 'cmake-proxies/cmake-modules/DependenciesList.cmake') }}
@@ -195,9 +197,24 @@ jobs:
             -Daudacity_use_ladspa=OFF `
             -Daudacity_use_lv2=off
 
-      - name: Build
+      - name: Build the application and its modules
         shell: pwsh
-        run: cmake --build build --config Release --parallel
+        run: |
+          # Build only what a tester needs: the application and the
+          # import/export modules, not the unit-test executables.
+          $modules = Get-ChildItem build -Recurse -Filter 'mod-*.vcxproj' |
+            ForEach-Object { $_.BaseName } |
+            Where-Object { $_ -notmatch 'nyq-bench|mod-null' } |
+            Sort-Object -Unique
+          Write-Host "modules: $($modules -join ' ')"
+          cmake --build build --config Release --parallel --target Audacity @modules
+
+      - name: Save Conan packages
+        if: ${{ always() && steps.conan-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.conan2
+          key: conan-windows-x64-${{ hashFiles('conan/**', 'cmake-proxies/cmake-modules/AudacityDependencies.cmake', 'cmake-proxies/cmake-modules/DependenciesList.cmake') }}
 
       - name: Package
         shell: pwsh
@@ -229,3 +246,53 @@ jobs:
             '- Unsigned. SmartScreen may warn; unzip and run Audacity.exe.',
             '- Checklist: docs/testing/tester-checklist.md'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+  windows-odin-probe:
+    name: Windows Odin static-library probe
+    if: ${{ inputs.platforms == 'windows-odin-probe' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out Alicorn at the revision Acetate pins
+        shell: pwsh
+        run: |
+          $pin = [regex]::Match((Get-Content cmake-proxies/cmake-modules/AlicornSnapUIPin.cmake -Raw), '[0-9a-f]{40}').Value
+          git clone --quiet $env:ALICORN_REPOSITORY alicorn
+          git -C alicorn checkout --quiet $pin
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release: dev-2026-11
+
+      - name: Try Odin static-library variants
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          odin version
+          odin report
+          $root = (Resolve-Path alicorn).Path -replace '\\', '/'
+          $src = "$((Get-Location).Path)/src/alicorn" -replace '\\', '/'
+          New-Item -ItemType Directory -Force out | Out-Null
+          $base = @('build', $src, "-collection:alicorn=$root", '-build-mode:lib', '-no-entry-point', '-target:windows_amd64')
+          $variants = [ordered]@{
+            'baseline'            = @()
+            'no-crt'              = @('-no-crt')
+            'linker-lld'          = @('-linker:lld')
+            'default-allocators'  = @('-default-to-nil-allocator')
+            'obj-mode'            = @('-build-mode:obj')
+          }
+          foreach ($name in $variants.Keys) {
+            $out = "$((Get-Location).Path)/out/$name.lib" -replace '\\', '/'
+            $args = $base + $variants[$name] + @("-out:$out")
+            Write-Host "::group::variant $name"
+            Write-Host "odin $($args -join ' ')"
+            & odin @args 2>&1 | Select-Object -First 30
+            Write-Host "exit code: $LASTEXITCODE"
+            Write-Host "::endgroup::"
+            Write-Host "RESULT $name exit=$LASTEXITCODE size=$((Get-Item $out -ErrorAction SilentlyContinue).Length)"
+          }
+          Get-ChildItem out | Format-Table Name, Length
