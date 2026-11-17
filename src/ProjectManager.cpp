@@ -8,6 +8,10 @@ Paul Licameli split from AudacityProject.cpp
 
 **********************************************************************/
 #include "ProjectManager.h"
+#include "CommandManager.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornMenuBar.h"
+#endif
 
 #include "ActiveProject.h"
 #include "AdornedRulerPanel.h"
@@ -196,6 +200,18 @@ void InitProjectWindow( ProjectWindow &window )
 
    {
       auto ubs = std::make_unique<wxBoxSizer>(wxVERTICAL);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      {
+         // An Alicorn-painted strip that mirrors the native menu bar. The
+         // native menu bar stays attached as the source of truth.
+         auto *menuStrip = safenew AlicornMenuBar(topPanel, &window);
+         menuStrip->SetBeforeOpen([pProject = project.weak_from_this()] {
+            if (auto p = pProject.lock())
+               CommandManager::Get(*p).UpdateMenus(false);
+         });
+         ubs->Add(menuStrip, 0, wxEXPAND | wxALIGN_TOP);
+      }
+#endif
       ubs->Add( ToolManager::Get( project ).GetTopDock(), 0, wxEXPAND | wxALIGN_TOP );
       topPanel->SetSizer(ubs.release());
    }
