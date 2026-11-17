@@ -212,17 +212,20 @@ timeline_view_build_description :: proc(
 			f32(label.height),
 			max(view.ruler_height-f32(max(label.y, 0)), 0.0),
 		)
+		// The label width was measured with the wx ruler font; Alicorn's font can
+		// be a few pixels wider, which ellipsized most labels. Give the text node
+		// slack and clip instead of eliding.
 		text_style := alicorn.Text_Style{
 			font_weight=label.font_weight,
 			font_size=label.font_size,
-			overflow=.Ellipsis,
+			overflow=.Clip,
 		}
 		text_value := string(mem.slice_ptr(label.text_utf8, int(label.text_length)))
 		_ = alicorn.text(
 			&ui,
 			text_value,
 			key=alicorn.key_u64(2),
-			style=alicorn.layout_style(width=f32(label.width), height=text_height),
+			style=alicorn.layout_style(width=f32(label.width)+12, height=text_height),
 			text_style=text_style,
 			color=alicorn.Color{label.color.r, label.color.g, label.color.b, label.color.a},
 		)
@@ -240,7 +243,6 @@ timeline_view_build_description :: proc(
 	ruler_overlay_ok := view.ruler_overlay_geometry_id != 0 &&
 		alicorn.grid_cell(&ui, view.ruler_overlay_geometry_id, 0, 0)
 	alicorn.grid_end(&ui)
-	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 
 	waveform_region := alicorn.scroll_region_begin(
@@ -400,6 +402,7 @@ timeline_view_build_description :: proc(
 		alicorn.grid_cell(&ui, waveform_labels_region, 0, 0)
 	alicorn.grid_end(&ui)
 	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return ruler_output_bound && waveform_output_bound && waveform_labels_bound && ruler_grid != 0 && ruler_geometry_ok && ruler_labels_ok && ruler_overlay_ok &&
 		waveform_region_grid != 0 && waveform_grid != 0 && waveform_geometry_ok && clip_affordance_geometry_ok && waveform_caret_overlay_ok &&
@@ -458,6 +461,15 @@ audacity_alicorn_timeline_view_create :: proc "c" (
 		ruler_height+waveform_height,
 	})
 	view.runtime_initialized = true
+	// Ruler and clip-title text cannot be shaped, so their paint runs never
+	// resolve, until the runtime has fonts. Fail creation instead so the host
+	// keeps drawing the timeline with wx.
+	if !alicorn.text_engine_load_default_fonts(&view.runtime) {
+		alicorn.destroy_runtime(&view.runtime)
+		view.runtime_initialized = false
+		free(view)
+		return nil
+	}
 	ruler_output, ruler_output_status := alicorn.presentation_output_register(&view.runtime)
 	if ruler_output_status != .Ok {
 		alicorn.destroy_runtime(&view.runtime)

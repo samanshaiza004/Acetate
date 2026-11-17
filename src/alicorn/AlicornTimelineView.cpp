@@ -444,7 +444,7 @@ bool AlicornTimelineView::DrawWaveform(
           pointMarkers, static_cast<uint64_t>(pointMarkerCount)) < 0)
       return false;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -565,7 +565,7 @@ bool AlicornTimelineView::DrawWaveformLabels(
       }
    }
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -629,7 +629,7 @@ bool AlicornTimelineView::DrawClipAffordances(
           static_cast<uint64_t>(markers.size())) < 0)
       return false;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -680,7 +680,7 @@ bool AlicornTimelineView::DrawVerticalIndicator(
       return false;
    mHasWaveformIndicators[indicatorIndex] = true;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -745,7 +745,7 @@ bool AlicornTimelineView::DrawSnapGuides(
    if (count > 0)
       mHasWaveformIndicators[indicatorIndex] = true;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -836,7 +836,7 @@ bool AlicornTimelineView::DrawZoomPreview(
    if (rect.IsEmpty())
       return true;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -874,7 +874,7 @@ bool AlicornTimelineView::ClearVerticalIndicator(
    if (rect.IsEmpty())
       return true;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -921,7 +921,7 @@ bool AlicornTimelineView::DrawRulerIndicator(
           mView, linePointer) < 0)
       return false;
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
    PaintContext context;
@@ -1113,7 +1113,7 @@ bool AlicornTimelineView::DrawRuler(
       mHasRulerFills = true;
    }
 
-   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::Create(&dc) };
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
    if (!graphics)
       return false;
 
