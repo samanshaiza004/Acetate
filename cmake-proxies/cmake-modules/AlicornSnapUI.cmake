@@ -66,14 +66,35 @@ file( GLOB_RECURSE alicorn_runtime_inputs CONFIGURE_DEPENDS
    "${AUDACITY_ALICORN_SOURCE}/text_interaction/*.odin"
    "${AUDACITY_ALICORN_SOURCE}/third_party/Runa/*.odin"
    "${AUDACITY_ALICORN_SOURCE}/assets/fonts/*.ttf" )
+if( WIN32 )
+   # Odin's static-library mode on Windows runs a real link and fails on the
+   # missing C runtime, so emit object files and archive them with lib.exe.
+   if( NOT CMAKE_AR )
+      find_program( CMAKE_AR lib REQUIRED )
+   endif()
+   set( alicorn_odin_objects "${alicorn_odin_dir}/objects" )
+   set( alicorn_odin_commands
+      COMMAND "${CMAKE_COMMAND}" -E rm -rf "${alicorn_odin_objects}"
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${alicorn_odin_objects}"
+      COMMAND "${AUDACITY_ALICORN_ODIN}" build "${AUDACITY_ALICORN_ROOT}/src/alicorn"
+         "-collection:alicorn=${AUDACITY_ALICORN_SOURCE}"
+         -build-mode:obj -no-entry-point "-target:${AUDACITY_ALICORN_ODIN_TARGET}"
+         "-out:${alicorn_odin_objects}/alicorn.obj"
+      COMMAND "${CMAKE_COMMAND}" "-DOBJECT_DIR=${alicorn_odin_objects}"
+         "-DARCHIVE=${alicorn_odin_archive}" "-DARCHIVER=${CMAKE_AR}"
+         -P "${CMAKE_CURRENT_LIST_DIR}/ArchiveAlicornObjects.cmake" )
+else()
+   set( alicorn_odin_commands
+      COMMAND "${AUDACITY_ALICORN_ODIN}" build "${AUDACITY_ALICORN_ROOT}/src/alicorn"
+         "-collection:alicorn=${AUDACITY_ALICORN_SOURCE}"
+         -build-mode:lib -no-entry-point "-target:${AUDACITY_ALICORN_ODIN_TARGET}"
+         "-out:${alicorn_odin_archive}" )
+endif()
 add_custom_command(
    OUTPUT "${alicorn_odin_archive}"
    COMMAND "${CMAKE_COMMAND}" -E rm -f "${alicorn_odin_archive}"
    COMMAND "${CMAKE_COMMAND}" -E make_directory "${alicorn_odin_dir}"
-   COMMAND "${AUDACITY_ALICORN_ODIN}" build "${AUDACITY_ALICORN_ROOT}/src/alicorn"
-      "-collection:alicorn=${AUDACITY_ALICORN_SOURCE}"
-      -build-mode:lib -no-entry-point "-target:${AUDACITY_ALICORN_ODIN_TARGET}"
-      "-out:${alicorn_odin_archive}"
+   ${alicorn_odin_commands}
    DEPENDS
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacitySnapView.odin"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityNumericTimeView.h"
