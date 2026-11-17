@@ -53,6 +53,25 @@
 #include "WindowAccessible.h"
 #endif
 
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornFields.h"
+namespace {
+DeviceChoice *MakeDeviceChoice(wxWindow *parent)
+{
+   return safenew AlicornChoiceField(
+      parent, wxID_ANY, wxString{}, wxDefaultPosition, wxDefaultSize, {});
+}
+}
+#else
+namespace {
+DeviceChoice *MakeDeviceChoice(wxWindow *parent)
+{
+   return safenew wxChoice(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize);
+}
+}
+#endif
+
 IMPLEMENT_CLASS(DeviceToolBar, ToolBar);
 
 ////////////////////////////////////////////////////////////
@@ -127,10 +146,7 @@ void DeviceToolBar::Populate()
    DeinitChildren();
 
    // Hosts
-   mHost = safenew wxChoice(this,
-                            wxID_ANY,
-                            wxDefaultPosition,
-                            wxDefaultSize);
+   mHost = MakeDeviceChoice(this);
 #if wxUSE_ACCESSIBILITY
    // so that name can be set on a standard control
    mHost->SetAccessible(safenew WindowAccessible(mHost));
@@ -141,10 +157,7 @@ void DeviceToolBar::Populate()
    Add(safenew AStaticBitmap(this,
                              wxID_ANY,
                              theTheme.Bitmap(bmpMic)), 0, wxALIGN_CENTER_VERTICAL);
-   mInput = safenew wxChoice(this,
-                             wxID_ANY,
-                             wxDefaultPosition,
-                             wxDefaultSize);
+   mInput = MakeDeviceChoice(this);
 #if wxUSE_ACCESSIBILITY
    // so that name can be set on a standard control
    mInput->SetAccessible(safenew WindowAccessible(mInput));
@@ -152,10 +165,7 @@ void DeviceToolBar::Populate()
    Add(mInput, 30, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, 1);
 
    // Input channels
-   mInputChannels = safenew wxChoice(this,
-                                     wxID_ANY,
-                                     wxDefaultPosition,
-                                     wxDefaultSize);
+   mInputChannels = MakeDeviceChoice(this);
 #if wxUSE_ACCESSIBILITY
    // so that name can be set on a standard control
    mInputChannels->SetAccessible(safenew WindowAccessible(mInputChannels));
@@ -166,10 +176,7 @@ void DeviceToolBar::Populate()
    Add(safenew AStaticBitmap(this,
                              wxID_ANY,
                              theTheme.Bitmap(bmpSpeaker)), 0, wxALIGN_CENTER_VERTICAL);
-   mOutput = safenew wxChoice(this,
-                              wxID_ANY,
-                              wxDefaultPosition,
-                              wxDefaultSize);
+   mOutput = MakeDeviceChoice(this);
 #if wxUSE_ACCESSIBILITY
    // so that name can be set on a standard control
    mOutput->SetAccessible(safenew WindowAccessible(mOutput));
@@ -632,7 +639,7 @@ void DeviceToolBar::SetDevices(const DeviceSourceMap *in, const DeviceSourceMap 
 void DeviceToolBar::ChangeDevice(bool isInput)
 {
    int newIndex = -1;
-   wxChoice *combo = isInput ? mInput :mOutput;
+   DeviceChoice *combo = isInput ? mInput :mOutput;
    size_t i;
 
    int selectionIndex  = combo->GetSelection();
@@ -728,7 +735,7 @@ void DeviceToolBar::ShowChannelsDialog()
    ShowComboDialog(mInputChannels, XO("Select Recording Channels"));
 }
 
-void DeviceToolBar::ShowComboDialog(wxChoice *combo, const TranslatableString &title)
+void DeviceToolBar::ShowComboDialog(DeviceChoice *combo, const TranslatableString &title)
 {
    if (!combo || combo->GetCount() == 0) {
       AudacityMessageBox( XO("Device information is not available.") );

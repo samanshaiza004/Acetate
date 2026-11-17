@@ -19,7 +19,13 @@ enum class DeviceChangeMessage : char;
 
 class wxSize;
 class wxPoint;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornChoiceField;
+using DeviceChoice = AlicornChoiceField;
+#else
 class wxChoice;
+using DeviceChoice = wxChoice;
+#endif
 struct DeviceSourceMap;
 
 class AudacityProject;
@@ -74,12 +80,12 @@ class DeviceToolBar final : public ToolBar {
    void SetDevices(const DeviceSourceMap *in, const DeviceSourceMap *out);
    void SetNames();
    void RegenerateTooltips() override;
-   void ShowComboDialog(wxChoice *combo, const TranslatableString &title);
+   void ShowComboDialog(DeviceChoice *combo, const TranslatableString &title);
 
-   wxChoice *mInput;
-   wxChoice *mOutput;
-   wxChoice *mInputChannels;
-   wxChoice *mHost;
+   DeviceChoice *mInput;
+   DeviceChoice *mOutput;
+   DeviceChoice *mInputChannels;
+   DeviceChoice *mHost;
 
    Observer::Subscription mSubscription;
 

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <wx/control.h>
+#include <wx/arrstr.h>
 #include <wx/string.h>
 
 #include "TranslatableString.h"
@@ -74,6 +75,19 @@ public:
 
    wxString GetValue() const;
    void SetValue(const wxString &value);
+
+   // The subset of wxChoice that the audio device toolbar relies on.
+   int GetSelection() const { return mSelection; }
+   void SetSelection(int index);
+   wxString GetString(unsigned index) const;
+   wxString GetStringSelection() const { return GetValue(); }
+   bool SetStringSelection(const wxString &value);
+   int FindString(const wxString &value) const;
+   unsigned GetCount() const { return static_cast<unsigned>(mItems.size()); }
+   wxArrayString GetStrings() const;
+   void Clear();
+   void Append(const wxString &item);
+   void Append(const wxArrayString &items);
 
    bool AcceptsFocus() const override { return IsEnabled(); }
    bool Enable(bool enable = true) override;

@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include <wx/dcclient.h>
+#include <wx/choice.h>
 #include <wx/dcmemory.h>
 #include <wx/popupwin.h>
 #include <wx/settings.h>
@@ -387,14 +388,30 @@ public:
       : wxPopupTransientWindow(owner, wxBORDER_SIMPLE)
       , mOwner{ owner }
    {
-      auto *sizer = safenew wxBoxSizer(wxVERTICAL);
-      for (size_t i = 0; i < items.size(); ++i) {
-         auto *option = safenew AlicornActionControl(
-            this, wxID_ANY, items[i], AUDACITY_ACTION_ICON_NONE,
-            wxSize{ std::max(width, 60), kHeight });
-         option->SetPressed(static_cast<int>(i) == selected);
-         sizer->Add(option, 0, wxEXPAND | wxALL, 1);
-         mOptions.push_back(option);
+      constexpr size_t rowsPerColumn = 14;
+      const size_t columns = std::max<size_t>(
+         1, (items.size() + rowsPerColumn - 1) / rowsPerColumn);
+      const size_t perColumn = std::max<size_t>(
+         1, (items.size() + columns - 1) / columns);
+      int optionWidth = std::max(width, 60);
+      for (const auto &item : items) {
+         wxCoord w{}, h{};
+         GetTextExtent(item, &w, &h);
+         optionWidth = std::max<int>(optionWidth, w + 24);
+      }
+      auto *sizer = safenew wxBoxSizer(wxHORIZONTAL);
+      for (size_t c = 0; c < columns; ++c) {
+         auto *column = safenew wxBoxSizer(wxVERTICAL);
+         for (size_t i = c * perColumn;
+              i < std::min(items.size(), (c + 1) * perColumn); ++i) {
+            auto *option = safenew AlicornActionControl(
+               this, wxID_ANY, items[i], AUDACITY_ACTION_ICON_NONE,
+               wxSize{ optionWidth, kHeight });
+            option->SetPressed(static_cast<int>(i) == selected);
+            column->Add(option, 0, wxEXPAND | wxALL, 1);
+            mOptions.push_back(option);
+         }
+         sizer->Add(column, 0, wxEXPAND);
       }
       SetSizerAndFit(sizer);
       // AlicornActionControl sends wxEVT_BUTTON to its parent, so listen here
@@ -495,17 +512,79 @@ bool AlicornChoiceField::Enable(bool enable)
    return result;
 }
 
+void AlicornChoiceField::SetSelection(int index)
+{
+   mSelection = index >= 0 && index < static_cast<int>(mItems.size()) ? index : -1;
+   Refresh(false);
+}
+
+wxString AlicornChoiceField::GetString(unsigned index) const
+{
+   return index < mItems.size() ? mItems[index] : wxString{};
+}
+
+bool AlicornChoiceField::SetStringSelection(const wxString &value)
+{
+   const int index = FindString(value);
+   if (index == wxNOT_FOUND)
+      return false;
+   SetSelection(index);
+   return true;
+}
+
+int AlicornChoiceField::FindString(const wxString &value) const
+{
+   for (size_t i = 0; i < mItems.size(); ++i)
+      if (mItems[i] == value)
+         return static_cast<int>(i);
+   return wxNOT_FOUND;
+}
+
+wxArrayString AlicornChoiceField::GetStrings() const
+{
+   wxArrayString result;
+   for (const auto &item : mItems)
+      result.Add(item);
+   return result;
+}
+
+void AlicornChoiceField::Clear()
+{
+   mItems.clear();
+   mSelection = -1;
+   Refresh(false);
+}
+
+void AlicornChoiceField::Append(const wxString &item)
+{
+   mItems.push_back(item);
+   Refresh(false);
+}
+
+void AlicornChoiceField::Append(const wxArrayString &items)
+{
+   for (const auto &item : items)
+      mItems.push_back(item);
+   Refresh(false);
+}
+
 void AlicornChoiceField::SelectItem(int index)
 {
    if (index < 0 || index >= static_cast<int>(mItems.size()) || index == mSelection)
       return;
    mSelection = index;
    Refresh(false);
-   wxCommandEvent event(wxEVT_COMBOBOX, GetId());
-   event.SetEventObject(this);
-   event.SetString(mItems[index]);
-   event.SetInt(index);
-   ProcessWindowEvent(event);
+   wxCommandEvent comboEvent(wxEVT_COMBOBOX, GetId());
+   comboEvent.SetEventObject(this);
+   comboEvent.SetString(mItems[index]);
+   comboEvent.SetInt(index);
+   ProcessWindowEvent(comboEvent);
+   // Also report as a wxChoice would, for owners that handle EVT_CHOICE.
+   wxCommandEvent choiceEvent(wxEVT_CHOICE, GetId());
+   choiceEvent.SetEventObject(this);
+   choiceEvent.SetString(mItems[index]);
+   choiceEvent.SetInt(index);
+   ProcessWindowEvent(choiceEvent);
 }
 
 void AlicornChoiceField::PopupClosed()
