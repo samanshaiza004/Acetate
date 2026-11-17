@@ -15,8 +15,10 @@
 #include "Prefs.h"
 #include "Project.h"
 #include "ProjectFileIO.h"
+#include "AudioIO.h"
 #include "FileNames.h"
 #include "SampleFormat.h"
+#include "StretchingSequence.h"
 #include "TempDirectory.h"
 #include "sqlite/SQLiteUtils.h"
 #include "Track.h"
@@ -51,15 +53,20 @@ struct AcetateBackend {
       paInitialized = Pa_Initialize() == paNoError;
       // The bundled SQLite is built without auto-initialisation.
       audacity::sqlite::Initialize();
+      AudioIO::Init();
       project = AudacityProject::Create();
       // A temporary database backs the sample blocks, as for a new project.
       ProjectFileIO::Get(*project).OpenProject();
    }
    ~AcetateBackend()
    {
+      if (auto *audioIO = AudioIO::Get())
+         if (audioIO->IsBusy())
+            audioIO->StopStream();
       if (project)
          ProjectFileIO::Get(*project).CloseProject();
       project.reset();
+      AudioIO::Deinit();
       if (paInitialized)
          Pa_Terminate();
       std::error_code ec;
@@ -230,4 +237,85 @@ int acetate_backend_waveform(
       backend->error = "unexpected error reading waveform";
    }
    return -1;
+}
+
+int acetate_backend_play(AcetateBackend *backend, double t0, double t1)
+{
+   if (!backend)
+      return 1;
+   backend->error.clear();
+   try {
+      auto *audioIO = AudioIO::Get();
+      if (!audioIO) {
+         backend->error = "audio engine is not initialised";
+         return 2;
+      }
+      acetate_backend_update(backend);
+      if (audioIO->IsBusy()) {
+         backend->error = "audio engine is busy";
+         return 3;
+      }
+      auto &tracks = TrackList::Get(*backend->project);
+      TransportSequences sequences;
+      for (auto *track : tracks.Any<WaveTrack>())
+         sequences.playbackSequences.push_back(
+            StretchingSequence::Create(*track, track->GetClipInterfaces()));
+      if (sequences.playbackSequences.empty()) {
+         backend->error = "nothing to play";
+         return 4;
+      }
+      const double end = tracks.GetEndTime();
+      t0 = std::clamp(t0, 0.0, end);
+      t1 = std::clamp(t1, 0.0, end);
+      if (!(t1 > t0)) {
+         backend->error = "empty play region";
+         return 5;
+      }
+      AudioIOStartStreamOptions options{
+         backend->project, (*tracks.Any<WaveTrack>().begin())->GetRate() };
+      options.playNonWaveTracks = false;
+      const int token = audioIO->StartStream(sequences, t0, t1, t1, options);
+      if (token == 0) {
+         backend->error = "the audio device could not start the stream";
+         return 6;
+      }
+      return 0;
+   }
+   catch (const std::exception &e) {
+      backend->error = e.what();
+   }
+   catch (...) {
+      backend->error = "unexpected error starting playback";
+   }
+   return 7;
+}
+
+void acetate_backend_stop(AcetateBackend *backend)
+{
+   if (!backend)
+      return;
+   if (auto *audioIO = AudioIO::Get())
+      if (audioIO->IsBusy())
+         audioIO->StopStream();
+}
+
+void acetate_backend_update(AcetateBackend *backend)
+{
+   auto *audioIO = backend ? AudioIO::Get() : nullptr;
+   if (audioIO && audioIO->IsBusy() && !audioIO->IsStreamActive())
+      audioIO->StopStream();
+}
+
+int acetate_backend_is_playing(const AcetateBackend *backend)
+{
+   auto *audioIO = backend ? AudioIO::Get() : nullptr;
+   return audioIO && audioIO->IsStreamActive() ? 1 : 0;
+}
+
+double acetate_backend_play_position(const AcetateBackend *backend)
+{
+   auto *audioIO = backend ? AudioIO::Get() : nullptr;
+   if (!audioIO || !audioIO->IsStreamActive())
+      return -1.0;
+   return audioIO->GetStreamTime();
 }

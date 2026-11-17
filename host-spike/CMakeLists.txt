@@ -23,6 +23,8 @@ target_link_libraries( acetate-host-backend
       lib-project
       lib-project-file-io
       lib-wave-track
+      lib-audio-io
+      lib-stretching-sequence
       lib-preferences-interface
       lib-file-formats
       lib-sqlite-helpers

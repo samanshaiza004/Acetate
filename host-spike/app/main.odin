@@ -30,10 +30,15 @@ foreign backend {
 	acetate_backend_track_start :: proc(b: Backend, track: i32) -> f64 ---
 	acetate_backend_track_end :: proc(b: Backend, track: i32) -> f64 ---
 	acetate_backend_project_end :: proc(b: Backend) -> f64 ---
+	acetate_backend_update :: proc(b: Backend) ---
+	acetate_backend_play :: proc(b: Backend, t0, t1: f64) -> i32 ---
+	acetate_backend_stop :: proc(b: Backend) ---
+	acetate_backend_is_playing :: proc(b: Backend) -> i32 ---
+	acetate_backend_play_position :: proc(b: Backend) -> f64 ---
 	acetate_backend_waveform :: proc(b: Backend, track, channel: i32, t0, t1: f64, columns: i32, min_max: [^]f32) -> i32 ---
 }
 
-EXPECTED_ABI :: 1
+EXPECTED_ABI :: 3
 MAX_COLUMNS :: 1024
 MAX_CHANNELS :: 2
 REFRESH_PERIOD :: 33 * 1_000_000
@@ -45,6 +50,7 @@ Channel_View :: struct {
 	height:   f32,
 	columns:  i32,
 	revision: u64,
+	playhead: i32, // pixel column of the playhead, -1 when idle
 	drawn:    bool,
 }
 
@@ -54,8 +60,38 @@ App :: struct {
 	channels:  int,
 	rate:      f64,
 	duration:  f64,
+	playing:   bool,
+	position:  f64,
+	status:    string,
 	views:     [MAX_CHANNELS]Channel_View,
 	scheduler: host.Application_Scheduler,
+}
+
+// Starts or stops playback through Audacity's audio engine. Runs on the host's
+// main thread; the audio thread never calls back into this program.
+toggle_playback :: proc(app: ^App) {
+	if app.playing {
+		acetate_backend_stop(app.backend)
+		app.playing = false
+		app.status = "Stopped"
+		return
+	}
+	if status := acetate_backend_play(app.backend, 0, app.duration); status != 0 {
+		app.status = fmt.aprintf("Play failed (%d): %s", status, acetate_backend_last_error(app.backend))
+		return
+	}
+	app.playing = true
+	app.status = "Playing"
+}
+
+key_app :: proc(state: rawptr, rt: ^alicorn.Runtime, key: alicorn.Application_Key) -> bool {
+	app := cast(^App)state
+	if key == .Toggle {
+		toggle_playback(app)
+		alicorn.invalidate_root(rt, "playback toggled from keyboard")
+		return true
+	}
+	return false
 }
 
 build_app :: proc(
@@ -75,6 +111,12 @@ build_app :: proc(
 			"%s · %d channel(s) · %.0f Hz · %.3f s",
 			app.file_name, app.channels, app.rate, app.duration,
 		), color = TEXT)
+		if ui.row(&ctx, gap = 12, align = .Center, label = "transport") {
+			if ui.button(&ctx, "Stop" if app.playing else "Play", width = 96) {
+				toggle_playback(app)
+			}
+			ui.text(&ctx, app.status, color = TEXT)
+		}
 		for channel in 0 ..< app.channels {
 			label := fmt.tprintf("channel-%d-panel", channel)
 			if ui.panel(&ctx, key = u64(channel), grow = 1, padding = 4, clip = true, fill = ui.rgb(0x131822), label = label) {
@@ -114,7 +156,11 @@ refresh_channel :: proc(app: ^App, rt: ^alicorn.Runtime, channel: int) {
 	revision := acetate_backend_revision(app.backend)
 	columns := i32(min(int(width), MAX_COLUMNS))
 	if columns < 1 { columns = 1 }
-	if view.drawn && view.width == width && view.height == height && view.columns == columns && view.revision == revision {
+	playhead: i32 = -1
+	if app.playing && app.position >= 0 && app.duration > 0 {
+		playhead = i32(clamp(app.position / app.duration, 0, 1) * f64(width))
+	}
+	if view.drawn && view.width == width && view.height == height && view.columns == columns && view.revision == revision && view.playhead == playhead {
 		return
 	}
 
@@ -122,7 +168,7 @@ refresh_channel :: proc(app: ^App, rt: ^alicorn.Runtime, channel: int) {
 	count := acetate_backend_waveform(app.backend, 0, i32(channel), 0, app.duration, columns, raw_data(min_max[:]))
 	if count != columns { return }
 
-	rectangles: [MAX_COLUMNS + 1]alicorn.GPU_Surface_Filled_Rectangle
+	rectangles: [MAX_COLUMNS + 2]alicorn.GPU_Surface_Filled_Rectangle
 	used := 0
 	centre := height * 0.5
 	// Zero line.
@@ -146,14 +192,29 @@ refresh_channel :: proc(app: ^App, rt: ^alicorn.Runtime, channel: int) {
 		}
 		used += 1
 	}
+	if playhead >= 0 {
+		rectangles[used] = alicorn.GPU_Surface_Filled_Rectangle{
+			bounds = alicorn.Rect{f32(playhead), 0, 2, height},
+			color  = alicorn.Color{1, 0.74, 0.28, 1},
+		}
+		used += 1
+	}
 	if alicorn.gpu_surface_update_geometry_with_rectangles(rt, view.surface, rectangles[:used], nil, nil) {
-		view.width, view.height, view.columns, view.revision = width, height, columns, revision
+		view.width, view.height, view.columns, view.revision, view.playhead = width, height, columns, revision, playhead
 		view.drawn = true
 	}
 }
 
 scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
 	app := cast(^App)state
+	acetate_backend_update(app.backend)
+	if app.playing && acetate_backend_is_playing(app.backend) == 0 {
+		// The stream reached its end by itself.
+		app.playing = false
+		app.status = "Finished"
+		alicorn.invalidate_root(rt, "playback finished")
+	}
+	app.position = acetate_backend_play_position(app.backend)
 	for channel in 0 ..< app.channels {
 		refresh_channel(app, rt, channel)
 	}
@@ -175,7 +236,7 @@ main :: proc() {
 		fmt.eprintln("backend ABI mismatch")
 		os.exit(1)
 	}
-	app := App{}
+	app := App{status = "Ready · Space or the button plays", position = -1}
 	app.backend = acetate_backend_create()
 	if app.backend == nil {
 		fmt.eprintln("could not create the Audacity backend")
@@ -199,6 +260,7 @@ main :: proc() {
 		width = 1100,
 		height = 640,
 		build = build_app,
+		on_key = key_app,
 		on_services = services_app,
 		on_start = start_app,
 		on_scheduled_wake = scheduled_wake_app,

@@ -18,7 +18,7 @@ extern "C" {
 typedef struct AcetateBackend AcetateBackend;
 
 // Bumped whenever the exported surface changes shape.
-#define ACETATE_BACKEND_ABI_VERSION 1
+#define ACETATE_BACKEND_ABI_VERSION 3
 
 ACETATE_BACKEND_API int acetate_backend_abi_version(void);
 
@@ -58,6 +58,25 @@ ACETATE_BACKEND_API double acetate_backend_project_end(
 ACETATE_BACKEND_API int acetate_backend_waveform(
    AcetateBackend *backend, int track, int channel, double t0, double t1,
    int columns, float *minMax);
+
+// Transport. All calls must come from the host's main thread; Audacity's audio
+// thread keeps running the stream and never calls back into the host.
+//
+// Starts playback of every wave track over [t0, t1) seconds. Returns 0 on
+// success; otherwise non-zero with a message in acetate_backend_last_error.
+ACETATE_BACKEND_API int acetate_backend_play(
+   AcetateBackend *backend, double t0, double t1);
+ACETATE_BACKEND_API void acetate_backend_stop(AcetateBackend *backend);
+// Main-thread tick: finalises a stream that has reached its end (the audio
+// thread only stops producing; Audacity expects the main thread to call
+// StopStream). Call it regularly, e.g. from the host's frame callback.
+ACETATE_BACKEND_API void acetate_backend_update(AcetateBackend *backend);
+// Non-zero while the audio stream for the last play call is running.
+ACETATE_BACKEND_API int acetate_backend_is_playing(
+   const AcetateBackend *backend);
+// Current playback position in seconds, or a negative value when idle.
+ACETATE_BACKEND_API double acetate_backend_play_position(
+   const AcetateBackend *backend);
 
 #ifdef __cplusplus
 }
