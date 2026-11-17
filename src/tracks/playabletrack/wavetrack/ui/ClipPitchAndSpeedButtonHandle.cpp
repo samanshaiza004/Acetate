@@ -9,6 +9,7 @@
 
 **********************************************************************/
 #include "ClipPitchAndSpeedButtonHandle.h"
+#include "../../../ui/RetainedTrackControls.h"
 #include "AllThemeResources.h"
 #include "BasicUI.h"
 #include "HitTestResult.h"
@@ -85,7 +86,8 @@ wxString GetPlaybackSpeedText(double clipStretchRatio)
 }
 
 void DrawPitchOrSpeedIconIfItFits(
-   wxDC& dc, const wxRect& rect, const wxBitmap& icon, const wxString& text)
+   wxDC& dc, const wxRect& rect, const wxBitmap& icon, const wxString& text,
+   int iconDirection = 0)
 {
    const auto textExtent = dc.GetTextExtent(text);
    const auto textWidth = textExtent.GetWidth();
@@ -99,8 +101,31 @@ void DrawPitchOrSpeedIconIfItFits(
    const auto height = rect.GetHeight();
    const auto iconTop = rect.GetTop() + (height - iconHeight) / 2;
    const auto x = rect.x + (rect.width - contentWidth) / 2;
-   dc.DrawBitmap(icon, x, iconTop);
    const auto y = rect.GetTop() + (height - textHeight) / 2;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto *scene = RetainedTrackControls::Current()) {
+      // The theme icon is replaced by a small vector arrow pair; the caller
+      // chooses which by passing the matching bitmap.
+      const auto colour = theTheme.Colour(clrClipNameText);
+      const int cx = x + iconWidth / 2, cy = iconTop + iconHeight / 2;
+      const int dir = iconDirection;
+      if (dir != 0) {
+         scene->Line({ cx - 3, cy + dir * 2 }, { cx, cy - dir * 2 }, colour, 1.5f);
+         scene->Line({ cx, cy - dir * 2 }, { cx + 3, cy + dir * 2 }, colour, 1.5f);
+      }
+      else {
+         scene->Line({ cx - 3, cy - 3 }, { cx + 1, cy }, colour, 1.5f);
+         scene->Line({ cx + 1, cy }, { cx - 3, cy + 3 }, colour, 1.5f);
+         scene->Line({ cx + 1, cy - 3 }, { cx + 5, cy }, colour, 1.5f);
+         scene->Line({ cx + 5, cy }, { cx + 1, cy + 3 }, colour, 1.5f);
+      }
+      scene->Text(
+         wxRect(x + iconWidth, y, std::max(1, rect.GetRight() - x - iconWidth + 1), textHeight),
+         text, theTheme.Colour(clrClipNameText), dc.GetFont());
+      return;
+   }
+#endif
+   dc.DrawBitmap(icon, x, iconTop);
    dc.DrawText(text, x + iconWidth, y);
 }
 } // namespace
@@ -224,7 +249,7 @@ void ClipButtonSpecializations<ClipButtonId::Pitch>::DrawOnClip(
       dc, rect,
       theTheme.Bitmap(
          clipCentShift > 0 ? pitchUpIndicator : pitchDownIndicator),
-      pitchText);
+      pitchText, clipCentShift > 0 ? 1 : -1);
 }
 
 void ClipButtonSpecializations<ClipButtonId::Speed>::DrawOnClip(

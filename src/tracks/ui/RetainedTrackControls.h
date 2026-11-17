@@ -87,6 +87,42 @@ inline void Outline(Scene& scene, const wxRect& r, const wxColour& colour)
    }
 }
 
+// A one-pixel rounded outline: straight edges between four quarter-circle
+// corners approximated by short segments.
+inline void RoundedOutline(
+   Scene& scene, const wxRect& r, int radius, const wxColour& colour)
+{
+   if (r.width <= 0 || r.height <= 0)
+      return;
+   radius = std::max(0, std::min({ radius, r.width / 2, r.height / 2 }));
+   if (radius == 0) {
+      Outline(scene, r, colour);
+      return;
+   }
+   const int left = r.x, top = r.y, right = r.GetRight(), bottom = r.GetBottom();
+   scene.Fill(wxRect(left + radius, top, std::max(0, r.width - 2 * radius), 1), colour);
+   scene.Fill(wxRect(left + radius, bottom, std::max(0, r.width - 2 * radius), 1), colour);
+   scene.Fill(wxRect(left, top + radius, 1, std::max(0, r.height - 2 * radius)), colour);
+   scene.Fill(wxRect(right, top + radius, 1, std::max(0, r.height - 2 * radius)), colour);
+   constexpr double pi = 3.14159265358979323846;
+   constexpr int steps = 6;
+   const auto arc = [&](int cx, int cy, int sx, int sy) {
+      wxPoint previous{ cx + sx * radius, cy };
+      for (int i = 1; i <= steps; ++i) {
+         const double angle = (pi / 2) * i / steps;
+         const wxPoint point{
+            cx + sx * static_cast<int>(std::lround(radius * std::cos(angle))),
+            cy + sy * static_cast<int>(std::lround(radius * std::sin(angle))) };
+         scene.Line(previous, point, colour);
+         previous = point;
+      }
+   };
+   arc(left + radius, top + radius, -1, -1);
+   arc(right - radius, top + radius, 1, -1);
+   arc(left + radius, bottom - radius, -1, 1);
+   arc(right - radius, bottom - radius, 1, 1);
+}
+
 // A dashed outline, as wxBLACK_DASHED_PEN draws a rectangle.
 inline void DashedOutline(Scene& scene, const wxRect& r, const wxColour& colour)
 {

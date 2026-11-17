@@ -9,6 +9,7 @@
 
 **********************************************************************/
 #include "ClipOverflowButtonHandle.h"
+#include "../../../ui/RetainedTrackControls.h"
 #include "AllThemeResources.h"
 #include "HitTestResult.h"
 #include "LowlitClipButton.h"
@@ -88,6 +89,20 @@ void ClipButtonSpecializations<ClipButtonId::Overflow>::DrawOnClip(
 {
    auto& dc = args.dc;
    const auto& rect = args.rect;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto *scene = RetainedTrackControls::Current()) {
+      const auto colour = theTheme.Colour(clrClipNameText);
+      constexpr auto spacing = 4;
+      constexpr auto totalWidth = 3 * 2 + 2 * spacing;
+      const float y = static_cast<float>(rect.y + (rect.height + 1 - 1) / 2) + 0.5f;
+      for (auto i = 0; i < 3; ++i) {
+         const float x = static_cast<float>(
+            rect.x + (rect.width + 1 - totalWidth) / 2 + i * (2 + spacing)) + 0.5f;
+         scene->Dot(x, y, 3.0f, colour);
+      }
+      return;
+   }
+#endif
    constexpr auto penWidth = 0;
    wxDCPenChanger pen { args.dc, { wxPenInfo { theTheme.Colour(clrClipNameText), penWidth } } };
    wxDCBrushChanger brush { dc, theTheme.Colour(clrClipNameText) };

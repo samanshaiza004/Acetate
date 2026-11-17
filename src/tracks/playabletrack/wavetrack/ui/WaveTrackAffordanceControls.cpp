@@ -25,6 +25,7 @@
 #include "../../../../TrackArt.h"
 #include "../../../../TrackArtist.h"
 #include "../../../../TrackPanelDrawingContext.h"
+#include "../../../ui/RetainedTrackControls.h"
 #include "ViewInfo.h"
 #include "WaveTrack.h"
 #include "WaveClip.h"
@@ -380,6 +381,11 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
             }
          }
 #endif
+         // The loop below draws affordance outlines, folded clips and the
+         // lowlit buttons. With the retained runtime it collects them into one
+         // scene (via RetainedTrackControls::Current) that is painted once; if
+         // that paint fails the loop runs again with wx drawing.
+         const auto drawIntervals = [&]() {
          for(auto it = intervals.begin(); it != intervals.end(); ++it)
          {
              auto interval = *it;
@@ -466,6 +472,30 @@ void WaveTrackAffordanceControls::Draw(TrackPanelDrawingContext& context, const 
 #endif
                 }
          }
+         };
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         {
+            bool drawnRetained = false;
+            if (artist->parent) {
+               if (auto* view = artist->parent->GetAlicornTimelineView()) {
+                  RetainedTrackControls::Scene chromeScene;
+                  {
+                     RetainedTrackControls::Scope scope{ &chromeScene };
+                     drawIntervals();
+                  }
+                  drawnRetained = chromeScene.Empty() ||
+                     view->DrawTrackControls(context.dc, rect, chromeScene);
+               }
+            }
+            if (!drawnRetained) {
+               retainedTitleLabels.clear();
+               mVisibleIntervals.clear();
+               drawIntervals();
+            }
+         }
+#else
+         drawIntervals();
+#endif
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
          bool retainedTitlesDrawn = false;
          if (artist->parent) {

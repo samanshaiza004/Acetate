@@ -20,6 +20,7 @@
 #include "TrackArtist.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "alicorn/AlicornTimelineView.h"
+#include "tracks/ui/RetainedTrackControls.h"
 #include "ProjectWindow.h"
 #include "TrackPanel.h"
 #endif
@@ -272,6 +273,18 @@ void TrackArt::DrawClipAffordanceOutline(
    const ClipAffordanceGeometry& geometry,
    bool selected)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto *scene = RetainedTrackControls::Current()) {
+      if (selected)
+         RetainedTrackControls::RoundedOutline(
+            *scene, geometry.selectedOutline, geometry.radius,
+            theTheme.Colour(clrClipAffordanceStroke));
+      RetainedTrackControls::RoundedOutline(
+         *scene, geometry.background, geometry.radius,
+         theTheme.Colour(clrClipAffordanceOutlinePen));
+      return;
+   }
+#endif
    if (selected) {
       dc.SetBrush(*wxTRANSPARENT_BRUSH);
       AColor::UseThemeColour(
@@ -439,6 +452,12 @@ bool TrackArt::DrawClipEdges(
 
 void TrackArt::DrawClipFolded(wxDC& dc, const wxRect& rect)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto *scene = RetainedTrackControls::Current()) {
+      scene->Fill(rect, theTheme.Colour(clrClipAffordanceOutlinePen));
+      return;
+   }
+#endif
    AColor::UseThemeColour(&dc, clrClipAffordanceOutlinePen);
    dc.DrawRectangle(rect);
 }

@@ -20,7 +20,7 @@ The Time toolbar's audio-position clock, the record and playback meters, both sc
 | Toolbar docking chrome, grabbers, floating frames | `toolbars/ToolDock.cpp`, `ToolManager.cpp`, `ToolBar.cpp` | ~3.6k | Last toolbar step; floating `ToolFrame` is a native window and belongs with the host swap. |
 | Menu bar and context menus | `MenuRegistry`, `commands/*` | large | Native menus; replacing them needs an Alicorn menu surface plus keyboard/accelerator and screen-reader parity. |
 | Dialogs (`ShuttleGui`, ~170 files; ~100 `wxDialog` users) | everywhere | very large | Preferences, export, import options, effect UIs. Highest effort; route by usage frequency, keep native file pickers. |
-| Track panel remnants: sync-lock tiles, affordance outlines/buttons, in-place title editing, scrub text | `TrackArt.cpp`, `WaveTrackAffordanceControls.cpp`, `TextEditHelper.cpp`, `ScrubUI.cpp` | small | The panel margins, resizer and background cells, vertical-ruler background and borders, track outline and focus ring, sub-view separators, vertical zoom preview and the sync-lock glyph now paint through retained scenes. Sync-lock tiling, the clip affordance outlines and buttons, title editing and scrub text remain wx. |
+| Track panel remnants: sync-lock tiling, highlit (hover) clip buttons, in-place title editing, scrub text | `TrackArt.cpp`, `TextEditHelper.cpp`, `ScrubUI.cpp` | small | Clip affordance outlines, folded clips and the lowlit overflow/pitch/speed buttons now go through one retained scene per track affordance row (with a rerun-in-wx fallback). The hover-state buttons, the title text editor, sync-lock tiling and scrub speed text remain wx; the pitch and speed icons are simplified vector glyphs. |
 
 ## Order
 
