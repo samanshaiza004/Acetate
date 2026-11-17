@@ -210,6 +210,16 @@ void InitProjectWindow( ProjectWindow &window )
                CommandManager::Get(*p).UpdateMenus(false);
          });
          ubs->Add(menuStrip, 0, wxEXPAND | wxALIGN_TOP);
+         // F10 opens the first menu of the strip, as on Windows and GTK.
+         window.Bind(
+            wxEVT_CHAR_HOOK,
+            [menuStrip = wxWeakRef<AlicornMenuBar>(menuStrip)](wxKeyEvent &event) {
+               if (menuStrip && event.GetKeyCode() == WXK_F10 &&
+                   !event.HasAnyModifiers())
+                  menuStrip->OpenFirst();
+               else
+                  event.Skip();
+            });
       }
 #endif
       ubs->Add( ToolManager::Get( project ).GetTopDock(), 0, wxEXPAND | wxALIGN_TOP );

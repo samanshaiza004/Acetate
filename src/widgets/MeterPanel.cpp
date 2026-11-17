@@ -78,6 +78,7 @@
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "../alicorn/AlicornTimelineView.h"
 #include "RetainedLWSlider.h"
+#include "AlicornMenu.h"
 #endif
 #include "../widgets/valnum.h"
 
@@ -2163,6 +2164,35 @@ void MeterPanel::RestoreState(const State &state)
 
 void MeterPanel::ShowMenu(const wxPoint & pos)
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      // Asynchronous Alicorn menu: the session owns its model, and each
+      // action re-checks that the panel still exists when it runs.
+      wxWeakRef<MeterPanel> self{ this };
+      const auto send = [self](int id) {
+         if (!self)
+            return;
+         wxCommandEvent event(wxEVT_MENU, id);
+         event.SetEventObject(self.get());
+         self->GetEventHandler()->ProcessEvent(event);
+      };
+      AlicornMenu::Model model;
+      if (mIsInput) {
+         AlicornMenu::Item monitor;
+         monitor.label = mMonitoring ? _("Disable Silent Monitoring")
+                                     : _("Enable Silent Monitoring");
+         monitor.enabled = !mActive || mMonitoring;
+         monitor.action = [send] { send(OnMonitorID); };
+         model.push_back(std::move(monitor));
+      }
+      AlicornMenu::Item options;
+      options.label = _("Options...");
+      options.action = [send] { send(OnPreferencesID); };
+      model.push_back(std::move(options));
+      AlicornMenu::Show(*this, ClientToScreen(pos), std::move(model));
+      return;
+   }
+#endif
    wxMenu menu;
    // Note: these should be kept in the same order as the enum
    if (mIsInput) {

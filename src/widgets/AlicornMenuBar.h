@@ -31,9 +31,8 @@ public:
 
    bool AcceptsFocus() const override { return false; }
 
-   // Popup-side services.
-   void Activate(wxMenu *menu, int itemId);
-   void PopupClosed();
+   // Opens the first menu, for keyboard access (F10).
+   void OpenFirst() { OpenMenu(0); }
 
 protected:
    wxSize DoGetBestSize() const override;
@@ -46,6 +45,7 @@ private:
    std::vector<Title> Titles() const;
    int TitleAt(const wxPoint &point) const;
    void OpenMenu(int index);
+   void OnMenuClosed();
 
    void OnPaint(wxPaintEvent &event);
    void OnLeftDown(wxMouseEvent &event);
