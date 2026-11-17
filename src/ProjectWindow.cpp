@@ -17,6 +17,12 @@ Paul Licameli split from AudacityProject.cpp
 #include "ProjectFileIO.h"
 #include "ProjectWindows.h"
 #include "ProjectStatus.h"
+#include "widgets/ProjectScrollBar.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornScrollBar.h"
+#include "alicorn/AlicornTimelineView.h"
+#include <wx/dcclient.h>
+#endif
 #include "ViewInfo.h"
 #include "WaveClip.h"
 #include "WaveTrack.h"
@@ -375,6 +381,31 @@ BEGIN_EVENT_TABLE(ScrollBar, wxScrollBar)
    EVT_SET_FOCUS(ScrollBar::OnSetFocus)
 END_EVENT_TABLE()
 
+// Lets ProjectWindow treat the native scrollbar like the Alicorn one.
+class WxScrollBarAdapter final : public ProjectScrollBar
+{
+public:
+   explicit WxScrollBarAdapter(ScrollBar *bar) : mBar{ bar } {}
+   wxWindow *Window() override { return mBar; }
+   int GetThumbPosition() const override { return mBar->GetThumbPosition(); }
+   int GetThumbSize() const override { return mBar->GetThumbSize(); }
+   int GetRange() const override { return mBar->GetRange(); }
+   int GetPageSize() const override { return mBar->GetPageSize(); }
+   void SetThumbPosition(int position) override
+   {
+      mBar->SetThumbPosition(position);
+   }
+   void SetScrollbar(
+      int position, int thumbSize, int range, int pageSize,
+      bool refresh) override
+   {
+      mBar->SetScrollbar(position, thumbSize, range, pageSize, refresh);
+   }
+
+private:
+   ScrollBar *mBar;
+};
+
 AttachedWindows::RegisteredFactory sProjectWindowKey{
    []( AudacityProject &parent ) -> wxWeakRef< wxWindow > {
       wxRect wndRect;
@@ -596,8 +627,28 @@ ProjectWindow::ProjectWindow(wxWindow * parent, wxWindowID id,
    //      creating the scrollbars after the TrackPanel, we resolve
    //      several focus problems.
 
-   mHsbar = safenew ScrollBar(mTrackListWindow, HSBarID, wxSB_HORIZONTAL);
-   mVsbar = safenew ScrollBar(mTrackListWindow, VSBarID, wxSB_VERTICAL);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      auto *hbar = safenew AlicornScrollBar(
+         mTrackListWindow, HSBarID, wxSB_HORIZONTAL);
+      auto *vbar = safenew AlicornScrollBar(
+         mTrackListWindow, VSBarID, wxSB_VERTICAL);
+      mHsbar = hbar;
+      mVsbar = vbar;
+      // The wx window owns these controls.
+      mHsbarApi = std::shared_ptr<ProjectScrollBar>(hbar, [](auto*){});
+      mVsbarApi = std::shared_ptr<ProjectScrollBar>(vbar, [](auto*){});
+   }
+#else
+   {
+      auto *hbar = safenew ScrollBar(mTrackListWindow, HSBarID, wxSB_HORIZONTAL);
+      auto *vbar = safenew ScrollBar(mTrackListWindow, VSBarID, wxSB_VERTICAL);
+      mHsbar = hbar;
+      mVsbar = vbar;
+      mHsbarApi = std::make_shared<WxScrollBarAdapter>(hbar);
+      mVsbarApi = std::make_shared<WxScrollBarAdapter>(vbar);
+   }
+#endif
 #if wxUSE_ACCESSIBILITY
    // so that name can be set on a standard control
    mHsbar->SetAccessible(safenew WindowAccessible(mHsbar));
@@ -794,28 +845,28 @@ void ProjectWindow::SetChannelHeights(Track &track, unsigned height)
 
 int ProjectWindow::GetHorizontalThumbPosition() const
 {
-   return mHsbar->GetThumbPosition();
+   return mHsbarApi->GetThumbPosition();
 }
 
 int ProjectWindow::GetHorizontalThumbSize() const
 {
-   return mHsbar->GetThumbSize();
+   return mHsbarApi->GetThumbSize();
 }
 
 int ProjectWindow::GetHorizontalRange() const
 {
-   return mHsbar->GetRange();
+   return mHsbarApi->GetRange();
 }
 
 void ProjectWindow::SetHorizontalThumbPosition(int viewStart)
 {
-   mHsbar->SetThumbPosition(viewStart);
+   mHsbarApi->SetThumbPosition(viewStart);
 }
 
 void ProjectWindow::SetHorizontalScrollbar(int position, int thumbSize,
    int range, int pageSize, bool refresh)
 {
-   mHsbar->SetScrollbar(position, thumbSize, range, pageSize, refresh);
+   mHsbarApi->SetScrollbar(position, thumbSize, range, pageSize, refresh);
 }
 
 void ProjectWindow::ShowHorizontalScrollbar(bool shown)
@@ -829,28 +880,28 @@ void ProjectWindow::ShowHorizontalScrollbar(bool shown)
 
 int ProjectWindow::GetVerticalThumbPosition() const
 {
-   return mVsbar->GetThumbPosition();
+   return mVsbarApi->GetThumbPosition();
 }
 
 int ProjectWindow::GetVerticalThumbSize() const
 {
-   return mVsbar->GetThumbSize();
+   return mVsbarApi->GetThumbSize();
 }
 
 int ProjectWindow::GetVerticalRange() const
 {
-   return mVsbar->GetRange();
+   return mVsbarApi->GetRange();
 }
 
 void ProjectWindow::SetVerticalThumbPosition(int viewStart)
 {
-   mVsbar->SetThumbPosition(viewStart);
+   mVsbarApi->SetThumbPosition(viewStart);
 }
 
 void ProjectWindow::SetVerticalScrollbar(int position, int thumbSize,
    int range, int pageSize, bool refresh)
 {
-   mVsbar->SetScrollbar(position, thumbSize, range, pageSize, refresh);
+   mVsbarApi->SetScrollbar(position, thumbSize, range, pageSize, refresh);
 }
 
 void ProjectWindow::ShowVerticalScrollbar(bool shown)
@@ -962,6 +1013,58 @@ wxStatusBar* ProjectWindow::CreateProjectStatusBar()
          if (pProject != nullptr)
             ProjectStatusFieldsRegistry::OnSize(*pProject);
       });
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Paint the status text through a retained Alicorn scene. The handler does
+   // not Skip, so wx's own painting is bypassed; if the retained paint fails
+   // the same fields are drawn directly.
+   statusBar->SetBackgroundStyle(wxBG_STYLE_PAINT);
+   statusBar->Bind(
+      wxEVT_PAINT,
+      [statusBar, scene = std::make_shared<AlicornSceneView>()](wxPaintEvent&)
+      {
+         wxPaintDC dc(statusBar);
+         const auto size = statusBar->GetClientSize();
+         if (size.x <= 0 || size.y <= 0)
+            return;
+         const auto background = statusBar->GetBackgroundColour();
+         const auto foreground = statusBar->GetForegroundColour();
+         const auto font = statusBar->GetFont();
+         dc.SetFont(font);
+         const auto lineColour = wxColour(
+            std::max(0, background.Red() - 48),
+            std::max(0, background.Green() - 48),
+            std::max(0, background.Blue() - 48));
+
+         AlicornScene retained;
+         retained.Fill(wxRect(0, 0, size.x, size.y), background);
+         retained.Fill(wxRect(0, 0, size.x, 1), lineColour);
+         struct Field { wxRect rect; wxString text; wxSize extent; };
+         std::vector<Field> fields;
+         for (int i = 0; i < statusBar->GetFieldsCount(); ++i) {
+            wxRect rect;
+            if (!statusBar->GetFieldRect(i, rect) || rect.width <= 4)
+               continue;
+            const auto text = statusBar->GetStatusText(i);
+            if (text.empty())
+               continue;
+            const auto extent = dc.GetTextExtent(text);
+            const wxRect bounds(
+               rect.x + 2, rect.y + (rect.height - extent.y) / 2,
+               rect.width - 4, extent.y);
+            retained.Text(bounds, text, foreground, font);
+            fields.push_back({ bounds, text, extent });
+         }
+         if (scene->Draw(dc, wxRect(0, 0, size.x, size.y), retained))
+            return;
+
+         dc.SetBackground(wxBrush(background));
+         dc.Clear();
+         dc.SetTextForeground(foreground);
+         for (const auto &field : fields)
+            dc.DrawText(field.text, field.rect.GetTopLeft());
+      });
+#endif
 
    // We have a new status bar now, we need a full content update
    if (pProject)

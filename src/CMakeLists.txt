@@ -56,6 +56,8 @@ if( audacity_use_alicorn_snap_ui )
       alicorn/AudacityTimelineView.h
       alicorn/AudacityTrackControlsView.h
       alicorn/AudacityRulerView.h
+      widgets/AlicornScrollBar.cpp
+      widgets/AlicornScrollBar.h
       alicorn/AudacityWaveformView.h
       toolbars/AlicornActionControl.cpp
       toolbars/AlicornActionControl.h
@@ -873,6 +875,7 @@ set( SOURCES
       widgets/AButton.h
       widgets/ASlider.cpp
       widgets/ASlider.h
+      widgets/ProjectScrollBar.h
       widgets/AttachableScrollBar.cpp
       widgets/AttachableScrollBar.h
       widgets/BackedPanel.cpp

@@ -17,6 +17,7 @@ Paul Licameli split from AudacityProject.h
 #include "Viewport.h"
 
 class wxScrollBar;
+class ProjectScrollBar;
 class wxPanel;
 class wxSplitterWindow;
 class RealtimeEffectPanel;
@@ -127,8 +128,8 @@ public:
 
    // Scrollbars
 
-   wxScrollBar &GetVerticalScrollBar() { return *mVsbar; }
-   wxScrollBar &GetHorizontalScrollBar() { return *mHsbar; }
+   wxWindow &GetVerticalScrollBar() { return *mVsbar; }
+   wxWindow &GetHorizontalScrollBar() { return *mHsbar; }
 
    void OnScrollLeftButton(wxScrollEvent & event);
    void OnScrollRightButton(wxScrollEvent & event);
@@ -199,8 +200,10 @@ private:
    wxSplitterWindow* mContainerWindow;
    wxWindow* mTrackListWindow{};
    
-   wxScrollBar *mHsbar{};
-   wxScrollBar *mVsbar{};
+   wxWindow *mHsbar{};
+   wxWindow *mVsbar{};
+   std::shared_ptr<ProjectScrollBar> mHsbarApi;
+   std::shared_ptr<ProjectScrollBar> mVsbarApi;
 
    int mNextWindowID{};
 
