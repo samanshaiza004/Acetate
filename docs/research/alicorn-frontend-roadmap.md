@@ -4,7 +4,7 @@ Goal: everything wxWidgets draws or manages that is not the native window/event 
 
 ## Already on Alicorn (opt-in build)
 
-Track headers and the waveform vertical ruler (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
+The Time toolbar's audio-position clock, track headers and the waveform vertical ruler (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
 
 ## Still wx-drawn or wx-managed
 
@@ -14,7 +14,7 @@ Track headers and the waveform vertical ruler (title bar glyphs and text, Mute/S
 | Vertical ruler: zoom-drag preview, other scale modes | `tracks/ui/ChannelVRulerControls.cpp`, `widgets/Ruler.cpp` | small | The waveform-scale ruler axis, ticks and labels now use the retained track-controls scene; the dashed zoom preview and non-waveform modes are unchecked. |
 | Scrollbars, status bar, panel backgrounds | `ProjectWindow.cpp`, `ProjectStatus.cpp` | ~1.4k | Scrollbar thumb geometry/policy stays in `Viewport`. |
 | Tempo / time signature toolbar | `toolbars/TimeSignatureToolBar.cpp` | ~0.3k | Needs Alicorn text field + stepper + select. |
-| Time toolbar and spectral selection bar | `toolbars/TimeToolBar.cpp`, `SpectralSelectionBar.cpp` | ~0.9k | Reuse the numeric-time view already used by the Selection bar. |
+| Spectral selection bar | `toolbars/SpectralSelectionBar.cpp` | ~0.5k | Same one-line opt-in as the Time toolbar (`AlicornPaint(true)`), not applied because it could not be opened and checked in this session. |
 | Meters and level sliders | `widgets/MeterPanel.cpp`, `toolbars/MeterToolBar.cpp` | ~2.8k | Custom-painted, real-time; needs a bounded meter payload from the audio thread without running UI there. |
 | Device, transcription, mixer toolbars | `toolbars/DeviceToolBar.cpp`, `TranscriptionToolBar.cpp` | ~2.0k | Selects, slider, buttons. Blocked in part by Alicorn grouped options (#198). |
 | Toolbar docking chrome, grabbers, floating frames | `toolbars/ToolDock.cpp`, `ToolManager.cpp`, `ToolBar.cpp` | ~3.6k | Last toolbar step; floating `ToolFrame` is a native window and belongs with the host swap. |

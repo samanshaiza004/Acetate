@@ -91,7 +91,8 @@ void TimeToolBar::Populate()
    auto format = formats.GetAudioTimeFormat();
 
    // Create the read-only time control
-   mAudioTime = safenew NumericTextCtrl(FormatterContext::ProjectContext(mProject), this, AudioPositionID, NumericConverterType_TIME(), format, 0.0);
+   mAudioTime = safenew NumericTextCtrl(FormatterContext::ProjectContext(mProject), this, AudioPositionID, NumericConverterType_TIME(), format, 0.0,
+      NumericTextCtrl::Options{}.AlicornPaint(true));
    mAudioTime->SetName(XO("Audio Position"));
    mAudioTime->SetReadOnly(true);
 
