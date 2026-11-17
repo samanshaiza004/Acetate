@@ -18,7 +18,7 @@ extern "C" {
 typedef struct AcetateBackend AcetateBackend;
 
 // Bumped whenever the exported surface changes shape.
-#define ACETATE_BACKEND_ABI_VERSION 5
+#define ACETATE_BACKEND_ABI_VERSION 6
 
 ACETATE_BACKEND_API int acetate_backend_abi_version(void);
 
@@ -119,6 +119,20 @@ ACETATE_BACKEND_API int acetate_backend_has_unsaved_changes(
 // pointer is valid until the next call that changes the project.
 ACETATE_BACKEND_API const char *acetate_backend_project_path(
    AcetateBackend *backend);
+
+// Horizontal view, stored in Audacity's ViewInfo like the wx application:
+// `left` is the time at the left edge in seconds and `pixelsPerSecond` the
+// zoom. The zoom is clamped by Audacity's own limits (ZoomInfo::SetZoom), and
+// both values are saved in the .aup3. Changing the view is not an undoable
+// edit and does not mark the project modified. Scroll limits are a host
+// decision; the backend only stores the value.
+ACETATE_BACKEND_API void acetate_backend_get_view(
+   const AcetateBackend *backend, double *left, double *pixelsPerSecond);
+// Returns the zoom actually applied after clamping.
+ACETATE_BACKEND_API double acetate_backend_set_view(
+   AcetateBackend *backend, double left, double pixelsPerSecond);
+ACETATE_BACKEND_API void acetate_backend_zoom_limits(
+   double *minPixelsPerSecond, double *maxPixelsPerSecond);
 
 #ifdef __cplusplus
 }

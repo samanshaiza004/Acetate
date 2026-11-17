@@ -859,3 +859,37 @@ const char *acetate_backend_project_path(AcetateBackend *backend)
 {
    return backend ? backend->projectPath.c_str() : "";
 }
+
+void acetate_backend_get_view(
+   const AcetateBackend *backend, double *left, double *pixelsPerSecond)
+{
+   double a = 0.0, b = ZoomInfo::GetDefaultZoom();
+   if (backend) {
+      const auto &view = ViewInfo::Get(*backend->project);
+      a = view.hpos;
+      b = view.GetZoom();
+   }
+   if (left)
+      *left = a;
+   if (pixelsPerSecond)
+      *pixelsPerSecond = b;
+}
+
+double acetate_backend_set_view(
+   AcetateBackend *backend, double left, double pixelsPerSecond)
+{
+   if (!backend)
+      return 0.0;
+   auto &view = ViewInfo::Get(*backend->project);
+   view.SetZoom(pixelsPerSecond);
+   view.hpos = left;
+   return view.GetZoom();
+}
+
+void acetate_backend_zoom_limits(double *minPps, double *maxPps)
+{
+   if (minPps)
+      *minPps = ZoomInfo::GetMinZoom();
+   if (maxPps)
+      *maxPps = ZoomInfo::GetMaxZoom();
+}

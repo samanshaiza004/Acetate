@@ -7,6 +7,7 @@ package main
 // surface. It does not copy sample buffers and it never runs audio or backend
 // work off the main thread.
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:strings"
 import alicorn "alicorn:runtime"
@@ -48,18 +49,29 @@ foreign backend {
 	acetate_backend_export_wav :: proc(b: Backend, path: cstring) -> i32 ---
 	acetate_backend_has_unsaved_changes :: proc(b: Backend) -> i32 ---
 	acetate_backend_project_path :: proc(b: Backend) -> cstring ---
+	acetate_backend_get_view :: proc(b: Backend, left, pixels_per_second: ^f64) ---
+	acetate_backend_set_view :: proc(b: Backend, left, pixels_per_second: f64) -> f64 ---
+	acetate_backend_zoom_limits :: proc(min_pps, max_pps: ^f64) ---
 	acetate_backend_waveform :: proc(b: Backend, track, channel: i32, t0, t1: f64, columns: i32, min_max: [^]f32) -> i32 ---
 }
 
-EXPECTED_ABI :: 5
+EXPECTED_ABI :: 6
 MAX_COLUMNS :: 1024
 MAX_CHANNELS :: 2
 REFRESH_PERIOD :: 33 * 1_000_000
+RULER_MIN_MAJOR_PX :: 90.0 // closest allowed spacing of labelled ticks
+RULER_TICK_HEIGHT :: 10
+SCROLLBAR_HEIGHT :: 12
+LAYOUT_CHROME_WIDTH :: 40 // window padding plus panel padding, used before a surface is measured
 TEXT :: alicorn.Color{0.09, 0.12, 0.17, 1}
 
 CMD_UNDO   :: host.Application_Command_ID(1)
 CMD_REDO   :: host.Application_Command_ID(2)
 CMD_DELETE :: host.Application_Command_ID(3)
+CMD_ZOOM_IN  :: host.Application_Command_ID(20)
+CMD_ZOOM_OUT :: host.Application_Command_ID(21)
+CMD_ZOOM_FIT :: host.Application_Command_ID(22)
+CMD_ZOOM_SEL :: host.Application_Command_ID(23)
 CMD_OPEN    :: host.Application_Command_ID(10)
 CMD_SAVE    :: host.Application_Command_ID(11)
 CMD_SAVE_AS :: host.Application_Command_ID(12)
@@ -78,6 +90,8 @@ Channel_View :: struct {
 	playhead: i32, // pixel column of the playhead, -1 when idle
 	sel0:     i32, // pixel columns of the selection, equal when empty
 	sel1:     i32,
+	left:     f64, // view the geometry was built for
+	pps:      f64,
 	drawn:    bool,
 }
 
@@ -95,13 +109,121 @@ App :: struct {
 	drag_anchor: f64,
 	file_items: [5]host.Application_Menu_Item,
 	edit_items: [4]host.Application_Menu_Item,
-	menus:     [2]host.Application_Menu,
+	menus:     [3]host.Application_Menu,
 	dialogs:   host.Dialog_Service,
 	dialog_open: bool, // one native dialog at a time
 	project_path: string,
 	unsaved:   bool,
 	views:     [MAX_CHANNELS]Channel_View,
 	scheduler: host.Application_Scheduler,
+	// Horizontal view. The values live in Audacity's ViewInfo (zoom is clamped
+	// there and saved with the project); these are the last values read.
+	view_left: f64,
+	pps:       f64,
+	window_width: int,
+	surface_x: f32,     // window x of the waveform surfaces
+	surface_width: f32, // measured width of a waveform surface
+	fit_pending: bool,  // zoom to fit once a surface has been measured
+	ruler:     Channel_View,
+	scrollbar: Channel_View,
+	scrollbar_dragging: bool,
+	scrollbar_grab: f32, // pointer offset inside the thumb while dragging
+	view_items: [4]host.Application_Menu_Item,
+	// The view the current description (ruler labels, readout) was built for.
+	built_left, built_pps: f64,
+	built_width: f32,
+}
+
+// ---- Horizontal view -------------------------------------------------------
+
+effective_width :: proc(app: ^App) -> f32 {
+	if app.surface_width > 0 { return app.surface_width }
+	return max(f32(app.window_width - LAYOUT_CHROME_WIDTH), 1)
+}
+
+visible_span :: proc(app: ^App) -> f64 {
+	if app.pps <= 0 { return 0 }
+	return f64(effective_width(app)) / app.pps
+}
+
+// Scroll limits are a host decision: the start of the project at the left, and
+// the end of the project at most one tenth of a window from the right edge.
+// The zoom itself is clamped by Audacity (ZoomInfo::SetZoom).
+set_view_clamped :: proc(app: ^App, left, pps: f64) {
+	low, high: f64
+	acetate_backend_zoom_limits(&low, &high)
+	applied := acetate_backend_set_view(app.backend, left, clamp(pps, low, high))
+	span := f64(effective_width(app)) / applied
+	max_left := max(0, app.duration - span * 0.1)
+	applied = acetate_backend_set_view(app.backend, clamp(left, 0, max_left), applied)
+	acetate_backend_get_view(app.backend, &app.view_left, &app.pps)
+	_ = applied
+}
+
+scroll_by_pixels :: proc(app: ^App, pixels: f64) {
+	set_view_clamped(app, app.view_left + pixels / app.pps, app.pps)
+}
+
+zoom_by :: proc(app: ^App, factor: f64, anchor_px: f64) {
+	anchor_time := app.view_left + anchor_px / app.pps
+	new_pps := app.pps * factor
+	set_view_clamped(app, anchor_time - anchor_px / new_pps, new_pps)
+	// If Audacity clamped the zoom, keep the anchor stable at the applied value.
+	if app.pps != new_pps { set_view_clamped(app, anchor_time - anchor_px / app.pps, app.pps) }
+}
+
+zoom_fit :: proc(app: ^App) {
+	if app.duration <= 0 { return }
+	set_view_clamped(app, 0, f64(effective_width(app)) / app.duration)
+}
+
+zoom_selection :: proc(app: ^App) {
+	if app.sel1 <= app.sel0 { return }
+	set_view_clamped(app, app.sel0, f64(effective_width(app)) / (app.sel1 - app.sel0))
+}
+
+time_to_px :: proc(app: ^App, time: f64) -> f64 { return (time - app.view_left) * app.pps }
+
+// ---- Ruler -----------------------------------------------------------------
+
+Ruler :: struct {
+	step:         f64, // seconds between labelled (major) ticks
+	subdivisions: int, // minor ticks per major tick
+	first:        i64, // index of the first major tick at or after the left edge
+	count:        int,
+}
+
+// Smallest 1-2-5 step whose labelled ticks are at least RULER_MIN_MAJOR_PX apart.
+ruler_layout :: proc(app: ^App) -> Ruler {
+	r := Ruler{step = 1, subdivisions = 5}
+	if app.pps <= 0 { return r }
+	found := false
+	for exponent in -7 ..= 8 {
+		base := math.pow(10.0, f64(exponent))
+		for mantissa, index in ([3]f64{1, 2, 5}) {
+			if mantissa * base * app.pps >= RULER_MIN_MAJOR_PX {
+				r.step = mantissa * base
+				r.subdivisions = 4 if index == 1 else 5
+				found = true
+				break
+			}
+		}
+		if found { break }
+	}
+	r.first = i64(math.ceil(app.view_left / r.step))
+	last := i64(math.floor((app.view_left + visible_span(app)) / r.step))
+	r.count = max(int(last - r.first + 1), 0)
+	return r
+}
+
+format_ruler_time :: proc(time, step: f64) -> string {
+	if step >= 1 {
+		total := i64(math.round(time))
+		return fmt.tprintf("%d:%02d", total / 60, total % 60)
+	}
+	decimals := max(int(math.ceil(-math.log10(step) - 1e-9)), 1)
+	minutes := i64(time / 60)
+	return fmt.tprintf("%d:%0*.*f", minutes, 3 + decimals, decimals, time - f64(minutes) * 60)
 }
 
 // Starts or stops playback through Audacity's audio engine. Runs on the host's
@@ -225,6 +347,14 @@ run_command :: proc(app: ^App, rt: ^alicorn.Runtime, command: host.Application_C
 		set_status_from_backend(app, "Redone", acetate_backend_redo(app.backend))
 	case CMD_DELETE:
 		set_status_from_backend(app, "Deleted selection", acetate_backend_delete_selection(app.backend))
+	case CMD_ZOOM_IN:
+		zoom_by(app, 2, f64(effective_width(app)) / 2)
+	case CMD_ZOOM_OUT:
+		zoom_by(app, 0.5, f64(effective_width(app)) / 2)
+	case CMD_ZOOM_FIT:
+		zoom_fit(app)
+	case CMD_ZOOM_SEL:
+		zoom_selection(app)
 	case CMD_OPEN:
 		show_dialog(app, DIALOG_OPEN)
 	case CMD_SAVE:
@@ -246,41 +376,99 @@ menu_command_app :: proc(state: rawptr, rt: ^alicorn.Runtime, command: host.Appl
 	run_command(cast(^App)state, rt, command)
 }
 
-// Maps a window-space pointer x onto project time using the channel surface
-// that received the event, clamped to the audio.
-time_at :: proc(app: ^App, rt: ^alicorn.Runtime, target: alicorn.Node_ID, x: f32) -> (time: f64, ok: bool) {
-	if app.duration <= 0 { return 0, false }
+// Maps a window-space pointer x onto project time through the current view,
+// clamped to the audio.
+time_for_x :: proc(app: ^App, x: f32) -> f64 {
+	if app.pps <= 0 { return 0 }
+	return clamp(app.view_left + f64(x - app.surface_x) / app.pps, 0, max(app.duration, 0))
+}
+
+channel_surface :: proc(app: ^App, target: alicorn.Node_ID) -> bool {
+	if target == 0 { return false }
 	for view in app.views[:app.channels] {
-		if view.surface != target || target == 0 { continue }
-		surface, found := alicorn.gpu_surface_context(rt, view.surface)
-		if !found || surface.logical_bounds.w <= 0 { return 0, false }
-		fraction := f64((x - surface.logical_bounds.x) / surface.logical_bounds.w)
-		return clamp(fraction, 0, 1) * app.duration, true
+		if view.surface == target { return true }
 	}
-	return 0, false
+	return false
+}
+
+// Horizontal scrollbar geometry in surface pixels: the thumb spans the visible
+// part of max(project, visible end).
+scrollbar_thumb :: proc(app: ^App) -> (x, width, total: f32) {
+	surface_width := effective_width(app)
+	span := visible_span(app)
+	range := max(app.duration, app.view_left + span)
+	if range <= 0 { return 0, surface_width, range_to_f32(range) }
+	thumb := clamp(f32(span / range) * surface_width, 24, surface_width)
+	position := f32(app.view_left / range) * surface_width
+	return clamp(position, 0, surface_width - thumb), thumb, range_to_f32(range)
+}
+
+range_to_f32 :: proc(range: f64) -> f32 { return f32(range) }
+
+scrollbar_pointer :: proc(app: ^App, event: alicorn.Pointer_Event) {
+	thumb_x, thumb_w, total := scrollbar_thumb(app)
+	surface_width := effective_width(app)
+	local_x := event.x - app.surface_x
+	#partial switch event.kind {
+	case .Down:
+		if event.button != alicorn.POINTER_BUTTON_PRIMARY { return }
+		app.scrollbar_dragging = true
+		if local_x >= thumb_x && local_x <= thumb_x + thumb_w {
+			app.scrollbar_grab = local_x - thumb_x
+		} else {
+			// A click on the track centres the thumb there.
+			app.scrollbar_grab = thumb_w / 2
+		}
+		fallthrough
+	case .Move:
+		if !app.scrollbar_dragging || total <= 0 { return }
+		fraction := f64((local_x - app.scrollbar_grab) / surface_width)
+		set_view_clamped(app, fraction * f64(total), app.pps)
+	case .Up, .Cancel:
+		app.scrollbar_dragging = false
+	}
 }
 
 pointer_app :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID) {
 	app := cast(^App)state
+	if app.scrollbar_dragging || (target != 0 && target == app.scrollbar.surface) {
+		scrollbar_pointer(app, event)
+		return
+	}
 	#partial switch event.kind {
 	case .Down:
 		if event.button != alicorn.POINTER_BUTTON_PRIMARY { return }
-		if time, ok := time_at(app, rt, target, event.x); ok {
+		if app.duration > 0 && channel_surface(app, target) {
+			time := time_for_x(app, event.x)
 			app.dragging = true
 			app.drag_anchor = time
 			acetate_backend_set_selection(app.backend, time, time)
 		}
 	case .Move:
-		if !app.dragging { return }
-		// The captured surface keeps receiving moves outside its bounds.
-		for view in app.views[:app.channels] {
-			if time, ok := time_at(app, rt, view.surface, event.x); ok {
-				acetate_backend_set_selection(app.backend, app.drag_anchor, time)
-				break
-			}
+		if app.dragging {
+			// The captured surface keeps receiving moves outside its bounds.
+			acetate_backend_set_selection(app.backend, app.drag_anchor, time_for_x(app, event.x))
 		}
 	case .Up, .Cancel:
 		app.dragging = false
+	}
+}
+
+// Wheel and trackpad: Ctrl/Cmd + vertical motion zooms about the pointer;
+// horizontal motion (or Shift + vertical motion) scrolls.
+scroll_app :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event) {
+	app := cast(^App)state
+	if app.duration <= 0 { return }
+	if event.modifiers.control || event.modifiers.super {
+		if event.delta_y != 0 {
+			// One wheel tick is about 1.0; trackpads send small fractions.
+			zoom_by(app, math.exp(f64(event.delta_y) * 0.05), f64(event.x - app.surface_x))
+		}
+	} else {
+		delta := event.delta_x
+		if event.modifiers.shift || delta == 0 && event.modifiers.shift { delta = event.delta_y }
+		// Positive deltas move the content right, so the view moves left.
+		if delta != 0 { scroll_by_pixels(app, -f64(delta) * 10) }
 	}
 }
 
@@ -298,13 +486,40 @@ key_app :: proc(state: rawptr, rt: ^alicorn.Runtime, key: alicorn.Application_Ke
 	return false
 }
 
+// Time ruler: labels are ordinary text cells positioned by a leading spacer
+// (a retained surface carries geometry only), ticks are a retained surface.
+build_ruler :: proc(app: ^App, ctx: ^alicorn.UI, dpi_scale: f32) {
+	if !ui.column(ctx, padding = 4, label = "ruler") { return }
+	layout := ruler_layout(app)
+	step_px := f32(layout.step * app.pps)
+	if ui.row(ctx, height = 18, clip = true, label = "ruler-labels") {
+		if layout.count > 0 {
+			offset := f32(time_to_px(app, f64(layout.first) * layout.step)) + 3
+			ui.text(ctx, "", key = u64(1_000_000), style = ui.layout_style(width = max(offset, 0), height = 14))
+			for index in 0 ..< layout.count {
+				time := f64(layout.first + i64(index)) * layout.step
+				ui.text(ctx, format_ruler_time(time, layout.step), key = u64(index), size = 12, color = TEXT,
+					style = ui.layout_style(width = step_px, height = 14))
+			}
+		}
+	}
+	app.ruler.surface = alicorn.gpu_geometry_surface(
+		ctx,
+		"time-ruler-ticks",
+		ui.layout_style(width = -1, height = RULER_TICK_HEIGHT),
+		dpi_scale,
+	)
+}
+
 build_app :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
-	_logical_width, _logical_height: int,
+	logical_width, _logical_height: int,
 	dpi_scale: f32,
 ) -> alicorn.Node_ID {
 	app := cast(^App)state
+	app.window_width = logical_width
+	app.built_left, app.built_pps, app.built_width = app.view_left, app.pps, effective_width(app)
 	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 
@@ -324,6 +539,7 @@ build_app :: proc(
 			ui.text(&ctx, app.status, color = TEXT)
 			ui.text(&ctx, app.selection_text, color = TEXT)
 		}
+		build_ruler(app, &ctx, dpi_scale)
 		for channel in 0 ..< app.channels {
 			label := fmt.tprintf("channel-%d-panel", channel)
 			if ui.panel(&ctx, key = u64(channel), grow = 1, padding = 4, clip = true, fill = ui.rgb(0x131822), label = label) {
@@ -336,7 +552,19 @@ build_app :: proc(
 				)
 			}
 		}
-		ui.text(&ctx, fmt.tprintf("0.000 s  →  %.3f s", app.duration), color = TEXT)
+		if ui.panel(&ctx, padding = 4, fill = ui.rgb(0x131822), label = "scrollbar-panel") {
+			app.scrollbar.surface = alicorn.gpu_geometry_surface(
+				&ctx,
+				"horizontal-scrollbar",
+				ui.layout_style(width = -1, height = SCROLLBAR_HEIGHT),
+				dpi_scale,
+				.Pointer,
+			)
+		}
+		ui.text(&ctx, fmt.tprintf(
+			"View %.3f – %.3f s · %.1f px/s · wheel scrolls with Shift, zooms with Ctrl/Cmd",
+			app.view_left, app.view_left + visible_span(app), app.pps,
+		), color = TEXT)
 	}
 	alicorn.container_end(&ctx)
 	alicorn.end_frame(&ctx)
@@ -366,23 +594,26 @@ refresh_channel :: proc(app: ^App, rt: ^alicorn.Runtime, channel: int) {
 	columns := i32(min(int(width), MAX_COLUMNS))
 	if columns < 1 { columns = 1 }
 	playhead: i32 = -1
-	if app.playing && app.position >= 0 && app.duration > 0 {
-		playhead = i32(clamp(app.position / app.duration, 0, 1) * f64(width))
+	if app.playing && app.position >= 0 {
+		if x := time_to_px(app, app.position); x >= 0 && x <= f64(width) { playhead = i32(x) }
 	}
 	sel0, sel1: i32
-	if app.duration > 0 {
-		sel0 = i32(clamp(app.sel0 / app.duration, 0, 1) * f64(width))
-		sel1 = i32(clamp(app.sel1 / app.duration, 0, 1) * f64(width))
+	if app.sel1 > app.sel0 {
+		sel0 = i32(clamp(time_to_px(app, app.sel0), 0, f64(width)))
+		sel1 = i32(clamp(time_to_px(app, app.sel1), 0, f64(width)))
 	}
 	if view.drawn && view.width == width && view.height == height && view.columns == columns &&
-	   view.revision == revision && view.playhead == playhead && view.sel0 == sel0 && view.sel1 == sel1 {
+	   view.revision == revision && view.playhead == playhead && view.sel0 == sel0 && view.sel1 == sel1 &&
+	   view.left == app.view_left && view.pps == app.pps {
 		return
 	}
 
 	min_max: [MAX_COLUMNS * 2]f32
 	count: i32 = -1
-	if app.duration > 0 {
-		count = acetate_backend_waveform(app.backend, 0, i32(channel), 0, app.duration, columns, raw_data(min_max[:]))
+	if app.duration > 0 && app.pps > 0 {
+		count = acetate_backend_waveform(
+			app.backend, 0, i32(channel), app.view_left, app.view_left + f64(width) / app.pps, columns, raw_data(min_max[:]),
+		)
 	}
 	have_wave := count == columns
 
@@ -426,7 +657,55 @@ refresh_channel :: proc(app: ^App, rt: ^alicorn.Runtime, channel: int) {
 	}
 	if alicorn.gpu_surface_update_geometry_with_rectangles(rt, view.surface, rectangles[:used], nil, nil) {
 		view.width, view.height, view.columns, view.revision, view.playhead, view.sel0, view.sel1 = width, height, columns, revision, playhead, sel0, sel1
+		view.left, view.pps = app.view_left, app.pps
 		view.drawn = true
+	}
+}
+
+refresh_ruler :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	view := &app.ruler
+	surface, ok := alicorn.gpu_surface_context(rt, view.surface)
+	if !ok || surface.logical_bounds.w <= 0 || surface.logical_bounds.h <= 0 { return }
+	width, height := surface.logical_bounds.w, surface.logical_bounds.h
+	if view.drawn && view.width == width && view.height == height && view.left == app.view_left && view.pps == app.pps {
+		return
+	}
+	rectangles: [256]alicorn.GPU_Surface_Filled_Rectangle
+	used := 0
+	layout := ruler_layout(app)
+	ink := alicorn.Color{0.09, 0.12, 0.17, 1}
+	minor_step := layout.step / f64(layout.subdivisions)
+	first_minor := i64(math.ceil(app.view_left / minor_step))
+	last_minor := i64(math.floor((app.view_left + f64(width) / app.pps) / minor_step))
+	for index := first_minor; index <= last_minor && used < len(rectangles); index += 1 {
+		x := f32(time_to_px(app, f64(index) * minor_step))
+		major := index % i64(layout.subdivisions) == 0
+		tick_height := height if major else height * 0.45
+		rectangles[used] = alicorn.GPU_Surface_Filled_Rectangle{bounds = alicorn.Rect{x, height - tick_height, 1, tick_height}, color = ink}
+		used += 1
+	}
+	if alicorn.gpu_surface_update_geometry_with_rectangles(rt, view.surface, rectangles[:used], nil, nil) {
+		view.width, view.height, view.left, view.pps, view.drawn = width, height, app.view_left, app.pps, true
+	}
+}
+
+refresh_scrollbar :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	view := &app.scrollbar
+	surface, ok := alicorn.gpu_surface_context(rt, view.surface)
+	if !ok || surface.logical_bounds.w <= 0 || surface.logical_bounds.h <= 0 { return }
+	width, height := surface.logical_bounds.w, surface.logical_bounds.h
+	if view.drawn && view.width == width && view.height == height && view.left == app.view_left &&
+	   view.pps == app.pps && view.revision == u64(app.duration * 1000) {
+		return
+	}
+	thumb_x, thumb_w, _ := scrollbar_thumb(app)
+	rectangles := [2]alicorn.GPU_Surface_Filled_Rectangle{
+		{bounds = alicorn.Rect{0, 0, width, height}, color = alicorn.Color{0.13, 0.17, 0.24, 1}},
+		{bounds = alicorn.Rect{thumb_x, 1, thumb_w, height - 2}, color = alicorn.Color{0.55, 0.62, 0.74, 1}},
+	}
+	if alicorn.gpu_surface_update_geometry_with_rectangles(rt, view.surface, rectangles[:], nil, nil) {
+		view.width, view.height, view.left, view.pps, view.drawn = width, height, app.view_left, app.pps, true
+		view.revision = u64(app.duration * 1000)
 	}
 }
 
@@ -448,6 +727,10 @@ refresh_menu_state :: proc(app: ^App) {
 	app.edit_items[0].state.enabled = idle && acetate_backend_can_undo(app.backend) != 0
 	app.edit_items[1].state.enabled = idle && acetate_backend_can_redo(app.backend) != 0
 	app.edit_items[3].state.enabled = idle && app.sel1 > app.sel0
+	app.view_items[0].state.enabled = app.duration > 0
+	app.view_items[1].state.enabled = app.duration > 0
+	app.view_items[2].state.enabled = app.duration > 0
+	app.view_items[3].state.enabled = app.sel1 > app.sel0
 }
 
 scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
@@ -462,6 +745,28 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Sch
 	app.position = acetate_backend_play_position(app.backend)
 	sync_project(app, rt)
 	acetate_backend_get_selection(app.backend, &app.sel0, &app.sel1)
+
+	// Measure the waveform surface; the ruler labels depend on its width.
+	if app.channels > 0 {
+		if surface, ok := alicorn.gpu_surface_context(rt, app.views[0].surface); ok && surface.logical_bounds.w > 0 {
+			app.surface_width = surface.logical_bounds.w
+			app.surface_x = surface.logical_bounds.x
+		}
+	}
+	acetate_backend_get_view(app.backend, &app.view_left, &app.pps)
+	if app.fit_pending && app.surface_width > 0 && app.duration > 0 {
+		zoom_fit(app)
+		app.fit_pending = false
+	}
+	// Follow the playhead: page the view when playback leaves it.
+	if app.playing && app.position >= 0 && app.pps > 0 {
+		if app.position < app.view_left || app.position > app.view_left + visible_span(app) {
+			set_view_clamped(app, app.position, app.pps)
+		}
+	}
+	if app.view_left != app.built_left || app.pps != app.built_pps || effective_width(app) != app.built_width {
+		alicorn.invalidate_root(rt, "view changed")
+	}
 	refresh_menu_state(app)
 	text := selection_label(app)
 	if text != app.selection_text {
@@ -471,6 +776,8 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Sch
 	for channel in 0 ..< app.channels {
 		refresh_channel(app, rt, channel)
 	}
+	refresh_ruler(app, rt)
+	refresh_scrollbar(app, rt)
 	host.application_schedule_after(app.scheduler, .Frequent, REFRESH_PERIOD)
 }
 
@@ -489,7 +796,7 @@ main :: proc() {
 		fmt.eprintln("backend ABI mismatch")
 		os.exit(1)
 	}
-	app := App{status = "Ready · Space plays, drag to select", position = -1}
+	app := App{status = "Ready · Space plays, drag to select", position = -1, pps = 86.1328125}
 	app.backend = acetate_backend_create()
 	if app.backend == nil {
 		fmt.eprintln("could not create the Audacity backend")
@@ -505,6 +812,9 @@ main :: proc() {
 	} else if status := acetate_backend_import(app.backend, cpath); status != 0 {
 		fmt.eprintfln("import failed (%d): %s", status, acetate_backend_last_error(app.backend))
 		os.exit(1)
+	} else {
+		// A fresh import starts fitted to the window; a saved project keeps its stored view.
+		app.fit_pending = true
 	}
 	sync_project(&app, nil)
 	fmt.printfln("loaded %s: %d channel(s), %.0f Hz, %.3f s", path, app.channels, app.rate, app.duration)
@@ -522,9 +832,16 @@ main :: proc() {
 		{kind = .Separator},
 		{kind = .Command, command = CMD_EXPORT, label = "Export WAV…", state = {enabled = false}, shortcut = {key = 'e', modifiers = {.Primary, .Shift}}},
 	}
+	app.view_items = {
+		{kind = .Command, command = CMD_ZOOM_IN, label = "Zoom In", state = {enabled = false}, shortcut = {key = '=', modifiers = {.Primary}}},
+		{kind = .Command, command = CMD_ZOOM_OUT, label = "Zoom Out", state = {enabled = false}, shortcut = {key = '-', modifiers = {.Primary}}},
+		{kind = .Command, command = CMD_ZOOM_FIT, label = "Zoom to Fit", state = {enabled = false}, shortcut = {key = '0', modifiers = {.Primary}}},
+		{kind = .Command, command = CMD_ZOOM_SEL, label = "Zoom to Selection", state = {enabled = false}, shortcut = {key = 'e', modifiers = {.Primary}}},
+	}
 	app.menus = {
 		{label = "File", items = app.file_items[:]},
 		{label = "Edit", items = app.edit_items[:]},
+		{label = "View", items = app.view_items[:]},
 	}
 
 	host.Run(host.Application{
@@ -537,6 +854,7 @@ main :: proc() {
 		on_menu_command = menu_command_app,
 		on_dialog = dialog_app,
 		on_pointer = pointer_app,
+		on_scroll = scroll_app,
 		on_key = key_app,
 		on_services = services_app,
 		on_start = start_app,
