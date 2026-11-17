@@ -178,6 +178,9 @@ option( audacity_use_odin_caliber_backend
 option( audacity_use_alicorn_snap_ui
    "Enable experimental Alicorn native controls and waveform rendering" OFF )
 
+option( audacity_host_spike
+   "Build the experimental headless backend library for the Alicorn host window spike" OFF )
+
 if( APPLE )
    # XCode 14 no longer allows building unsigned binaries.
    # So for the XCode 14 `-` is passed as the code sign identity, which stands for
@@ -693,6 +696,9 @@ add_subdirectory( "images" )
 add_subdirectory( "libraries" )
 add_subdirectory( "locale" )
 add_subdirectory( "src" )
+if( ${_OPT}host_spike )
+   add_subdirectory( "host-spike" )
+endif()
 add_subdirectory( "modules" )
 add_subdirectory( "nyquist" )
 add_subdirectory( "plug-ins" )

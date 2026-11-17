@@ -30,7 +30,7 @@ The Time toolbar's audio-position clock, the record and playback meters, both sc
 4. Transcription toolbar buttons (Device toolbar choices and dock chrome done).
 5. Menu strip, async `AlicornMenu` session and all context-menu callers done (native popup kept for non-Alicorn builds); menu accessibility remains.
 6. Dialogs, by frequency: Export, Import, Preferences, then the rest.
-7. Host swap: remove wxWidgets from window creation and event translation (needs native accessibility, IME and file-dialog bridges).
+7. Host swap: remove wxWidgets from window creation and event translation (needs native accessibility, IME and file-dialog bridges). A feasibility spike (`docs/research/host-spike.md`, opt-in `-Daudacity_host_spike=ON`) already imports a file through Audacity's project/track code and draws it in an Alicorn-owned window; playback, editing and save are not done.
 
 ## Rules that keep each slice safe
 
