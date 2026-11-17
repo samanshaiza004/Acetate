@@ -227,6 +227,11 @@ protected:
    int mLastPanX;
 
 
+public:
+   //! Applies the refresh result of a context menu that finished after its
+   //! handler had already returned (asynchronous menus).
+   void ProcessContextMenuResult(unsigned refreshResult);
+
 protected:
 
    SelectedRegion mLastDrawnSelectedRegion {};

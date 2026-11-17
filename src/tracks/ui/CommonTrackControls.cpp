@@ -9,6 +9,7 @@ Paul Licameli split from TrackControls.cpp
 **********************************************************************/
 
 #include "CommonTrackControls.h"
+#include "../../TrackPanel.h"
 
 #include "TrackButtonHandles.h"
 #include "TrackSelectHandle.h"
@@ -273,6 +274,28 @@ unsigned CommonTrackControls::DoContextMenu(
    auto track = FindTrack();
    if (!track)
       return RefreshNone;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      // Asynchronous path: the handlers' data is owned by the menu session and
+      // the refresh result is applied once the chosen action has run.
+      auto owned = std::make_shared<InitMenuData>(
+         InitMenuData{ *pProject, *track, pParent, RefreshNone });
+      auto pAsyncMenu = PopupMenuTable::BuildMenu(
+         &TrackMenuTable::Instance(), owned.get());
+      if (PopupMenuTable *const pAsyncExtension = GetMenuExtension(track.get()))
+         PopupMenuTable::ExtendMenu(*pAsyncMenu, *pAsyncExtension);
+      const std::weak_ptr<AudacityProject> weakProject{ pProject->weak_from_this() };
+      if (PopupMenu::PopupOwned(
+             pAsyncMenu, *pParent,
+             { buttonRect.x + 1, buttonRect.y + buttonRect.height + 1 }, owned,
+             [owned, weakProject] {
+                if (const auto project = weakProject.lock())
+                   TrackPanel::Get(*project).ProcessContextMenuResult(owned->result);
+             }))
+         return RefreshNone;
+   }
+#endif
 
    InitMenuData data{ *pProject, *track, pParent, RefreshNone };
 

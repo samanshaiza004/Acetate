@@ -146,6 +146,8 @@ protected:
       auto action = std::move(mChosenAction);
       auto onSwitch = std::move(mOptions.onSwitch);
       auto onClosed = std::move(mOptions.onClosed);
+      auto onFinished = std::move(mOptions.onFinished);
+      auto keepAlive = mOptions.keepAlive;
       const int direction = mSwitch;
       const bool chosen = static_cast<bool>(action);
       const bool journal = mOptions.journal;
@@ -176,6 +178,9 @@ protected:
             action();
          else if (direction != 0 && onSwitch)
             onSwitch(direction);
+         if (onFinished)
+            onFinished();
+         (void)keepAlive;
       });
       CallAfter([this] { Destroy(); });
    }
@@ -489,6 +494,8 @@ void Show(wxWindow &owner, const wxPoint &screenPos, Model model, Options option
          if (fields.size() == 1) {
             if (options.onClosed)
                options.onClosed(false);
+            if (options.onFinished)
+               options.onFinished();
             return;
          }
          if (const auto *item = FindByPath(model, fields, 1);
@@ -496,6 +503,8 @@ void Show(wxWindow &owner, const wxPoint &screenPos, Model model, Options option
             if (options.onClosed)
                options.onClosed(true);
             item->action();
+            if (options.onFinished)
+               options.onFinished();
             return;
          }
       }
@@ -505,6 +514,39 @@ void Show(wxWindow &owner, const wxPoint &screenPos, Model model, Options option
    }
    auto *popup = safenew MenuPopup(&owner, std::move(model), std::move(options));
    popup->ShowAt(screenPos);
+}
+
+void PopupOwned(wxWindow &window, std::unique_ptr<wxMenu> menu,
+                const wxPoint &clientPos, Options options)
+{
+   std::shared_ptr<wxMenu> owned{ std::move(menu) };
+   wxWeakRef<wxWindow> windowRef{ &window };
+   owned->SetInvokingWindow(&window);
+   auto model = ModelFromMenu(*owned, [owned, windowRef](int id) {
+      if (!windowRef)
+         return;
+      wxMenu *container = nullptr;
+      auto *item = owned->FindItem(id, &container);
+      if (!item || !container)
+         return;
+      // Radio items stay selected; check items toggle, as natively.
+      if (item->GetKind() == wxITEM_CHECK)
+         item->Check(!item->IsChecked());
+      else if (item->GetKind() == wxITEM_RADIO)
+         item->Check(true);
+      container->SendEvent(id, item->IsCheckable() ? (item->IsChecked() ? 1 : 0) : -1);
+   });
+   const auto previousClosed = std::move(options.onClosed);
+   options.onClosed = [owned, windowRef, previousClosed](bool chosen) {
+      if (windowRef) {
+         wxMenuEvent event(wxEVT_MENU_CLOSE, -1, owned.get());
+         event.SetEventObject(owned.get());
+         wxMenuBase::ProcessMenuEvent(owned.get(), event, windowRef.get());
+      }
+      if (previousClosed)
+         previousClosed(chosen);
+   };
+   Show(window, window.ClientToScreen(clientPos), std::move(model), std::move(options));
 }
 
 Model ModelFromMenu(wxMenu &menu, const std::function<void(int id)> &activate)

@@ -10,6 +10,9 @@ Paul Licameli split from TrackPanel.cpp
 
 
 #include "PopupMenuTable.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "AlicornMenu.h"
+#endif
 #include "widgets/BasicMenu.h"
 #include "wxWidgetsWindowPlacement.h"
 
@@ -132,6 +135,27 @@ void PopupMenuImpl::Popup( wxWindow &window, const wxPoint &pos )
       wxWidgetsWindowPlacement{ &window }, { pos.x, pos.y }
    );
 }
+}
+
+bool PopupMenu::PopupOwned(
+   std::unique_ptr<PopupMenu> &menu, wxWindow &window, const wxPoint &pos,
+   std::shared_ptr<void> keepAlive, std::function<void()> onFinished)
+{
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   auto impl = dynamic_cast<PopupMenuImpl*>(menu.get());
+   if (!impl)
+      return false;
+   menu.release();
+   std::unique_ptr<wxMenu> owned{ static_cast<wxMenu*>(impl) };
+   AlicornMenu::Options options;
+   options.keepAlive = std::move(keepAlive);
+   options.onFinished = std::move(onFinished);
+   AlicornMenu::PopupOwned(window, std::move(owned), pos, std::move(options));
+   return true;
+#else
+   (void)menu; (void)window; (void)pos; (void)keepAlive; (void)onFinished;
+   return false;
+#endif
 }
 
 void PopupMenuTable::ExtendMenu( PopupMenu &menu, PopupMenuTable &table )

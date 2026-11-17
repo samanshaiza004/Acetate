@@ -69,6 +69,7 @@ selection range.
 #include "NumericConverterFormats.h"
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "AlicornActionControl.h"
+#include "../widgets/AlicornMenu.h"
 #include "../alicorn/AudacitySnapView.h"
 #include <wx/popupwin.h>
 #include <wx/sizer.h>
@@ -424,7 +425,8 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
 #else
    auto showMenu = [this, setupBtn, choices]()
    {
-      wxMenu menu;
+      auto menuOwner = std::make_unique<wxMenu>();
+      wxMenu &menu = *menuOwner;
       int selectionMode {};
       for (auto& choice : choices)
       {
@@ -446,7 +448,11 @@ void SelectionBar::AddSelectionSetupButton(wxSizer* pSizer)
 
       menu.Bind(wxEVT_MENU_CLOSE, [setupBtn](auto&) { setupBtn->PopUp(); });
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      AlicornMenu::PopupOwned(*setupBtn, std::move(menuOwner), { 0, 0 });
+#else
       BasicMenu::Handle { &menu }.Popup(wxWidgetsWindowPlacement { setupBtn });
+#endif
    };
    setupBtn->Bind(wxEVT_BUTTON, [showMenu](auto&) { showMenu(); });
 #endif

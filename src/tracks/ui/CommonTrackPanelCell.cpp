@@ -9,6 +9,9 @@ Paul Licameli split from TrackPanel.cpp
 **********************************************************************/
 
 #include "CommonTrackPanelCell.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../widgets/AlicornMenu.h"
+#endif
 
 #include <wx/cursor.h>
 #include <wx/event.h>
@@ -52,6 +55,77 @@ unsigned CommonTrackPanelCell::DoContextMenu( const wxRect &rect,
 
    auto &commandManager = CommandManager::Get(*pProject);
    commandManager.UpdateMenus();
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (pParent) {
+      // Asynchronous path: everything the dispatcher needs is copied into an
+      // object the menu owns, and the project and track are re-resolved when
+      // an item is chosen, so nothing refers to this stack frame.
+      struct Owned {
+         std::vector<MenuItem> items;
+         std::weak_ptr<AudacityProject> project;
+         std::weak_ptr<Track> track;
+         bool hasRegion{};
+         SelectedRegion region;
+         CommandFlag flags;
+      };
+      auto owned = std::make_shared<Owned>();
+      owned->items = items;
+      owned->project = pProject->weak_from_this();
+      owned->track = FindTrack();
+      if (pPoint) {
+         const auto time =
+            ViewInfo::Get(*pProject).PositionToTime(pPoint->x, rect.x);
+         owned->region = { time, time };
+         owned->hasRegion = true;
+      }
+      owned->flags = commandManager.GetUpdateFlags();
+
+      auto menu = std::make_unique<wxMenu>();
+      int ii = 1;
+      for (const auto &item : items) {
+         if (const auto &commandID = item.symbol.Internal();
+             commandID.empty())
+            menu->AppendSeparator();
+         else {
+            auto label = commandManager.FormatLabelForMenu(
+               commandID, &item.symbol.Msgid());
+            menu->Append(ii, label);
+            const bool enabled = item.enabled &&
+               (item.action || commandManager.GetEnabled(commandID));
+            menu->Enable(ii, enabled);
+         }
+         ++ii;
+      }
+      menu->Bind(wxEVT_COMMAND_MENU_SELECTED, [owned](wxCommandEvent &evt) {
+         const auto pProject = owned->project.lock();
+         if (!pProject)
+            return;
+         const auto idx = evt.GetId() - 1;
+         if (idx < 0 || idx >= static_cast<int>(owned->items.size()))
+            return;
+         CommandContext context{ *pProject };
+         SelectedRegion region = owned->region;
+         if (owned->hasRegion)
+            context.temporarySelection.pSelectedRegion = &region;
+         const auto pTrack = owned->track.lock();
+         context.temporarySelection.pTrack = pTrack.get();
+         auto &item = owned->items[idx];
+         if (item.action)
+            item.action(context);
+         else
+            CommandManager::Get(*pProject).HandleTextualCommand(
+               item.symbol.Internal(), context, owned->flags, false);
+      });
+
+      BasicUI::Point point;
+      if (pPoint)
+         point = { pPoint->x, pPoint->y };
+      AlicornMenu::PopupOwned(
+         *pParent, std::move(menu), { point.x, point.y });
+      return RefreshCode::RefreshNone;
+   }
+#endif
 
    // Set up command context with extras
    CommandContext context{ *pProject };

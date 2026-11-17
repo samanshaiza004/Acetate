@@ -10,6 +10,7 @@ Paul Licameli split from TimeTrackVZoomHandle.cpp
 
 
 #include "TimeTrackVZoomHandle.h"
+#include "../../../TrackPanel.h"
 #include "TimeTrackControls.h"
 
 #include "../../../HitTestResult.h"
@@ -91,6 +92,25 @@ UIHandle::Result TimeTrackVZoomHandle::Release
        rightUp &&
        !(event.ShiftDown() || event.CmdDown()))
    {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      {
+         auto owned = std::make_shared<CommonTrackControls::InitMenuData>(
+            CommonTrackControls::InitMenuData{
+               *pProject, *pTrack, pParent, RefreshNone });
+         auto pAsyncMenu = PopupMenuTable::BuildMenu(
+            &TimeTrackMenuTable::Instance(), owned.get());
+         const std::weak_ptr<AudacityProject> weakProject{
+            pProject->weak_from_this() };
+         if (PopupMenu::PopupOwned(
+                pAsyncMenu, *pParent, { event.m_x, event.m_y }, owned,
+                [owned, weakProject] {
+                   if (const auto project = weakProject.lock())
+                      TrackPanel::Get(*project).ProcessContextMenuResult(
+                         owned->result);
+                }))
+            return UpdateVRuler | RefreshAll;
+      }
+#endif
       CommonTrackControls::InitMenuData data {
          *pProject, *pTrack, pParent, RefreshNone
       };

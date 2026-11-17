@@ -11,6 +11,9 @@
 
 **********************************************************************/
 #include "EffectUI.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornMenu.h"
+#endif
 #include "Effect.h"
 #include "StatefulEffectUIServices.h"
 #include "EffectEditor.h"
@@ -650,7 +653,8 @@ wxString GetVersionForDisplay(const EffectDefinitionInterface &definition)
 
 void EffectUIHost::OnMenu(wxCommandEvent & WXUNUSED(evt))
 {
-   wxMenu menu;
+   auto menuOwner = std::make_unique<wxMenu>();
+   wxMenu &menu = *menuOwner;
    menu.Bind(wxEVT_MENU, [](auto&){}, kUserPresetsDummyID);
    menu.Bind(wxEVT_MENU, [](auto&){}, kDeletePresetDummyID);
    LoadUserPresets();
@@ -737,6 +741,11 @@ void EffectUIHost::OnMenu(wxCommandEvent & WXUNUSED(evt))
 
    wxWindow *btn = FindWindow(kMenuID);
    wxRect r = btn->GetRect();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornMenu::PopupOwned(
+      *btn, std::move(menuOwner), { r.GetLeft(), r.GetBottom() });
+   return;
+#endif
    BasicMenu::Handle{ &menu }.Popup(
       wxWidgetsWindowPlacement{ btn },
       { r.GetLeft(), r.GetBottom() }

@@ -36,6 +36,9 @@ AliasedFile s.
 
 #include "Audacity.h"
 #include "Dependencies.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornMenu.h"
+#endif
 
 #include <wx/defs.h>
 #include <wx/filename.h>
@@ -534,6 +537,15 @@ void DependencyDialog::OnCopySelectedFiles(wxCommandEvent & WXUNUSED(event))
 void DependencyDialog::OnRightClick( wxListEvent& event)
 {
    static_cast<void>(event);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      auto owned = std::make_unique<wxMenu>();
+      owned->Append(CopyNamesToClipboardID, _("&Copy Names to Clipboard"));
+      AlicornMenu::PopupOwned(
+         *this, std::move(owned), ScreenToClient(wxGetMousePosition()));
+      return;
+   }
+#endif
    wxMenu menu;
    menu.Append(CopyNamesToClipboardID, _("&Copy Names to Clipboard"));
    PopupMenu(&menu);

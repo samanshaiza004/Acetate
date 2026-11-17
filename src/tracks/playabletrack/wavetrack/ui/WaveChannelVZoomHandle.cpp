@@ -10,6 +10,7 @@ Paul Licameli split from TrackPanel.cpp
 
 
 #include "WaveChannelVZoomHandle.h"
+#include "../../../../TrackPanel.h"
 
 #include "../../../ui/ChannelVRulerControls.h"
 
@@ -104,6 +105,25 @@ UIHandle::Result WaveChannelVZoomHandle::DoRelease(
        rightUp &&
        !(event.ShiftDown() || event.CmdDown()))
    {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      {
+         auto owned = std::make_shared<WaveChannelVRulerMenuTable::InitMenuData>(
+            WaveChannelVRulerMenuTable::InitMenuData{
+               *pProject, wc, rect, RefreshCode::RefreshNone, event.m_y,
+               doZoom });
+         auto pAsyncMenu = PopupMenuTable::BuildMenu(&table, owned.get());
+         const std::weak_ptr<AudacityProject> weakProject{
+            pProject->weak_from_this() };
+         if (PopupMenu::PopupOwned(
+                pAsyncMenu, *pParent, { event.m_x, event.m_y }, owned,
+                [owned, weakProject] {
+                   if (const auto project = weakProject.lock())
+                      TrackPanel::Get(*project).ProcessContextMenuResult(
+                         owned->result);
+                }))
+            return RefreshCode::RefreshNone;
+      }
+#endif
       WaveChannelVRulerMenuTable::InitMenuData data {
          *pProject,
          wc, rect, RefreshCode::RefreshNone, event.m_y, doZoom };

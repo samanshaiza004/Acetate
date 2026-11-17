@@ -19,6 +19,9 @@ KeyConfigPrefs and MousePrefs use.
 
 *//*********************************************************************/
 #include "KeyConfigPrefs.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../widgets/AlicornMenu.h"
+#endif
 
 #include <wx/setup.h> // for wxUSE_* macros
 #include <wx/defs.h>
@@ -593,6 +596,16 @@ void KeyConfigPrefs::OnExport(wxCommandEvent & WXUNUSED(event))
 // so we just do what it needs.
 void KeyConfigPrefs::OnDefaults(wxCommandEvent & WXUNUSED(event))
 {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      auto menu = std::make_unique<wxMenu>();
+      menu->Append( 1, _("Standard") );
+      menu->Append( 2, _("Full") );
+      menu->Bind( wxEVT_COMMAND_MENU_SELECTED, &KeyConfigPrefs::OnImportDefaults, this );
+      AlicornMenu::PopupOwned( *this, std::move(menu), { 0, 0 } );
+      return;
+   }
+#endif
    wxMenu Menu;
    Menu.Append( 1, _("Standard") );
    Menu.Append( 2, _("Full") );

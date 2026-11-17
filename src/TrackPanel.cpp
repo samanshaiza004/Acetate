@@ -571,6 +571,11 @@ namespace {
    }
 }
 
+void TrackPanel::ProcessContextMenuResult(unsigned refreshResult)
+{
+   ProcessUIHandleResult(nullptr, nullptr, refreshResult);
+}
+
 void TrackPanel::ProcessUIHandleResult
    (TrackPanelCell *pClickedCell, TrackPanelCell *pLatestCell,
     UIHandle::Result refreshResult)

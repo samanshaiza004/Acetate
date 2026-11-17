@@ -4,6 +4,7 @@
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include <wx/gdicmn.h>
@@ -45,11 +46,24 @@ struct Options {
    wxWindow *restoreFocus{};
    // Record the selection in, and replay it from, the journal.
    bool journal{ true };
+   // Kept alive until the session has finished, for data the actions use.
+   std::shared_ptr<void> keepAlive;
+   // Called last: after the chosen action has run, or after dismissal.
+   std::function<void()> onFinished;
 };
 
 // Opens the menu with its top-left corner at `screenPos` and returns at once.
 void Show(wxWindow &owner, const wxPoint &screenPos, Model model,
           Options options = {});
+
+// For callers that already build a wxMenu with bound handlers. The session
+// takes ownership of the menu (nothing is borrowed from the caller's stack),
+// dispatches the chosen item exactly as wxMenu::PopupMenu would — through the
+// menu, its parents and `window` — and sends wxEVT_MENU_CLOSE when it closes.
+// Handlers must be safe if `window` has been destroyed: nothing is dispatched
+// once it is gone. `clientPos` is relative to `window`.
+void PopupOwned(wxWindow &window, std::unique_ptr<wxMenu> menu,
+                const wxPoint &clientPos, Options options = {});
 
 // Snapshot of a wx menu's structure and state. `activate` receives the item id
 // when an item is chosen and must resolve it again at that time.

@@ -10,6 +10,9 @@ Paul Licameli split from TrackPanel.cpp
 
 
 #include "LabelTrackView.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../../../widgets/AlicornMenu.h"
+#endif
 
 #include "LabelTrackVRulerControls.h"
 #include "LabelGlyphHandle.h"
@@ -1951,6 +1954,42 @@ void LabelTrackView::ShowContextMenu( AudacityProject &project )
       // So, workaround it by editing the label AFTER the popup menu is
       // closed. It's really ugly, but it works.  :-(
       mEditIndex = -1;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      {
+         // Asynchronous path. The menu is rebuilt as an owned object whose
+         // handler re-resolves the view and project when an item is chosen and
+         // then runs the deferred label edit, after the menu has closed.
+         auto owned = std::make_unique<wxMenu>();
+         owned->Append(OnCutSelectedTextID, _("Cu&t Label text"));
+         owned->Append(OnCopySelectedTextID, _("&Copy Label text"));
+         owned->Append(OnPasteSelectedTextID, _("&Paste"));
+         owned->Append(OnDeleteSelectedLabelID, _("&Delete Label"));
+         owned->Append(OnEditSelectedLabelID, _("&Edit Label..."));
+         owned->Enable(OnCutSelectedTextID, IsTextSelected(project));
+         owned->Enable(OnCopySelectedTextID, IsTextSelected(project));
+         owned->Enable(OnPasteSelectedTextID, IsTextClipSupported());
+         owned->Enable(OnDeleteSelectedLabelID, true);
+         owned->Enable(OnEditSelectedLabelID, true);
+         std::weak_ptr<ChannelView> weakView{ shared_from_this() };
+         std::weak_ptr<AudacityProject> weakProject{ project.weak_from_this() };
+         owned->Bind(wxEVT_MENU, [weakView, weakProject](wxCommandEvent &event) {
+            const auto pProject = weakProject.lock();
+            const auto pView =
+               std::dynamic_pointer_cast<LabelTrackView>(weakView.lock());
+            if (!pProject || !pView)
+               return;
+            pView->mEditIndex = -1;
+            pView->OnContextMenu(*pProject, event);
+            if (pView->mEditIndex >= 0)
+               DoEditLabels(
+                  *pProject, pView->FindLabelTrack().get(), pView->mEditIndex);
+         });
+         AlicornMenu::PopupOwned(
+            *parent, std::move(owned),
+            { x, ls->y + (mIconHeight / 2) - 1 });
+         return;
+      }
+#endif
       BasicMenu::Handle{ &menu }.Popup(
          wxWidgetsWindowPlacement{ parent },
          { x, ls->y + (mIconHeight / 2) - 1 }

@@ -20,6 +20,9 @@
 
 
 #include "AdornedRulerPanel.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornMenu.h"
+#endif
 
 #include <array>
 
@@ -2438,7 +2441,8 @@ void AdornedRulerPanel::ShowMenu(const wxPoint & pos)
 {
    const auto &viewInfo = ViewInfo::Get( *GetProject() );
    const auto &playRegion = viewInfo.playRegion;
-   wxMenu rulerMenu;
+   auto rulerMenuOwner = std::make_unique<wxMenu>();
+   wxMenu &rulerMenu = *rulerMenuOwner;
 
    {
       auto item = rulerMenu.AppendRadioItem(OnMinutesAndSecondsID,
@@ -2483,6 +2487,10 @@ void AdornedRulerPanel::ShowMenu(const wxPoint & pos)
    rulerMenu.AppendCheckItem(OnTogglePinnedStateID, _("Continuous scrolling"))->
       Check(TracksPrefs::GetPinnedHeadPreference());
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornMenu::PopupOwned(*this, std::move(rulerMenuOwner), { pos.x, pos.y });
+   return;
+#endif
    BasicMenu::Handle{ &rulerMenu }.Popup(
       wxWidgetsWindowPlacement{ this },
       { pos.x, pos.y }
@@ -2492,6 +2500,29 @@ void AdornedRulerPanel::ShowMenu(const wxPoint & pos)
 void AdornedRulerPanel::ShowScrubMenu(const wxPoint & pos)
 {
    auto &scrubber = Scrubber::Get( *mProject );
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      // The scrubber handles the menu's events, so it stays on the handler
+      // chain until the menu has closed and its action has run.
+      PushEventHandler(&scrubber);
+      auto menu = std::make_unique<wxMenu>();
+      scrubber.PopulatePopupMenu(*menu);
+      wxWeakRef<AdornedRulerPanel> self{ this };
+      AlicornMenu::Options options;
+      options.onClosed = [self](bool) {
+         if (!self)
+            return;
+         // Pop after the deferred action, which is queued after this call.
+         self->CallAfter([self] {
+            if (self)
+               self->PopEventHandler();
+         });
+      };
+      AlicornMenu::PopupOwned(
+         *this, std::move(menu), { pos.x, pos.y }, std::move(options));
+      return;
+   }
+#endif
    PushEventHandler(&scrubber);
    auto cleanup = finally([this]{ PopEventHandler(); });
 

@@ -11,6 +11,7 @@ Paul Licameli split from TrackPanel.cpp
 
 #ifdef USE_MIDI
 #include "NoteTrackVZoomHandle.h"
+#include "../../../../TrackPanel.h"
 #include "NoteTrackDisplayData.h"
 
 #include "../../../ui/ChannelVRulerControls.h"
@@ -299,6 +300,25 @@ UIHandle::Result NoteTrackVZoomHandle::Release
        rightUp &&
        !(event.ShiftDown() || event.CmdDown()))
    {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      {
+         auto owned = std::make_shared<InitMenuData>(InitMenuData{
+            *pProject, pTrack.get(), mRect, RefreshNone, event.m_y });
+         PopupMenuTable *const pAsyncTable =
+            (PopupMenuTable *) &NoteTrackVRulerMenuTable::Instance();
+         auto pAsyncMenu = PopupMenuTable::BuildMenu(pAsyncTable, owned.get());
+         const std::weak_ptr<AudacityProject> weakProject{
+            pProject->weak_from_this() };
+         if (PopupMenu::PopupOwned(
+                pAsyncMenu, *pParent, { event.m_x, event.m_y }, owned,
+                [owned, weakProject] {
+                   if (const auto project = weakProject.lock())
+                      TrackPanel::Get(*project).ProcessContextMenuResult(
+                         owned->result);
+                }))
+            return RefreshNone;
+      }
+#endif
       InitMenuData data {
          *pProject, pTrack.get(), mRect, RefreshNone, event.m_y
       };

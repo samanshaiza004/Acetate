@@ -9,6 +9,9 @@
 **********************************************************************/
 
 #include "RealtimeEffectPanel.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "widgets/AlicornMenu.h"
+#endif
 
 #include <wx/app.h>
 #include <wx/sizer.h>
@@ -161,6 +164,47 @@ namespace
          }
 
          return {};
+      }
+
+      // Non-blocking variant: `done` gets the picked plugin ID, an empty
+      // string for "No Effect", and is not called when the menu is dismissed.
+      static void PickEffectAsync(
+         AudacityProject& project, wxWindow* parent,
+         const wxString& selectedEffectID,
+         std::function<void(wxString)> done)
+      {
+         auto menu = std::make_unique<wxMenu>();
+         if(!selectedEffectID.empty())
+         {
+            menu->Append(wxID_REMOVE, _("No Effect"));
+            menu->AppendSeparator();
+         }
+
+         auto visitor = std::make_shared<RealtimeEffectsMenuVisitor>(*menu);
+         Get().Populate(project, *visitor);
+
+#if defined(__WXMSW__) || defined(__WXMAC__)
+         menu->AppendSeparator();
+         menu->Append(wxID_MORE, _("Get more effects..."));
+#endif
+         menu->Bind(
+            wxEVT_MENU,
+            [visitor, done = std::move(done)](wxCommandEvent& evt)
+            {
+               const int commandId = evt.GetId();
+               if(commandId == wxID_REMOVE)
+                  done(wxString {});
+               else if(commandId == wxID_MORE)
+                  GetEffectsHelper::Get().GetEffects();
+               else
+                  done(visitor->GetPluginID(commandId).GET());
+            });
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         AlicornMenu::PopupOwned(
+            *parent, std::move(menu), parent->GetClientRect().GetLeftBottom());
+#else
+         parent->PopupMenu(menu.get(), parent->GetClientRect().GetLeftBottom());
+#endif
       }
 
    private:
@@ -655,6 +699,24 @@ namespace
          if(mEffectState == nullptr)
             return;//not initialized
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         EffectsMenuHelper::PickEffectAsync(
+            *mProject, mChangeButton, mEffectState->GetID(),
+            [self = wxWeakRef<RealtimeEffectControl>(this)](wxString picked)
+            {
+               if(self)
+                  self->OnEffectPickedForChange(picked);
+            });
+         return;
+      }
+
+      void OnEffectPickedForChange(const wxString& picked)
+      {
+         if(!mDelegate || mProject == nullptr || mEffectState == nullptr)
+            return;
+         const std::optional<wxString> effectID{ picked };
+         if(effectID->empty())
+#else
          const auto effectID = EffectsMenuHelper::PickEffect(
             *mProject,
             mChangeButton,
@@ -664,6 +726,7 @@ namespace
             return;//nothing
 
          if(effectID->empty())
+#endif
             RemoveFromList();
          else
          {
@@ -1077,6 +1140,24 @@ public:
       if(!mDelegate || !mProject)
          return;
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      EffectsMenuHelper::PickEffectAsync(
+         *mProject, dynamic_cast<wxWindow*>(event.GetEventObject()), {},
+         [self = wxWeakRef<RealtimeEffectListWindow>(this)](wxString picked)
+         {
+            if(self)
+               self->OnEffectPickedForAdd(picked);
+         });
+   }
+
+   void OnEffectPickedForAdd(const wxString& picked)
+   {
+      if(!mDelegate || !mProject)
+         return;
+      const std::optional<wxString> effectId{ picked };
+      if(effectId->empty())
+         return;
+#else
       const auto effectId = EffectsMenuHelper::PickEffect(
          *mProject,
          dynamic_cast<wxWindow*>(event.GetEventObject()),
@@ -1085,6 +1166,7 @@ public:
 
       if(!effectId || effectId->empty())
          return;
+#endif
 
       auto plug = PluginManager::Get().GetPlugin(*effectId);
       if(!plug)

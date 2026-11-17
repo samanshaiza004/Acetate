@@ -38,6 +38,7 @@
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "AlicornActionControl.h"
+#include "widgets/AlicornMenu.h"
 #endif
 
 namespace {
@@ -225,7 +226,8 @@ void AudioSetupToolBar::OnAudioSetup(wxCommandEvent& WXUNUSED(evt))
    if (mAlicornAudioSetup)
       mAlicornAudioSetup->SetPressed(true);
 #endif
-   wxMenu menu;
+   auto menuOwner = std::make_unique<wxMenu>();
+   wxMenu &menu = *menuOwner;
 
    //i18n-hint: Audio setup menu
    mHost.AppendSubMenu(*this, menu, &AudioSetupToolBar::OnHost, _("&Host"));
@@ -262,6 +264,11 @@ void AudioSetupToolBar::OnAudioSetup(wxCommandEvent& WXUNUSED(evt))
 
    wxWindow* btn = FindWindow(ID_AUDIO_SETUP_BUTTON);
    wxRect r = btn->GetRect();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   AlicornMenu::PopupOwned(
+      *btn, std::move(menuOwner), { r.GetLeft(), r.GetBottom() });
+   return;
+#endif
    BasicMenu::Handle{ &menu }.Popup(
       wxWidgetsWindowPlacement{ btn },
       { r.GetLeft(), r.GetBottom() }

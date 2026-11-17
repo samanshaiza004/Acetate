@@ -116,6 +116,16 @@ class AUDACITY_DLL_API PopupMenu
 public:
    virtual ~PopupMenu();
    virtual void Popup( wxWindow &window, const wxPoint &pos ) = 0;
+
+   //! Shows the menu without blocking, in the opt-in Alicorn build.
+   /*! On success the menu is moved out of `menu`, and owned along with
+       `keepAlive` (data the handlers refer to) until its action has run;
+       `onFinished` then runs once. Returns false, leaving `menu` untouched,
+       when the asynchronous path is unavailable, and the caller should use
+       Popup() instead. */
+   static bool PopupOwned(
+      std::unique_ptr<PopupMenu> &menu, wxWindow &window, const wxPoint &pos,
+      std::shared_ptr<void> keepAlive, std::function<void()> onFinished);
 };
 
 class AUDACITY_DLL_API PopupMenuTable : public PopupMenuHandler
