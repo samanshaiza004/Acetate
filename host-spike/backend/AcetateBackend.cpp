@@ -15,15 +15,19 @@
 #include <vector>
 
 #include <sndfile.h>
+#include <wx/app.h>
 
 #include "MockedPrefs.h"
 #include "Internat.h"
 #include "Prefs.h"
+#include "RealtimeEffectList.h"
 #include "ProjectHistory.h"
 #include "Project.h"
 #include "ProjectFileIO.h"
 #include "AudioIO.h"
 #include "BasicUI.h"
+#include "ExportPlugin.h"
+#include "ExportPluginRegistry.h"
 #include "FileNames.h"
 #include "SampleFormat.h"
 #include "StretchingSequence.h"
@@ -31,9 +35,11 @@
 #include "UndoManager.h"
 #include "ViewInfo.h"
 #include "sqlite/SQLiteUtils.h"
+#include "Tags.h"
 #include "Track.h"
 #include "WaveChannelUtilities.h"
 #include "WaveTrack.h"
+#include "wxFileNameWrapper.h"
 
 // Matches the unit-test fixtures: PortAudio is only initialised so lib-audio-io
 // static state is valid; no stream is opened by this slice.
@@ -150,12 +156,24 @@ struct AcetateBackend {
    std::shared_ptr<AudacityProject> project;
    unsigned long long revision{ 0 };
    std::string error;
+   // Duplicates of the tracks at the last save or open. Holding them keeps the
+   // saved file's sample blocks alive while the user edits, as ProjectFileManager
+   // does with mLastSavedTracks.
+   std::shared_ptr<TrackList> lastSaved;
+   std::string projectPath;
    std::filesystem::path tempDir;
    HeadlessServices services;
    BasicUI::Services *previousServices{};
 
    AcetateBackend()
    {
+      // wxStandardPaths and file-name helpers used by project and export code
+      // need an application object for platform traits. No window or event
+      // loop is created.
+      if (!wxAppConsole::GetInstance()) {
+         static wxAppConsole sApp;
+         wxAppConsole::SetInstance(&sApp);
+      }
       previousServices = BasicUI::Install(&services);
       // Sample blocks need a writable scratch directory; the application
       // normally chooses one at start-up.
@@ -175,12 +193,16 @@ struct AcetateBackend {
       ProjectFileIO::Get(*project).OpenProject();
       // Gives undo a base state, as ProjectManager does for a new project.
       ProjectHistory::Get(*project).InitialState();
+      ExportPluginRegistry::Get().Initialize();
    }
    ~AcetateBackend()
    {
       if (auto *audioIO = AudioIO::Get())
          if (audioIO->IsBusy())
             audioIO->StopStream();
+      if (lastSaved)
+         lastSaved->Clear();
+      lastSaved.reset();
       if (project) {
          // The application clears history before closing a project.
          UndoManager::Get(*project).ClearStates();
@@ -566,4 +588,274 @@ int acetate_backend_redo(AcetateBackend *backend)
    });
    ++backend->revision;
    return 0;
+}
+
+namespace {
+std::shared_ptr<TrackList> SnapshotTracks(AudacityProject &project)
+{
+   auto snapshot = TrackList::Create(nullptr);
+   for (auto *track : TrackList::Get(project))
+      snapshot->Add(track->Duplicate(Track::DuplicateOptions{}.Backup()));
+   return snapshot;
+}
+
+// Ports of ProjectFileManager::ReadProjectFile's "last saved" snapshot and of
+// ProjectFileManager::FixTracks (src/ProjectFileManager.cpp), which sit in the
+// wx-coupled application target and so cannot be linked here. Without
+// FixTracks, stereo channels loaded as linked pairs are never zipped back into
+// one two-channel track and the right channel is lost. These belong in a
+// UI-free library; see docs/research/host-spike.md.
+std::shared_ptr<TrackList> SnapshotLoaded(TrackList &tracks)
+{
+   // Duplicates keep an extra reference on the blocks on disk so that the
+   // saved file's contents are preserved until the user saves again.
+   auto snapshot = TrackList::Create(nullptr);
+   WaveTrack *leader{};
+   tracks.Any().Visit(
+      [&](WaveTrack &track) {
+         for (const auto pChannel : TrackList::Channels(&track)) {
+            auto left = leader;
+            auto newTrack =
+               pChannel->Duplicate(Track::DuplicateOptions{}.Backup());
+            leader = left ? nullptr
+               : (pChannel->GetLinkType() == Track::LinkType::None) ? nullptr
+               : static_cast<WaveTrack *>(newTrack.get());
+            snapshot->Add(newTrack);
+            if (left)
+               left->ZipClips(false);
+         }
+      },
+      [&](Track &track) {
+         snapshot->Add(track.Duplicate(Track::DuplicateOptions{}.Backup()));
+      });
+   return snapshot;
+}
+
+// Returns false when a channel was missing or a track reported a read error.
+bool FixTracks(TrackList &tracks)
+{
+   bool ok = true;
+   Track::Holder unlinkedTrack;
+   for (auto iter = tracks.begin(); iter != tracks.end();) {
+      auto t = (*iter++)->SharedPointer();
+      const auto linkType = t->GetLinkType();
+      if (!t->LinkConsistencyFix()) {
+         ok = false;
+         unlinkedTrack = nullptr;
+      }
+      if (!unlinkedTrack) {
+         if (linkType != ChannelGroup::LinkType::None && t->NChannels() == 1) {
+            unlinkedTrack = t;
+            iter = tracks.Find(t.get());
+            ++iter;
+         }
+      }
+      else {
+         if (const auto left = dynamic_cast<WaveTrack *>(unlinkedTrack.get()))
+            if (const auto right = dynamic_cast<WaveTrack *>(t.get())) {
+               left->SetPan(-1.0f);
+               right->SetPan(1.0f);
+               RealtimeEffectList::Get(*left).Clear();
+               RealtimeEffectList::Get(*right).Clear();
+            }
+         unlinkedTrack = nullptr;
+      }
+      if (t->GetErrorOpening())
+         ok = false;
+   }
+   return ok;
+}
+
+void ClearProject(AudacityProject &project)
+{
+   UndoManager::Get(project).ClearStates();
+   ProjectFileIO::Get(project).CloseProject();
+}
+}
+
+int acetate_backend_save(AcetateBackend *backend, const char *utf8Path)
+{
+   if (!backend || !utf8Path)
+      return 1;
+   if (!CanEdit(*backend))
+      return 2;
+   try {
+      auto &project = *backend->project;
+      auto &io = ProjectFileIO::Get(project);
+      const auto path = wxString::FromUTF8(utf8Path);
+      if (!path.Lower().EndsWith(".aup3")) {
+         backend->error = "project files must end in .aup3";
+         return 3;
+      }
+      // Like Save As in the application: keep a backup of an existing target
+      // until the save succeeds. Saving to the project's own open file must not
+      // do this, since the backup renames the file the connection is using.
+      std::optional<ProjectFileIO::BackupProject> backup;
+      const bool sameFile = !io.IsTemporary() &&
+         wxFileName(path).SameAs(wxFileName(io.GetFileName()));
+      if (!sameFile && wxFileExists(path)) {
+         backup.emplace(io, path);
+         if (!backup->IsOk()) {
+            backend->error = "could not back up the existing file";
+            return 4;
+         }
+      }
+      if (!io.SaveProject(path, backend->lastSaved.get())) {
+         backend->error = backend->services.TakeError();
+         if (backend->error.empty())
+            backend->error = "Audacity could not save the project";
+         return 5;
+      }
+      project.SetProjectName(wxFileName(path).GetName());
+      io.SetProjectTitle();
+      UndoManager::Get(project).StateSaved();
+      if (backend->lastSaved)
+         backend->lastSaved->Clear();
+      backend->lastSaved = SnapshotTracks(project);
+      backend->projectPath = utf8Path;
+      if (backup)
+         backup->Discard();
+      return 0;
+   }
+   catch (const std::exception &e) {
+      backend->error = e.what();
+   }
+   catch (...) {
+      backend->error = "unexpected error while saving";
+   }
+   return 6;
+}
+
+int acetate_backend_open(AcetateBackend *backend, const char *utf8Path)
+{
+   if (!backend || !utf8Path)
+      return 1;
+   if (!CanEdit(*backend))
+      return 2;
+   try {
+      const auto path = wxString::FromUTF8(utf8Path);
+      // Do not point the database layer at arbitrary files.
+      if (!path.Lower().EndsWith(".aup3")) {
+         backend->error = "project files must end in .aup3";
+         return 3;
+      }
+      if (!wxFileExists(path)) {
+         backend->error = "the project file does not exist";
+         return 3;
+      }
+      // Same sequence as opening a file in the application: a fresh project
+      // with a temporary connection, then LoadProject over it.
+      auto fresh = AudacityProject::Create();
+      auto &io = ProjectFileIO::Get(*fresh);
+      auto discard = [&] { ClearProject(*fresh); };
+      if (!io.OpenProject()) {
+         backend->error = "could not create a working project";
+         return 3;
+      }
+      auto parsed = io.LoadProject(path, false);
+      if (!parsed) {
+         backend->error = backend->services.TakeError();
+         if (backend->error.empty())
+            backend->error = io.GetLastError().Translation().utf8_str().data();
+         discard();
+         return 4;
+      }
+      auto &loadedTracks = TrackList::Get(*fresh);
+      auto snapshot = SnapshotLoaded(loadedTracks);
+      if (!FixTracks(loadedTracks)) {
+         backend->error = "the project file has damaged or missing tracks";
+         snapshot->Clear();
+         discard();
+         return 6;
+      }
+      parsed->Commit();
+      ProjectHistory::Get(*fresh).InitialState();
+
+      // Success: retire the previous project.
+      if (backend->lastSaved)
+         backend->lastSaved->Clear();
+      ClearProject(*backend->project);
+      backend->project = std::move(fresh);
+      backend->lastSaved = std::move(snapshot);
+      backend->projectPath = utf8Path;
+      ++backend->revision;
+      return 0;
+   }
+   catch (const std::exception &e) {
+      backend->error = e.what();
+   }
+   catch (...) {
+      backend->error = "unexpected error while opening";
+   }
+   return 7;
+}
+
+int acetate_backend_export_wav(AcetateBackend *backend, const char *utf8Path)
+{
+   if (!backend || !utf8Path)
+      return 1;
+   if (!CanEdit(*backend))
+      return 2;
+   try {
+      auto &project = *backend->project;
+      auto &tracks = TrackList::Get(project);
+      const double end = tracks.GetEndTime();
+      if (!(end > 0.0)) {
+         backend->error = "nothing to export";
+         return 3;
+      }
+      unsigned channels = 1;
+      double rate = 0.0;
+      for (auto *track : tracks.Any<WaveTrack>()) {
+         if (track->NChannels() > 1)
+            channels = 2;
+         rate = std::max(rate, track->GetRate());
+      }
+      auto [plugin, format] =
+         ExportPluginRegistry::Get().FindFormat(wxT("WAV"));
+      if (!plugin) {
+         backend->error = "the WAV export plug-in is not available";
+         return 4;
+      }
+      auto processor = plugin->CreateProcessor(format);
+      wxFileNameWrapper fileName{ wxString::FromUTF8(utf8Path) };
+      if (!processor->Initialize(
+             project, {}, fileName, 0.0, end, false, rate, channels, nullptr,
+             &Tags::Get(project))) {
+         backend->error = backend->services.TakeError();
+         if (backend->error.empty())
+            backend->error = "export could not start";
+         return 5;
+      }
+      struct Delegate final : ExportProcessorDelegate {
+         bool IsCancelled() const override { return false; }
+         bool IsStopped() const override { return false; }
+         void SetStatusString(const TranslatableString &) override {}
+         void OnProgress(double) override {}
+      } delegate;
+      if (processor->Process(delegate) != ExportResult::Success) {
+         backend->error = backend->services.TakeError();
+         if (backend->error.empty())
+            backend->error = "export failed";
+         return 6;
+      }
+      return 0;
+   }
+   catch (const std::exception &e) {
+      backend->error = e.what();
+   }
+   catch (...) {
+      backend->error = "unexpected error while exporting";
+   }
+   return 7;
+}
+
+int acetate_backend_has_unsaved_changes(const AcetateBackend *backend)
+{
+   return backend && UndoManager::Get(*backend->project).UnsavedChanges();
+}
+
+const char *acetate_backend_project_path(AcetateBackend *backend)
+{
+   return backend ? backend->projectPath.c_str() : "";
 }

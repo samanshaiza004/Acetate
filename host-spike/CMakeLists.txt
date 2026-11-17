@@ -8,6 +8,9 @@ libraries. It does not change the Audacity application target.
 add_library( acetate-host-backend SHARED
    backend/AcetateBackend.cpp
    backend/AcetateBackend.h
+   # Audacity's own PCM exporter, compiled in so the shim can run the real
+   # WAV export without loading the mod-pcm module.
+   "${CMAKE_SOURCE_DIR}/modules/import-export/mod-pcm/ExportPCM.cpp"
    "${CMAKE_SOURCE_DIR}/tests/MockedPrefs.cpp"
    "${CMAKE_SOURCE_DIR}/tests/MockedPrefs.h"
 )
@@ -29,6 +32,9 @@ target_link_libraries( acetate-host-backend
       lib-stretching-sequence
       lib-preferences-interface
       lib-file-formats
+      lib-import-export
+      lib-mixer
+      lib-tags
       lib-sqlite-helpers
       SndFile::sndfile
 )

@@ -8,6 +8,7 @@ package main
 // work off the main thread.
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
@@ -42,10 +43,15 @@ foreign backend {
 	acetate_backend_can_redo :: proc(b: Backend) -> i32 ---
 	acetate_backend_undo :: proc(b: Backend) -> i32 ---
 	acetate_backend_redo :: proc(b: Backend) -> i32 ---
+	acetate_backend_save :: proc(b: Backend, path: cstring) -> i32 ---
+	acetate_backend_open :: proc(b: Backend, path: cstring) -> i32 ---
+	acetate_backend_export_wav :: proc(b: Backend, path: cstring) -> i32 ---
+	acetate_backend_has_unsaved_changes :: proc(b: Backend) -> i32 ---
+	acetate_backend_project_path :: proc(b: Backend) -> cstring ---
 	acetate_backend_waveform :: proc(b: Backend, track, channel: i32, t0, t1: f64, columns: i32, min_max: [^]f32) -> i32 ---
 }
 
-EXPECTED_ABI :: 4
+EXPECTED_ABI :: 5
 MAX_COLUMNS :: 1024
 MAX_CHANNELS :: 2
 REFRESH_PERIOD :: 33 * 1_000_000
@@ -54,6 +60,14 @@ TEXT :: alicorn.Color{0.09, 0.12, 0.17, 1}
 CMD_UNDO   :: host.Application_Command_ID(1)
 CMD_REDO   :: host.Application_Command_ID(2)
 CMD_DELETE :: host.Application_Command_ID(3)
+CMD_OPEN    :: host.Application_Command_ID(10)
+CMD_SAVE    :: host.Application_Command_ID(11)
+CMD_SAVE_AS :: host.Application_Command_ID(12)
+CMD_EXPORT  :: host.Application_Command_ID(13)
+
+DIALOG_OPEN    :: host.Dialog_ID(1)
+DIALOG_SAVE_AS :: host.Dialog_ID(2)
+DIALOG_EXPORT  :: host.Dialog_ID(3)
 
 Channel_View :: struct {
 	surface:  alicorn.Node_ID,
@@ -69,7 +83,6 @@ Channel_View :: struct {
 
 App :: struct {
 	backend:   Backend,
-	file_name: string,
 	channels:  int,
 	rate:      f64,
 	duration:  f64,
@@ -80,8 +93,13 @@ App :: struct {
 	selection_text: string,
 	dragging:  bool,
 	drag_anchor: f64,
+	file_items: [5]host.Application_Menu_Item,
 	edit_items: [4]host.Application_Menu_Item,
-	menus:     [1]host.Application_Menu,
+	menus:     [2]host.Application_Menu,
+	dialogs:   host.Dialog_Service,
+	dialog_open: bool, // one native dialog at a time
+	project_path: string,
+	unsaved:   bool,
 	views:     [MAX_CHANNELS]Channel_View,
 	scheduler: host.Application_Scheduler,
 }
@@ -103,6 +121,94 @@ toggle_playback :: proc(app: ^App) {
 	app.status = "Playing"
 }
 
+AUDACITY_FILTER := [1]host.Dialog_Filter{{name = "Audacity project", pattern = "aup3"}}
+WAV_FILTER := [1]host.Dialog_Filter{{name = "WAV audio", pattern = "wav"}}
+
+// Opens a native file dialog. The result arrives later through on_dialog; the
+// host never runs a nested event loop for it.
+show_dialog :: proc(app: ^App, id: host.Dialog_ID) {
+	if app.dialog_open { return }
+	request := host.File_Dialog_Request{id = id}
+	switch id {
+	case DIALOG_OPEN:
+		request.kind = .Open_File
+		request.title = "Open project"
+		request.filters = AUDACITY_FILTER[:]
+		request.accept_label = "Open"
+	case DIALOG_SAVE_AS:
+		request.kind = .Save_File
+		request.title = "Save project"
+		request.filters = AUDACITY_FILTER[:]
+		request.accept_label = "Save"
+	case DIALOG_EXPORT:
+		request.kind = .Save_File
+		request.title = "Export WAV"
+		request.filters = WAV_FILTER[:]
+		request.accept_label = "Export"
+	}
+	if host.ShowFileDialog(app.dialogs, request) {
+		app.dialog_open = true
+	} else {
+		app.status = "Could not open a file dialog"
+	}
+}
+
+with_extension :: proc(path, extension: string) -> string {
+	if strings.has_suffix(strings.to_lower(path, context.temp_allocator), extension) { return path }
+	return fmt.aprintf("%s%s", path, extension)
+}
+
+save_to :: proc(app: ^App, path: string) {
+	target := with_extension(path, ".aup3")
+	set_status_from_backend(app, fmt.aprintf("Saved %s", target), acetate_backend_save(app.backend, fmt.ctprintf("%s", target)))
+}
+
+dialog_app :: proc(state: rawptr, rt: ^alicorn.Runtime, result: ^host.File_Dialog_Result) {
+	app := cast(^App)state
+	app.dialog_open = false
+	if result.status == .Error {
+		app.status = fmt.aprintf("File dialog failed: %s", result.error)
+	} else if result.status == .Accepted && len(result.paths) > 0 {
+		path := result.paths[0]
+		switch result.id {
+		case DIALOG_OPEN:
+			set_status_from_backend(app, fmt.aprintf("Opened %s", path), acetate_backend_open(app.backend, fmt.ctprintf("%s", path)))
+		case DIALOG_SAVE_AS:
+			save_to(app, path)
+		case DIALOG_EXPORT:
+			target := with_extension(path, ".wav")
+			set_status_from_backend(app, fmt.aprintf("Exported %s", target), acetate_backend_export_wav(app.backend, fmt.ctprintf("%s", target)))
+		}
+	}
+	sync_project(app, rt)
+	alicorn.invalidate_root(rt, "file dialog finished")
+}
+
+// Re-reads project facts after anything that can replace or change the
+// project (open, edit, undo, save) and invalidates when the description's
+// inputs changed.
+sync_project :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	channels := 0
+	rate := 0.0
+	if acetate_backend_track_count(app.backend) > 0 {
+		channels = min(int(acetate_backend_channel_count(app.backend, 0)), MAX_CHANNELS)
+		rate = acetate_backend_track_rate(app.backend, 0)
+	}
+	duration := acetate_backend_project_end(app.backend)
+	path := string(acetate_backend_project_path(app.backend))
+	unsaved := acetate_backend_has_unsaved_changes(app.backend) != 0
+	if channels != app.channels || rate != app.rate || duration != app.duration ||
+	   path != app.project_path || unsaved != app.unsaved {
+		if channels != app.channels {
+			// New surfaces will be created by the next description.
+			app.views = {}
+		}
+		app.channels, app.rate, app.duration, app.unsaved = channels, rate, duration, unsaved
+		if path != app.project_path { app.project_path = strings.clone(path) }
+		if rt != nil { alicorn.invalidate_root(rt, "project facts changed") }
+	}
+}
+
 set_status_from_backend :: proc(app: ^App, ok_text: string, status: i32) {
 	if status == 0 {
 		app.status = ok_text
@@ -119,9 +225,21 @@ run_command :: proc(app: ^App, rt: ^alicorn.Runtime, command: host.Application_C
 		set_status_from_backend(app, "Redone", acetate_backend_redo(app.backend))
 	case CMD_DELETE:
 		set_status_from_backend(app, "Deleted selection", acetate_backend_delete_selection(app.backend))
+	case CMD_OPEN:
+		show_dialog(app, DIALOG_OPEN)
+	case CMD_SAVE:
+		if app.project_path == "" {
+			show_dialog(app, DIALOG_SAVE_AS)
+		} else {
+			save_to(app, app.project_path)
+		}
+	case CMD_SAVE_AS:
+		show_dialog(app, DIALOG_SAVE_AS)
+	case CMD_EXPORT:
+		show_dialog(app, DIALOG_EXPORT)
 	}
-	app.duration = acetate_backend_project_end(app.backend)
-	alicorn.invalidate_root(rt, "edit command")
+	sync_project(app, rt)
+	alicorn.invalidate_root(rt, "command")
 }
 
 menu_command_app :: proc(state: rawptr, rt: ^alicorn.Runtime, command: host.Application_Command_ID) {
@@ -194,8 +312,10 @@ build_app :: proc(
 	if ui.column(&ctx, grow = 1, padding = 16, gap = 8, clip = true, label = "acetate-host-content") {
 		ui.text(&ctx, "Acetate · Alicorn host spike", size = 22, color = TEXT)
 		ui.text(&ctx, fmt.tprintf(
-			"%s · %d channel(s) · %.0f Hz · %.3f s",
-			app.file_name, app.channels, app.rate, app.duration,
+			"%s%s · %d channel(s) · %.0f Hz · %.3f s",
+			app.project_path if app.project_path != "" else "Unsaved project",
+			" *" if app.unsaved else "",
+			app.channels, app.rate, app.duration,
 		), color = TEXT)
 		if ui.row(&ctx, gap = 12, align = .Center, label = "transport") {
 			if ui.button(&ctx, "Stop" if app.playing else "Play", width = 96) {
@@ -226,6 +346,7 @@ build_app :: proc(
 services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app := cast(^App)state
 	app.scheduler = services.scheduler
+	app.dialogs = services.dialogs
 }
 
 start_app :: proc(state: rawptr, _waker: host.Application_Waker) {
@@ -320,6 +441,10 @@ selection_label :: proc(app: ^App) -> string {
 // or an accelerator is processed, so it is refreshed on the application thread.
 refresh_menu_state :: proc(app: ^App) {
 	idle := !app.playing
+	app.file_items[0].state.enabled = idle && !app.dialog_open
+	app.file_items[1].state.enabled = idle && !app.dialog_open && app.channels > 0
+	app.file_items[2].state.enabled = idle && !app.dialog_open && app.channels > 0
+	app.file_items[4].state.enabled = idle && !app.dialog_open && app.duration > 0
 	app.edit_items[0].state.enabled = idle && acetate_backend_can_undo(app.backend) != 0
 	app.edit_items[1].state.enabled = idle && acetate_backend_can_redo(app.backend) != 0
 	app.edit_items[3].state.enabled = idle && app.sel1 > app.sel0
@@ -335,11 +460,7 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Sch
 		alicorn.invalidate_root(rt, "playback finished")
 	}
 	app.position = acetate_backend_play_position(app.backend)
-	duration := acetate_backend_project_end(app.backend)
-	if duration != app.duration {
-		app.duration = duration
-		alicorn.invalidate_root(rt, "project length changed")
-	}
+	sync_project(app, rt)
 	acetate_backend_get_selection(app.backend, &app.sel0, &app.sel1)
 	refresh_menu_state(app)
 	text := selection_label(app)
@@ -361,7 +482,7 @@ main :: proc() {
 		if argument == "--smoke" { smoke = true } else { path = argument }
 	}
 	if path == "" {
-		fmt.eprintln("usage: acetate-host [--smoke] <audio file>")
+		fmt.eprintln("usage: acetate-host [--smoke] <audio file or .aup3 project>")
 		os.exit(2)
 	}
 	if acetate_backend_abi_version() != EXPECTED_ABI {
@@ -376,15 +497,17 @@ main :: proc() {
 	}
 	defer acetate_backend_destroy(app.backend)
 	cpath := fmt.ctprintf("%s", path)
-	if status := acetate_backend_import(app.backend, cpath); status != 0 {
+	if strings.has_suffix(strings.to_lower(path, context.temp_allocator), ".aup3") {
+		if status := acetate_backend_open(app.backend, cpath); status != 0 {
+			fmt.eprintfln("open failed (%d): %s", status, acetate_backend_last_error(app.backend))
+			os.exit(1)
+		}
+	} else if status := acetate_backend_import(app.backend, cpath); status != 0 {
 		fmt.eprintfln("import failed (%d): %s", status, acetate_backend_last_error(app.backend))
 		os.exit(1)
 	}
-	app.file_name = path
-	app.channels = min(int(acetate_backend_channel_count(app.backend, 0)), MAX_CHANNELS)
-	app.rate = acetate_backend_track_rate(app.backend, 0)
-	app.duration = acetate_backend_project_end(app.backend)
-	fmt.printfln("imported %s: %d channel(s), %.0f Hz, %.3f s", path, app.channels, app.rate, app.duration)
+	sync_project(&app, nil)
+	fmt.printfln("loaded %s: %d channel(s), %.0f Hz, %.3f s", path, app.channels, app.rate, app.duration)
 
 	app.edit_items = {
 		{kind = .Command, command = CMD_UNDO, label = "Undo", state = {enabled = false}, shortcut = {key = 'z', modifiers = {.Primary}}},
@@ -392,7 +515,17 @@ main :: proc() {
 		{kind = .Separator},
 		{kind = .Command, command = CMD_DELETE, label = "Delete", state = {enabled = false}, shortcut = {key = rune(8)}},
 	}
-	app.menus = {{label = "Edit", items = app.edit_items[:]}}
+	app.file_items = {
+		{kind = .Command, command = CMD_OPEN, label = "Open…", state = {enabled = true}, shortcut = {key = 'o', modifiers = {.Primary}}},
+		{kind = .Command, command = CMD_SAVE, label = "Save", state = {enabled = false}, shortcut = {key = 's', modifiers = {.Primary}}},
+		{kind = .Command, command = CMD_SAVE_AS, label = "Save As…", state = {enabled = false}, shortcut = {key = 's', modifiers = {.Primary, .Shift}}},
+		{kind = .Separator},
+		{kind = .Command, command = CMD_EXPORT, label = "Export WAV…", state = {enabled = false}, shortcut = {key = 'e', modifiers = {.Primary, .Shift}}},
+	}
+	app.menus = {
+		{label = "File", items = app.file_items[:]},
+		{label = "Edit", items = app.edit_items[:]},
+	}
 
 	host.Run(host.Application{
 		state = rawptr(&app),
@@ -402,6 +535,7 @@ main :: proc() {
 		build = build_app,
 		menus = app.menus[:],
 		on_menu_command = menu_command_app,
+		on_dialog = dialog_app,
 		on_pointer = pointer_app,
 		on_key = key_app,
 		on_services = services_app,

@@ -18,7 +18,7 @@ extern "C" {
 typedef struct AcetateBackend AcetateBackend;
 
 // Bumped whenever the exported surface changes shape.
-#define ACETATE_BACKEND_ABI_VERSION 4
+#define ACETATE_BACKEND_ABI_VERSION 5
 
 ACETATE_BACKEND_API int acetate_backend_abi_version(void);
 
@@ -95,6 +95,30 @@ ACETATE_BACKEND_API int acetate_backend_can_undo(const AcetateBackend *backend);
 ACETATE_BACKEND_API int acetate_backend_can_redo(const AcetateBackend *backend);
 ACETATE_BACKEND_API int acetate_backend_undo(AcetateBackend *backend);
 ACETATE_BACKEND_API int acetate_backend_redo(AcetateBackend *backend);
+
+// Project files and export. All three block the calling thread until done and
+// must be called from the host's main thread with playback stopped.
+//
+// Saves the project as an .aup3 at utf8Path using ProjectFileIO::SaveProject
+// (an existing file is backed up and restored on failure, as in the app) and
+// marks the current undo state as saved. Returns 0 on success.
+ACETATE_BACKEND_API int acetate_backend_save(
+   AcetateBackend *backend, const char *utf8Path);
+// Replaces the current project with the .aup3 at utf8Path, loaded through
+// ProjectFileIO::LoadProject. On failure the current project is kept.
+ACETATE_BACKEND_API int acetate_backend_open(
+   AcetateBackend *backend, const char *utf8Path);
+// Mixes every wave track over the whole project and writes a 16-bit PCM WAV
+// at utf8Path with Audacity's own PCM export plug-in. Returns 0 on success.
+ACETATE_BACKEND_API int acetate_backend_export_wav(
+   AcetateBackend *backend, const char *utf8Path);
+// Non-zero when undo history has changes since the last save or open.
+ACETATE_BACKEND_API int acetate_backend_has_unsaved_changes(
+   const AcetateBackend *backend);
+// Path of the saved project, or an empty string for an unsaved project. The
+// pointer is valid until the next call that changes the project.
+ACETATE_BACKEND_API const char *acetate_backend_project_path(
+   AcetateBackend *backend);
 
 #ifdef __cplusplus
 }
