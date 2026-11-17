@@ -1,0 +1,231 @@
+name: Acetate test builds
+
+# Manual only. Builds the opt-in Alicorn configuration (see README.md and
+# src/alicorn/README.md) for hands-on testing on macOS and Windows and uploads
+# the result as a workflow artifact. These are unsigned test builds, not
+# releases. The tester checklist is docs/testing/tester-checklist.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Which platforms to build"
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - macos
+          - windows
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acetate-test-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ALICORN_REPOSITORY: https://github.com/samanshaiza004/alicorn.git
+  ODIN_RELEASE: dev-2026-11
+
+jobs:
+  macos:
+    name: macOS (Apple Silicon)
+    if: ${{ inputs.platforms == 'both' || inputs.platforms == 'macos' }}
+    runs-on: macos-15
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out Alicorn at the revision Acetate pins
+        shell: bash
+        run: |
+          pin=$(grep -oE '[0-9a-f]{40}' cmake-proxies/cmake-modules/AlicornSnapUIPin.cmake | head -1)
+          test -n "$pin"
+          echo "ALICORN_PIN=$pin" >> "$GITHUB_ENV"
+          git clone --quiet "$ALICORN_REPOSITORY" alicorn
+          git -C alicorn checkout --quiet "$pin"
+          git -C alicorn status --short | wc -l
+
+      - name: Install Odin ${{ env.ODIN_RELEASE }} (checksum-verified by Alicorn's script)
+        shell: bash
+        run: |
+          odin_root="$RUNNER_TEMP/odin"
+          sh alicorn/tools/setup_macos_odin.sh "$odin_root"
+          echo "$odin_root" >> "$GITHUB_PATH"
+          echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
+          "$odin_root/odin" version
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          pip install conan
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          conan --version
+          cmake --version
+          ninja --version
+          xcodebuild -version
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-macos-arm64-${{ hashFiles('conan/**', 'cmake-proxies/cmake-modules/AudacityDependencies.cmake', 'cmake-proxies/cmake-modules/DependenciesList.cmake') }}
+          restore-keys: |
+            conan-macos-arm64-
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Daudacity_use_alicorn_snap_ui=ON \
+            -DAUDACITY_ALICORN_SOURCE="$GITHUB_WORKSPACE/alicorn" \
+            -Daudacity_has_vst3=OFF \
+            -Daudacity_use_ladspa=OFF \
+            -Daudacity_use_audio_units=OFF \
+            -Daudacity_use_lv2=off
+
+      - name: Build the application and its modules
+        shell: bash
+        run: |
+          # The Audacity target does not build the import/export modules, which
+          # are separate targets; without them nothing can be imported.
+          modules=$(ninja -C build -t targets all | sed -n 's/^\(mod-[a-z0-9-]*\):.*/\1/p' | grep -v -e nyq-bench -e mod-null | sort -u | tr '\n' ' ')
+          echo "modules: $modules"
+          cmake --build build --target Audacity $modules
+
+      - name: Ad-hoc sign the bundle
+        shell: bash
+        run: |
+          app=build/Release/Audacity.app
+          # install_name_tool in the build invalidates the linker signatures.
+          find "$app" \( -name '*.dylib' -o -name '*.so' \) -print0 | xargs -0 -n1 codesign --force --sign - >/dev/null
+          codesign --force --sign - "$app/Contents/MacOS/Audacity"
+          codesign --force --sign - "$app"
+          codesign --verify --verbose=2 "$app"
+          vtool -show-build "$app/Contents/MacOS/Audacity" | grep -E 'platform|minos'
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent build/Release/Audacity.app dist/Acetate-macos-arm64.zip
+          {
+            echo "Acetate test build"
+            echo "commit: $GITHUB_SHA"
+            echo "alicorn: $ALICORN_PIN"
+            echo "built:  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > dist/BUILD-INFO.txt
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Acetate-macos-arm64
+          path: dist/
+          retention-days: 14
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "### macOS (Apple Silicon) test build"
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- Alicorn: \`$ALICORN_PIN\`"
+            echo "- Unsigned. After unzipping run: \`xattr -cr Audacity.app\`, then open it."
+            echo "- Checklist: docs/testing/tester-checklist.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows (x64)
+    if: ${{ inputs.platforms == 'both' || inputs.platforms == 'windows' }}
+    runs-on: windows-2022
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out Alicorn at the revision Acetate pins
+        shell: pwsh
+        run: |
+          $pin = [regex]::Match((Get-Content cmake-proxies/cmake-modules/AlicornSnapUIPin.cmake -Raw), '[0-9a-f]{40}').Value
+          if (-not $pin) { throw 'no Alicorn pin found' }
+          "ALICORN_PIN=$pin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          git clone --quiet $env:ALICORN_REPOSITORY alicorn
+          git -C alicorn checkout --quiet $pin
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release: dev-2026-11
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        shell: pwsh
+        run: |
+          pip install conan
+          conan --version
+          cmake --version
+          odin version
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-windows-x64-${{ hashFiles('conan/**', 'cmake-proxies/cmake-modules/AudacityDependencies.cmake', 'cmake-proxies/cmake-modules/DependenciesList.cmake') }}
+          restore-keys: |
+            conan-windows-x64-
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $alicorn = "$env:GITHUB_WORKSPACE/alicorn" -replace '\\', '/'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -Daudacity_use_alicorn_snap_ui=ON `
+            "-DAUDACITY_ALICORN_SOURCE=$alicorn" `
+            -Daudacity_has_vst3=OFF `
+            -Daudacity_use_ladspa=OFF `
+            -Daudacity_use_lv2=off
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Get-ChildItem build/Release | Select-Object -First 40 | Format-Table Name, Length
+          Compress-Archive -Path build/Release/* -DestinationPath dist/Acetate-windows-x64.zip
+          @(
+            'Acetate test build',
+            "commit: $env:GITHUB_SHA",
+            "alicorn: $env:ALICORN_PIN",
+            "built:  $((Get-Date).ToUniversalTime().ToString('s'))Z"
+          ) | Set-Content dist/BUILD-INFO.txt
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Acetate-windows-x64
+          path: dist/
+          retention-days: 14
+
+      - name: Summary
+        shell: pwsh
+        run: |
+          @(
+            '### Windows (x64) test build',
+            "- commit: ``$env:GITHUB_SHA``",
+            "- Alicorn: ``$env:ALICORN_PIN``",
+            '- Unsigned. SmartScreen may warn; unzip and run Audacity.exe.',
+            '- Checklist: docs/testing/tester-checklist.md'
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
