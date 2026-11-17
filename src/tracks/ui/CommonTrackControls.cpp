@@ -20,6 +20,7 @@ Paul Licameli split from TrackControls.cpp
 #include "../../TrackArtist.h"
 #include "CommonTrackInfo.h"
 #include "../../TrackPanelDrawingContext.h"
+#include "RetainedTrackControls.h"
 #include "../../TrackPanelMouseEvent.h"
 #include "../../TrackUtilities.h"
 #include <wx/textdlg.h>
@@ -350,6 +351,15 @@ void CommonTrackControls::Draw(
       // fill in label
       auto dc = &context.dc;
       const auto pTrack = FindTrack();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto* view = RetainedTrackControls::ViewFor(context)) {
+         RetainedTrackControls::Scene scene;
+         scene.Fill(rect_, RetainedTrackControls::PanelColour(
+            pTrack && pTrack->GetSelected()));
+         if (view->DrawTrackControls(*dc, rect_, scene))
+            return;
+      }
+#endif
       AColor::MediumTrackInfo( dc, pTrack && pTrack->GetSelected() );
       dc->DrawRectangle( rect_ );
    }
@@ -368,9 +378,23 @@ void CommonTrackControls::Draw(
       //   TrackArt::DrawSyncLockTiles(dc, tileFill);
       //}
 
-      if (pTrack)
+      if (pTrack) {
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+         if (auto* view = RetainedTrackControls::ViewFor(context)) {
+            RetainedTrackControls::Scene scene;
+            {
+               RetainedTrackControls::Scope scope{ &scene };
+               CommonTrackInfo::DrawItems( context, rect_, *pTrack );
+            }
+            if (scene.Empty() ||
+                view->DrawTrackControls(context.dc, rect_, scene))
+               return;
+            // Retained paint failed: draw the whole panel with wx instead.
+         }
+#endif
          // Draw things within the track control panel
          CommonTrackInfo::DrawItems( context, rect_, *pTrack );
+      }
    }
 }
 

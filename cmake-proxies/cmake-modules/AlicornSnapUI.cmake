@@ -101,6 +101,8 @@ add_custom_command(
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacitySnapView.h"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityTimelineView.odin"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityTimelineView.h"
+      "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityTrackControlsView.odin"
+      "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityTrackControlsView.h"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityRulerView.h"
       "${AUDACITY_ALICORN_ROOT}/src/alicorn/AudacityWaveformView.h"
       ${alicorn_runtime_inputs}

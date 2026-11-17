@@ -64,6 +64,7 @@ class AUDACITY_DLL_API LWSlider
 {
    friend class ASlider;
    friend class ASliderAx;
+   friend struct RetainedLWSlider;
 
  public:
 

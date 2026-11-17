@@ -13,6 +13,7 @@
 #include <wx/pen.h>
 
 #include "AudacityTimelineView.h"
+#include "AudacityTrackControlsView.h"
 #include "widgets/Ruler.h"
 
 class AlicornTimelineView final {
@@ -41,6 +42,29 @@ public:
       wxRect background;
       int radius{};
       wxColour fillColor;
+   };
+   // A retained scene for one track-control panel, in track-panel local
+   // coordinates. Audacity's cells keep hit testing and state; this only
+   // carries presentation.
+   struct TrackControlsScene {
+      std::vector<AudacityWaveformRectangle> rectangles;
+      std::vector<AudacityWaveformSegment> segments;
+      std::vector<AudacityWaveformPointMarker> pointMarkers;
+      std::vector<WaveformLabel> labels;
+
+      void Fill(const wxRect& bounds, const wxColour& color);
+      void Line(
+         const wxPoint& start, const wxPoint& end, const wxColour& color,
+         float thickness = 1.0f);
+      void Dot(float centerX, float centerY, float diameter, const wxColour& color);
+      void Text(
+         const wxRect& bounds, const wxString& text, const wxColour& color,
+         const wxFont& font);
+      bool Empty() const noexcept
+      {
+         return rectangles.empty() && segments.empty() &&
+            pointMarkers.empty() && labels.empty();
+      }
    };
    using WaveformFills = std::array<WaveformFill, 3>;
    using WaveformSegments = std::array<WaveformSegment, 4>;
@@ -117,6 +141,10 @@ public:
       int firstX,
       int secondX,
       const wxColour& color);
+   // Paints one track-control panel scene. Returns false when the retained
+   // path is unavailable so the caller can draw with wx instead.
+   bool DrawTrackControls(
+      wxDC& dc, const wxRect& clip, const TrackControlsScene& scene);
    bool UpdateZoomPreview(bool active, int firstX, int secondX);
    bool DrawZoomPreview(wxDC& dc, const wxRect& clip);
    bool ClearVerticalIndicator(
@@ -140,6 +168,8 @@ private:
    bool SameWaveformLabels(const std::vector<WaveformLabel>& labels) const;
 
    AudacityAlicornTimelineView* mView{};
+   AudacityAlicornTrackControlsView* mControlsView{};
+   wxSize mControlsSize;
    wxSize mRulerSize;
    wxSize mWaveformSize;
    std::unique_ptr<Ruler::DisplaySnapshot> mLastSnapshot;

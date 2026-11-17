@@ -346,6 +346,7 @@ AlicornTimelineView::AlicornTimelineView(
 
 AlicornTimelineView::~AlicornTimelineView()
 {
+   audacity_alicorn_track_controls_view_destroy(mControlsView);
    audacity_alicorn_timeline_view_destroy(mView);
 }
 
@@ -1173,4 +1174,143 @@ bool AlicornTimelineView::DrawRuler(
          return audacity_alicorn_timeline_view_paint_ruler(
             mView, &DrawCommand, &DrawGeometry, &context);
       });
+}
+
+void AlicornTimelineView::TrackControlsScene::Fill(
+   const wxRect& bounds, const wxColour& color)
+{
+   if (bounds.IsEmpty() || !color.IsOk())
+      return;
+   const auto linear = ToLinearColor(color);
+   rectangles.push_back(AudacityWaveformRectangle{
+      static_cast<float>(bounds.x), static_cast<float>(bounds.y),
+      static_cast<float>(bounds.width), static_cast<float>(bounds.height),
+      linear.r, linear.g, linear.b, linear.a });
+}
+
+void AlicornTimelineView::TrackControlsScene::Line(
+   const wxPoint& start, const wxPoint& end, const wxColour& color,
+   float thickness)
+{
+   if (!color.IsOk())
+      return;
+   const auto linear = ToLinearColor(color);
+   segments.push_back(AudacityWaveformSegment{
+      static_cast<float>(start.x), static_cast<float>(start.y),
+      static_cast<float>(end.x), static_cast<float>(end.y), thickness,
+      linear.r, linear.g, linear.b, linear.a });
+}
+
+void AlicornTimelineView::TrackControlsScene::Dot(
+   float centerX, float centerY, float diameter, const wxColour& color)
+{
+   if (!color.IsOk() || diameter <= 0.0f)
+      return;
+   const auto linear = ToLinearColor(color);
+   pointMarkers.push_back(AudacityWaveformPointMarker{
+      centerX, centerY, diameter, linear.r, linear.g, linear.b, linear.a });
+}
+
+void AlicornTimelineView::TrackControlsScene::Text(
+   const wxRect& bounds, const wxString& text, const wxColour& color,
+   const wxFont& font)
+{
+   if (bounds.IsEmpty() || text.empty() || !color.IsOk())
+      return;
+   labels.push_back(WaveformLabel{ bounds, text, color, font });
+}
+
+bool AlicornTimelineView::DrawTrackControls(
+   wxDC& dc, const wxRect& clip, const TrackControlsScene& scene)
+{
+   if (scene.Empty())
+      return true;
+   if (scene.rectangles.size() > AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS ||
+       scene.segments.size() > AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS ||
+       scene.pointMarkers.size() > AUDACITY_WAVEFORM_MAX_GEOMETRY_SEGMENTS ||
+       scene.labels.size() > 1024)
+      return false;
+
+   const auto size = dc.GetSize();
+   if (size.x <= 0 || size.y <= 0)
+      return false;
+   if (!mControlsView) {
+      mControlsView = audacity_alicorn_track_controls_view_create(
+         static_cast<float>(size.x), static_cast<float>(size.y));
+      if (!mControlsView)
+         return false;
+      mControlsSize = size;
+   }
+   else if (size != mControlsSize) {
+      if (audacity_alicorn_track_controls_view_resize(
+             mControlsView, static_cast<float>(size.x),
+             static_cast<float>(size.y)) < 0)
+         return false;
+      mControlsSize = size;
+   }
+
+   std::vector<std::string> textStorage;
+   textStorage.reserve(scene.labels.size());
+   std::vector<AudacityTimelineLabel> labels;
+   labels.reserve(scene.labels.size());
+   std::vector<wxFont> fonts;
+   fonts.reserve(scene.labels.size());
+   for (const auto& label : scene.labels) {
+      const auto utf8 = label.text.utf8_str();
+      if (!utf8.data() || utf8.length() > 4096)
+         return false;
+      textStorage.emplace_back(utf8.data(), utf8.length());
+      const auto pixelHeight = label.font.GetPixelSize().GetHeight();
+      labels.push_back(AudacityTimelineLabel{
+         label.bounds.x, label.bounds.y, label.bounds.width, label.bounds.height,
+         static_cast<float>(pixelHeight > 0 ? pixelHeight : label.bounds.height),
+         static_cast<float>(label.font.GetWeight()),
+         ToLinearColor(label.color),
+         reinterpret_cast<const uint8_t*>(textStorage.back().data()),
+         static_cast<uint64_t>(textStorage.back().size()) });
+      fonts.push_back(label.font);
+   }
+
+   if (audacity_alicorn_track_controls_view_update(
+          mControlsView,
+          scene.rectangles.data(), static_cast<uint64_t>(scene.rectangles.size()),
+          scene.segments.data(), static_cast<uint64_t>(scene.segments.size()),
+          scene.pointMarkers.data(), static_cast<uint64_t>(scene.pointMarkers.size()),
+          labels.data(), static_cast<uint64_t>(labels.size())) < 0)
+      return false;
+
+   const auto drawRect = clip.Intersect(wxRect{ wxPoint{0, 0}, size });
+   if (drawRect.IsEmpty())
+      return true;
+   std::unique_ptr<wxGraphicsContext> graphics{ wxGraphicsContext::CreateFromUnknownDC(dc) };
+   if (!graphics)
+      return false;
+   PaintContext context;
+   context.graphics = graphics.get();
+   context.clip = drawRect;
+   context.yOrigin = 0;
+   context.command.graphics = graphics.get();
+   context.command.font = wxFont{};
+   context.labelFonts = std::move(fonts);
+
+   const auto paintOutput = [&](uint32_t kind, auto&& paint) {
+      uint64_t revision{};
+      const auto pending = audacity_alicorn_track_controls_view_output_revision(
+         mControlsView, kind, &revision);
+      if (pending < 0 || paint() < 0)
+         return false;
+      return pending == 0 ||
+         audacity_alicorn_track_controls_view_output_submission_succeeded(
+            mControlsView, kind, revision) > 0;
+   };
+   if (!paintOutput(AUDACITY_TRACK_CONTROLS_OUTPUT_GEOMETRY, [&] {
+          return audacity_alicorn_track_controls_view_paint_geometry(
+             mControlsView, &DrawGeometry, &context);
+       }))
+      return false;
+   return paintOutput(AUDACITY_TRACK_CONTROLS_OUTPUT_LABELS, [&] {
+      const auto painted = audacity_alicorn_track_controls_view_paint_labels(
+         mControlsView, &DrawCommand, &context);
+      return painted == static_cast<int32_t>(labels.size()) ? 1 : -1;
+   });
 }

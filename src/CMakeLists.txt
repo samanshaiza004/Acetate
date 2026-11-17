@@ -54,6 +54,7 @@ if( audacity_use_alicorn_snap_ui )
       alicorn/AudacityNumericTimeView.h
       alicorn/AlicornTimelineView.h
       alicorn/AudacityTimelineView.h
+      alicorn/AudacityTrackControlsView.h
       alicorn/AudacityRulerView.h
       alicorn/AudacityWaveformView.h
       toolbars/AlicornActionControl.cpp

@@ -40,6 +40,7 @@ Paul Licameli split from TrackInfo.cpp
 #include "UIHandle.h"
 #include "ViewInfo.h"
 #include "tracks/ui/ChannelView.h"
+#include "tracks/ui/RetainedTrackControls.h"
 
 #define RANGE(array) std::begin(array), std::end(array)
 using TCPLine = TrackInfo::TCPLine;
@@ -225,6 +226,48 @@ void CommonTrackInfo::CloseTitleDrawFunction
    const auto target = context.target.get();
    const auto hit = target && target->FindTrack().get() == pTrack;
    const auto captured = hit && target->IsDragging();
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto* scene = RetainedTrackControls::Current()) {
+      const auto selected = pTrack ? pTrack->GetSelected() : true;
+      const auto textColour = theTheme.Colour(clrTrackPanelText);
+      const auto hover = [&](const wxRect& bev) {
+         return bev.Contains(context.lastState.GetPosition());
+      };
+      wxRect bev = rect;
+      GetCloseBoxHorizontalBounds(rect, bev);
+      if (hover(bev))
+         RetainedTrackControls::ToolButtonBackground(*scene, bev, selected, captured);
+      RetainedTrackControls::CloseGlyph(*scene, bev, textColour);
+
+      bev = rect;
+      GetTrackTitleHorizontalBounds(rect, bev);
+      TrackInfo::SetTrackInfoFont(dc);
+      const auto titleStr = TrackArt::TruncateText(*dc,
+         pTrack ? pTrack->GetName() : _("Name"), bev.width);
+      const auto metrics = dc->GetFontMetrics();
+      const auto textHeight = metrics.ascent + metrics.descent;
+      scene->Text(
+         wxRect(bev.x + 2, bev.y + (bev.height - textHeight) / 2,
+                std::max(1, bev.width - 2), textHeight),
+         titleStr, textColour, dc->GetFont());
+
+      const auto minimized =
+         pTrack ? ChannelView::Get(*pTrack->GetChannel(0)).GetMinimized() : false;
+      bev = rect;
+      GetMinimizeHorizontalBounds(rect, bev);
+      if (hover(bev))
+         RetainedTrackControls::ToolButtonBackground(*scene, bev, selected, captured);
+      RetainedTrackControls::ChevronGlyph(*scene, bev, minimized, textColour);
+
+      bev = rect;
+      GetTrackMenuButtonBounds(rect, bev);
+      if (hover(bev))
+         RetainedTrackControls::ToolButtonBackground(*scene, bev, selected, captured);
+      RetainedTrackControls::EllipsisGlyph(*scene, bev, textColour);
+      return;
+   }
+#endif
 
    {  //close button
       wxRect bev = rect;

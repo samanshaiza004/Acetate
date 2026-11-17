@@ -4,13 +4,13 @@ Goal: everything wxWidgets draws or manages that is not the native window/event 
 
 ## Already on Alicorn (opt-in build)
 
-Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
+Track headers (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
 
 ## Still wx-drawn or wx-managed
 
 | Area | Where | Size | Notes |
 | --- | --- | --- | --- |
-| Track header: title, close, minimize, menu, mute/solo, gain/pan, sync-lock, focus | `tracks/ui/CommonTrackInfo.cpp`, `TrackInfo.cpp`, `TrackButtonHandles.cpp`, `WaveChannelTrackControls`, `widgets/ASlider.cpp` | ~1.2k + slider 2.1k | Largest visible surface inside the MVP loop. Needs retained text, theme bitmaps/icons and slider geometry; Audacity handles keep hit-testing and policy. |
+| Track header remnants: sync-lock icon (theme bitmap), keyboard-focus ring, drag-to-reorder affordances | `tracks/ui/CommonTrackInfo.cpp`, `TrackInfo.cpp` | small | The title bar, buttons, sliders and background moved to a retained `Track_Controls_View` (first slice). Theme bitmap icons are replaced by vector glyphs; pixel parity with the stock bevel buttons is not claimed. |
 | Vertical ruler and scale | `tracks/ui/ChannelVRulerControls.cpp`, `widgets/Ruler.cpp` | ~0.9k | Same retained-geometry route as the timeline ruler. |
 | Scrollbars, status bar, panel backgrounds | `ProjectWindow.cpp`, `ProjectStatus.cpp` | ~1.4k | Scrollbar thumb geometry/policy stays in `Viewport`. |
 | Tempo / time signature toolbar | `toolbars/TimeSignatureToolBar.cpp` | ~0.3k | Needs Alicorn text field + stepper + select. |
@@ -24,7 +24,7 @@ Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons
 
 ## Order
 
-1. Track header and vertical ruler (completes the visible track panel).
+1. Track header (done, see validation) and vertical ruler (completes the visible track panel).
 2. Remaining default toolbars: tempo/time signature, time, meters and sliders.
 3. Scrollbars, status bar and panel backgrounds.
 4. Device/transcription toolbars, then dock chrome.

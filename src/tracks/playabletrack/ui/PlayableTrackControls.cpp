@@ -12,6 +12,7 @@ Paul Licameli split from TrackInfo.cpp
 #include "PlayableTrackButtonHandles.h"
 #include "AColor.h"
 #include "../../ui/CommonTrackInfo.h"
+#include "../../ui/RetainedTrackControls.h"
 #include "../../../TrackPanelDrawingContext.h"
 #include "ViewInfo.h"
 #include "prefs/TracksBehaviorsPrefs.h"
@@ -93,6 +94,25 @@ void MuteOrSoloDrawFunction
       /* i18n-hint: This is on a button that will silence this track.*/
       _("Mute");
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto* scene = RetainedTrackControls::Current()) {
+      const auto active = theTheme.Colour(clrMuteButtonActive);
+      RetainedTrackControls::Button(
+         *scene, bev, selected, hit, value != down, value ? &active : nullptr);
+      TrackInfo::SetTrackInfoFont(dc);
+      dc->GetTextExtent(str, &textWidth, &textHeight);
+      scene->Text(
+         wxRect(
+            bev.x + (bev.width - textWidth) / 2,
+            bev.y + (bev.height - textHeight) / 2,
+            textWidth, textHeight),
+         str,
+         value ? wxColour(20, 20, 20) : theTheme.Colour(clrTrackPanelText),
+         dc->GetFont());
+      return;
+   }
+#endif
+
    AColor::Bevel2(
       *dc,
       value == down,
@@ -114,6 +134,21 @@ void EffectsDrawFunction
    const auto str = _("Effects");
 
    const auto selected = pTrack ? pTrack->GetSelected() : true;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (auto* scene = RetainedTrackControls::Current()) {
+      RetainedTrackControls::Button(*scene, bev, selected, hit, down);
+      TrackInfo::SetTrackInfoFont(dc);
+      dc->GetTextExtent(str, &textWidth, &textHeight);
+      scene->Text(
+         wxRect(
+            bev.x + (bev.width - textWidth) / 2,
+            bev.y + (bev.height - textHeight) / 2,
+            textWidth, textHeight),
+         str, theTheme.Colour(clrTrackPanelText), dc->GetFont());
+      return;
+   }
+#endif
 
    AColor::ButtonStretch(*dc, !down, bev, selected, hit);
    
