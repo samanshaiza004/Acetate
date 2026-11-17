@@ -23,6 +23,7 @@ Paul Licameli split from TrackPanel.cpp
 #include "../../../../widgets/LinearUpdater.h"
 #include "../../../../widgets/RealFormat.h"
 #include "../../../../widgets/Ruler.h"
+#include "../../../ui/RetainedTrackControls.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 Ruler &WaveChannelVRulerControls::ScratchRuler()
@@ -70,6 +71,28 @@ void WaveChannelVRulerControls::DoDraw(ChannelVRulerControls &controls,
       controls.UpdateRuler(rr);
 
       vruler.SetTickColour( theTheme.Colour( clrTrackPanelText ));
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+      if (auto *view = RetainedTrackControls::ViewFor(context)) {
+         const auto snapshot = vruler.GetDisplaySnapshot(*dc);
+         RetainedTrackControls::Scene scene;
+         if (snapshot.hasAxis)
+            scene.Line(
+               { snapshot.axisX1, snapshot.axisY1 },
+               { snapshot.axisX2, snapshot.axisY2 }, snapshot.axisColour);
+         for (const auto &tick : snapshot.ticks)
+            scene.Line({ tick.x1, tick.y1 }, { tick.x2, tick.y2 }, tick.colour);
+         for (const auto &label : snapshot.labels) {
+            const wxFont font{
+               label.fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL,
+               label.fontWeight };
+            scene.Text(
+               wxRect(label.x, label.y, label.width, label.height),
+               label.text, label.colour, font);
+         }
+         if (view->DrawTrackControls(*dc, rect_, scene))
+            return;
+      }
+#endif
       vruler.Draw(*dc);
    }
 }

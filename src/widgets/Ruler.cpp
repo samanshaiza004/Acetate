@@ -463,6 +463,23 @@ Ruler::DisplaySnapshot Ruler::GetDisplaySnapshot(
    const int iMaxPos = mRulerStruct.mOrientation == wxHORIZONTAL
       ? mRulerStruct.mRight : mRulerStruct.mBottom - 5;
 
+   if (!mbTicksOnly) {
+      result.hasAxis = true;
+      result.axisColour = mTickColour;
+      if (mRulerStruct.mOrientation == wxHORIZONTAL) {
+         const int y = mRulerStruct.mFlip ? mRulerStruct.mTop : mRulerStruct.mBottom;
+         result.axisX1 = mRulerStruct.mLeft;
+         result.axisX2 = mRulerStruct.mRight;
+         result.axisY1 = result.axisY2 = y;
+      }
+      else {
+         const int x = mRulerStruct.mFlip ? mRulerStruct.mLeft : mRulerStruct.mRight - 1;
+         result.axisX1 = result.axisX2 = x;
+         result.axisY1 = mRulerStruct.mTop;
+         result.axisY2 = mRulerStruct.mBottom;
+      }
+   }
+
    auto appendTick = [&](const RulerUpdater::Label& label, int length) {
       const int pos = label.pos;
       if (!mbTicksAtExtremes && (pos == 0 || pos == iMaxPos))

@@ -4,14 +4,14 @@ Goal: everything wxWidgets draws or manages that is not the native window/event 
 
 ## Already on Alicorn (opt-in build)
 
-Track headers (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
+Track headers and the waveform vertical ruler (title bar glyphs and text, Mute/Solo/Effects, gain and pan sliders, background; sync-lock icon still wx); Transport, Edit, Cut/Copy/Paste, Tools, File Actions and Snapping action buttons; the Snap checkbox; Selection toolbar numeric fields, format chooser and mode popup; ruler, waveform, selection fills, playhead, loop region, snap guides, zoom preview and clip titles through one retained runtime per project window.
 
 ## Still wx-drawn or wx-managed
 
 | Area | Where | Size | Notes |
 | --- | --- | --- | --- |
 | Track header remnants: sync-lock icon (theme bitmap), keyboard-focus ring, drag-to-reorder affordances | `tracks/ui/CommonTrackInfo.cpp`, `TrackInfo.cpp` | small | The title bar, buttons, sliders and background moved to a retained `Track_Controls_View` (first slice). Theme bitmap icons are replaced by vector glyphs; pixel parity with the stock bevel buttons is not claimed. |
-| Vertical ruler and scale | `tracks/ui/ChannelVRulerControls.cpp`, `widgets/Ruler.cpp` | ~0.9k | Same retained-geometry route as the timeline ruler. |
+| Vertical ruler: zoom-drag preview, other scale modes | `tracks/ui/ChannelVRulerControls.cpp`, `widgets/Ruler.cpp` | small | The waveform-scale ruler axis, ticks and labels now use the retained track-controls scene; the dashed zoom preview and non-waveform modes are unchecked. |
 | Scrollbars, status bar, panel backgrounds | `ProjectWindow.cpp`, `ProjectStatus.cpp` | ~1.4k | Scrollbar thumb geometry/policy stays in `Viewport`. |
 | Tempo / time signature toolbar | `toolbars/TimeSignatureToolBar.cpp` | ~0.3k | Needs Alicorn text field + stepper + select. |
 | Time toolbar and spectral selection bar | `toolbars/TimeToolBar.cpp`, `SpectralSelectionBar.cpp` | ~0.9k | Reuse the numeric-time view already used by the Selection bar. |
@@ -24,7 +24,7 @@ Track headers (title bar glyphs and text, Mute/Solo/Effects, gain and pan slider
 
 ## Order
 
-1. Track header (done, see validation) and vertical ruler (completes the visible track panel).
+1. Track header and vertical ruler (done for the waveform view; see validation).
 2. Remaining default toolbars: tempo/time signature, time, meters and sliders.
 3. Scrollbars, status bar and panel backgrounds.
 4. Device/transcription toolbars, then dock chrome.

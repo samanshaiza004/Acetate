@@ -146,6 +146,10 @@ class AUDACITY_DLL_API Ruler :
    struct DisplaySnapshot {
       std::vector<DisplayTick> ticks;
       std::vector<DisplayLabel> labels;
+      // The long line Draw() strokes along the ruler, when it draws one.
+      bool hasAxis{ false };
+      int axisX1{}, axisY1{}, axisX2{}, axisY2{};
+      wxColour axisColour;
    };
 
    // Uses dc for the same font metrics as Draw and returns copied values. The
