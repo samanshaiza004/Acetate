@@ -227,11 +227,46 @@ void DrawGeometry(
    wxColour previousColour;
    int previousWidth = 0;
    bool hasPen = false;
+   wxColour previousSegmentFill;
+   bool hasSegmentFill = false;
    for (uint64_t i = 0; i < segmentCount; ++i) {
       const auto& segment = segments[i];
       const auto color = ToWxColour(AudacitySnapColor{
          segment.r, segment.g, segment.b, segment.a});
       const auto width = std::max(1, static_cast<int>(std::lround(segment.thickness)));
+      if (segment.x0 == segment.x1 || segment.y0 == segment.y1) {
+         // Stroking 1 pt vertical lines through wxGraphicsContext left the
+         // first column of every separately submitted batch nearly blank (a
+         // faint vertical seam in the waveform). Fill the segment's extent
+         // instead: a vertical segment spans exactly y0..y1 and is `width`
+         // wide centered on x; a horizontal one spans x0..x1 plus half a pen
+         // width at each end because its endpoints are pixel centers.
+         const auto half = static_cast<double>(width) * 0.5;
+         const bool vertical = segment.x0 == segment.x1;
+         const auto left = vertical
+            ? segment.x0 - half
+            : std::min(segment.x0, segment.x1) - half;
+         const auto top = vertical
+            ? std::min(segment.y0, segment.y1)
+            : segment.y0 - half;
+         const auto fillWidth = vertical
+            ? static_cast<double>(width)
+            : std::abs(segment.x1 - segment.x0) + width;
+         const auto fillHeight = vertical
+            ? std::abs(segment.y1 - segment.y0)
+            : static_cast<double>(width);
+         if (hasPen) {
+            graphics->SetPen(wxPen(wxColour(0, 0, 0, 0), 0, wxPENSTYLE_TRANSPARENT));
+            hasPen = false;
+         }
+         if (!hasSegmentFill || color != previousSegmentFill) {
+            graphics->SetBrush(wxBrush(color));
+            previousSegmentFill = color;
+            hasSegmentFill = true;
+         }
+         graphics->DrawRectangle(left, top, fillWidth, fillHeight);
+         continue;
+      }
       if (!hasPen || color != previousColour || width != previousWidth) {
          graphics->SetPen(wxPen(color, width));
          previousColour = color;
