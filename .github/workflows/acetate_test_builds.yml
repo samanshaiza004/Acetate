@@ -273,26 +273,33 @@ jobs:
         continue-on-error: true
         run: |
           odin version
-          odin report
           $root = (Resolve-Path alicorn).Path -replace '\\', '/'
           $src = "$((Get-Location).Path)/src/alicorn" -replace '\\', '/'
           New-Item -ItemType Directory -Force out | Out-Null
-          $base = @('build', $src, "-collection:alicorn=$root", '-build-mode:lib', '-no-entry-point', '-target:windows_amd64')
+          $common = @('build', $src, "-collection:alicorn=$root", '-no-entry-point', '-target:windows_amd64', '-show-system-calls')
           $variants = [ordered]@{
-            'baseline'            = @()
-            'no-crt'              = @('-no-crt')
-            'linker-lld'          = @('-linker:lld')
-            'default-allocators'  = @('-default-to-nil-allocator')
-            'obj-mode'            = @('-build-mode:obj')
+            'lib-baseline' = @('-build-mode:lib')
+            'lib-minimal'  = @('-build-mode:lib', '-no-entry-point')
+            'obj'          = @('-build-mode:obj')
+            'dll'          = @('-build-mode:dll')
           }
           foreach ($name in $variants.Keys) {
             $out = "$((Get-Location).Path)/out/$name.lib" -replace '\\', '/'
-            $args = $base + $variants[$name] + @("-out:$out")
-            Write-Host "::group::variant $name"
+            $args = $common + $variants[$name] + @("-out:$out")
+            $text = (& odin @args 2>&1 | Out-String)
+            $code = $LASTEXITCODE
+            Write-Host "::group::$name (exit $code)"
             Write-Host "odin $($args -join ' ')"
-            & odin @args 2>&1 | Select-Object -First 30
-            Write-Host "exit code: $LASTEXITCODE"
+            Write-Host ($text.Substring(0, [Math]::Min(5000, $text.Length)))
             Write-Host "::endgroup::"
-            Write-Host "RESULT $name exit=$LASTEXITCODE size=$((Get-Item $out -ErrorAction SilentlyContinue).Length)"
+            Write-Host "RESULT $name exit=$code"
           }
-          Get-ChildItem out | Format-Table Name, Length
+
+      - name: Same build inside a Visual Studio developer environment
+        shell: cmd
+        continue-on-error: true
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          odin build src/alicorn -collection:alicorn=alicorn -build-mode:lib -no-entry-point -target:windows_amd64 -show-system-calls -out:out/vcvars-lib.lib
+          echo RESULT vcvars exit=%ERRORLEVEL%
+          dir out
