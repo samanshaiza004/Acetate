@@ -30,6 +30,11 @@
 #include "Ruler.h" // member variable
 #include "SampleFormat.h"
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include <memory>
+class AlicornSceneView;
+#endif
+
 class AudacityProject;
 struct AudioIOEvent;
 
@@ -290,6 +295,12 @@ class AUDACITY_DLL_API MeterPanel final
    Ruler     mRuler;
    wxString  mLeftText;
    wxString  mRightText;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   // Retained presentation for the meter bars, labels, ruler and slider.
+   bool PaintRetained(wxDC &dc, const wxColour &clrText, const wxColour &clrBoxFill);
+   std::shared_ptr<AlicornSceneView> mAlicornScene;
+#endif
 
    std::unique_ptr<LWSlider> mSlider;
    wxPoint mSliderPos;

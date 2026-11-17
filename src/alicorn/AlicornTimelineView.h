@@ -16,6 +16,55 @@
 #include "AudacityTrackControlsView.h"
 #include "widgets/Ruler.h"
 
+// A retained presentation scene in the local coordinates of one wx window.
+// Audacity's windows keep hit testing and state; the scene only carries
+// presentation. Rectangles paint first (in push order), then point markers,
+// then line segments.
+struct AlicornSceneLabel {
+   wxRect bounds;
+   wxString text;
+   wxColour color;
+   wxFont font;
+};
+
+struct AlicornScene {
+   std::vector<AudacityWaveformRectangle> rectangles;
+   std::vector<AudacityWaveformSegment> segments;
+   std::vector<AudacityWaveformPointMarker> pointMarkers;
+   std::vector<AlicornSceneLabel> labels;
+
+   void Fill(const wxRect& bounds, const wxColour& color);
+   void Line(
+      const wxPoint& start, const wxPoint& end, const wxColour& color,
+      float thickness = 1.0f);
+   void Dot(float centerX, float centerY, float diameter, const wxColour& color);
+   void Text(
+      const wxRect& bounds, const wxString& text, const wxColour& color,
+      const wxFont& font);
+   bool Empty() const noexcept
+   {
+      return rectangles.empty() && segments.empty() &&
+         pointMarkers.empty() && labels.empty();
+   }
+};
+
+// A presentation-only retained runtime for one wx window.
+class AlicornSceneView final {
+public:
+   AlicornSceneView() = default;
+   ~AlicornSceneView();
+   AlicornSceneView(const AlicornSceneView&) = delete;
+   AlicornSceneView& operator=(const AlicornSceneView&) = delete;
+
+   // Replaces the scene and paints it. Returns false when the retained path is
+   // unavailable so the caller can draw with wx instead.
+   bool Draw(wxDC& dc, const wxRect& clip, const AlicornScene& scene);
+
+private:
+   AudacityAlicornTrackControlsView* mView{};
+   wxSize mSize;
+};
+
 class AlicornTimelineView final {
 public:
    struct RulerFill {
@@ -43,29 +92,7 @@ public:
       int radius{};
       wxColour fillColor;
    };
-   // A retained scene for one track-control panel, in track-panel local
-   // coordinates. Audacity's cells keep hit testing and state; this only
-   // carries presentation.
-   struct TrackControlsScene {
-      std::vector<AudacityWaveformRectangle> rectangles;
-      std::vector<AudacityWaveformSegment> segments;
-      std::vector<AudacityWaveformPointMarker> pointMarkers;
-      std::vector<WaveformLabel> labels;
-
-      void Fill(const wxRect& bounds, const wxColour& color);
-      void Line(
-         const wxPoint& start, const wxPoint& end, const wxColour& color,
-         float thickness = 1.0f);
-      void Dot(float centerX, float centerY, float diameter, const wxColour& color);
-      void Text(
-         const wxRect& bounds, const wxString& text, const wxColour& color,
-         const wxFont& font);
-      bool Empty() const noexcept
-      {
-         return rectangles.empty() && segments.empty() &&
-            pointMarkers.empty() && labels.empty();
-      }
-   };
+   using TrackControlsScene = AlicornScene;
    using WaveformFills = std::array<WaveformFill, 3>;
    using WaveformSegments = std::array<WaveformSegment, 4>;
 
@@ -168,8 +195,7 @@ private:
    bool SameWaveformLabels(const std::vector<WaveformLabel>& labels) const;
 
    AudacityAlicornTimelineView* mView{};
-   AudacityAlicornTrackControlsView* mControlsView{};
-   wxSize mControlsSize;
+   AlicornSceneView mControls;
    wxSize mRulerSize;
    wxSize mWaveformSize;
    std::unique_ptr<Ruler::DisplaySnapshot> mLastSnapshot;

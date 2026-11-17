@@ -75,6 +75,10 @@
 #include "../widgets/RealFormat.h"
 
 #include "AllThemeResources.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../alicorn/AlicornTimelineView.h"
+#include "RetainedLWSlider.h"
+#endif
 #include "../widgets/valnum.h"
 
 #if wxUSE_ACCESSIBILITY
@@ -609,6 +613,16 @@ void MeterPanel::OnPaint(wxPaintEvent & WXUNUSED(event))
       dc.SelectObject(wxNullBitmap);
    }
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (mStyle != MixerTrackCluster && PaintRetained(destDC, clrText, clrBoxFill)) {
+      if (mIsFocused) {
+         auto r = GetClientRect();
+         AColor::DrawFocus(destDC, r);
+      }
+      return;
+   }
+#endif
+
    // Copy predrawn bitmap to the dest DC
    destDC.DrawBitmap(*mBitmap, 0, 0);
 
@@ -653,6 +667,265 @@ void MeterPanel::OnPaint(wxPaintEvent & WXUNUSED(event))
       AColor::DrawFocus(destDC, r);
    }
 }
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+namespace {
+struct MeterStrip {
+   wxRect bounds;
+   wxColour colour;
+};
+
+wxColour MixColour(const wxColour &a, const wxColour &b, double t)
+{
+   const auto ch = [&](unsigned char x, unsigned char y) {
+      return static_cast<unsigned char>(std::lround(x + (y - x) * t));
+   };
+   return wxColour(ch(a.Red(), b.Red()), ch(a.Green(), b.Green()), ch(a.Blue(), b.Blue()));
+}
+
+// Mirrors wxDC::GradientFillLinear as one strip per pixel row or column.
+void AddGradientStrips(
+   std::vector<MeterStrip> &strips, const wxRect &r,
+   const wxColour &from, const wxColour &to, bool vertical)
+{
+   if (r.width <= 0 || r.height <= 0)
+      return;
+   const int n = vertical ? r.height : r.width;
+   for (int k = 0; k < n; ++k) {
+      const auto colour = MixColour(from, to, (k + 0.5) / n);
+      strips.push_back({
+         vertical ? wxRect(r.x, r.y + k, r.width, 1)
+                  : wxRect(r.x + k, r.y, 1, r.height),
+         colour });
+   }
+}
+
+void Outline(AlicornScene &scene, const wxRect &r, const wxColour &colour)
+{
+   if (r.width <= 0 || r.height <= 0)
+      return;
+   scene.Fill(wxRect(r.x, r.y, r.width, 1), colour);
+   scene.Fill(wxRect(r.x, r.y + r.height - 1, r.width, 1), colour);
+   scene.Fill(wxRect(r.x, r.y, 1, r.height), colour);
+   scene.Fill(wxRect(r.x + r.width - 1, r.y, 1, r.height), colour);
+}
+}
+
+bool MeterPanel::PaintRetained(
+   wxDC &dc, const wxColour &clrText, const wxColour &clrBoxFill)
+{
+   if (!mLayoutValid || mNumBars == 0 || mWidth <= 0 || mHeight <= 0)
+      return false;
+   if (!mAlicornScene)
+      mAlicornScene = std::make_shared<AlicornSceneView>();
+
+   AlicornScene scene;
+   const auto panelBackground = GetBackgroundColour();
+   scene.Fill(wxRect(0, 0, mWidth, mHeight), panelBackground);
+
+   if (mStyle != MixerTrackCluster) {
+      const auto font = GetFont();
+      const auto textHeight = font.GetPixelSize().GetHeight();
+      const auto labelHeight = std::max(textHeight, 1);
+      scene.Text(
+         wxRect(mLeftTextPos.x, mLeftTextPos.y, 12, labelHeight),
+         mLeftText, clrText, font);
+      scene.Text(
+         wxRect(mRightTextPos.x, mRightTextPos.y, 12, labelHeight),
+         mRightText, clrText, font);
+   }
+
+   wxColour green(117, 215, 112), yellow(255, 255, 0), red(255, 0, 0);
+   if (panelBackground.GetLuminance() < 0.25) {
+      green = wxColour(17, 115, 12);
+      yellow = wxColour(155, 155, 0);
+      red = wxColour(155, 0, 0);
+   }
+   else if (panelBackground.GetLuminance() < 0.50) {
+      green = wxColour(67, 165, 62);
+      yellow = wxColour(205, 205, 0);
+      red = wxColour(205, 0, 0);
+   }
+
+   const auto meterBackground = theTheme.Colour(clrMeterBackground);
+   for (unsigned i = 0; i < mNumBars; ++i) {
+      const auto &bar = mBar[i];
+      const wxRect r = bar.r;
+      const int x = r.GetLeft(), y = r.GetTop(), w = r.GetWidth(), h = r.GetHeight();
+      if (w <= 0 || h <= 0)
+         continue;
+
+      scene.Fill(r, meterBackground);
+
+      // Region covered by the current level and the recent peak-hold slab.
+      wxRect levelRect, holdRect;
+      int peakExtent = 0, holdExtent = 0, maxExtent = 0, rmsExtent = 0;
+      if (bar.vert) {
+         peakExtent = static_cast<int>(bar.peak * (h - 1) + 0.5);
+         holdExtent = static_cast<int>(bar.peakHold * (h - 1) + 0.5);
+         maxExtent = static_cast<int>(bar.peakPeakHold * (h - 1) + 0.5);
+         rmsExtent = static_cast<int>(bar.rms * (h - 1) + 0.5);
+         if (peakExtent)
+            levelRect = wxRect(x, y + h - peakExtent - 1, w, peakExtent + 1);
+         if (holdExtent > 1)
+            holdRect = wxRect(x, y + h - holdExtent - 1, w, 2);
+      }
+      else {
+         peakExtent = static_cast<int>(bar.peak * (w - 1) + 0.5);
+         holdExtent = static_cast<int>(bar.peakHold * (w - 1) + 0.5);
+         maxExtent = static_cast<int>(bar.peakPeakHold * (w - 1) + 0.5);
+         rmsExtent = static_cast<int>(bar.rms * (w - 1) + 0.5);
+         if (peakExtent)
+            levelRect = wxRect(x, y, peakExtent + 1, h);
+         if (holdExtent > 1)
+            holdRect = wxRect(x + holdExtent - 1, y, 2, h);
+      }
+
+      if (mGradient) {
+         std::vector<MeterStrip> strips;
+         double gradw, gradh;
+         if (mDB) {
+            gradw = static_cast<double>(w) / mDBRange * 6.0;
+            gradh = static_cast<double>(h) / mDBRange * 6.0;
+         }
+         else {
+            gradw = static_cast<double>(w) / 100 * 25;
+            gradh = static_cast<double>(h) / 100 * 25;
+         }
+         if (bar.vert) {
+            wxRect seg = r;
+            seg.SetHeight(static_cast<int>(gradh));
+            AddGradientStrips(strips, seg, red, yellow, true);
+            seg.SetTop(seg.GetBottom());
+            AddGradientStrips(strips, seg, yellow, green, true);
+            seg.SetTop(seg.GetBottom());
+            seg.SetBottom(r.GetBottom());
+            strips.push_back({ seg, green });
+         }
+         else {
+            wxRect seg = r;
+            seg.SetWidth(w - static_cast<int>(gradw + gradw + 0.5));
+            strips.push_back({ seg, green });
+            seg.SetLeft(seg.GetRight() + 1);
+            seg.SetWidth(static_cast<int>(std::floor(gradw)));
+            AddGradientStrips(strips, seg, green, yellow, false);
+            seg.SetLeft(seg.GetRight() + 1);
+            seg.SetRight(r.GetRight());
+            AddGradientStrips(strips, seg, yellow, red, false);
+         }
+         const auto emit = [&](const wxRect &region) {
+            if (region.IsEmpty())
+               return;
+            for (const auto &strip : strips) {
+               const auto part = strip.bounds.Intersect(region);
+               if (!part.IsEmpty())
+                  scene.Fill(part, strip.colour);
+            }
+         };
+         emit(levelRect);
+         emit(holdRect);
+      }
+      else {
+         if (!levelRect.IsEmpty())
+            scene.Fill(levelRect, mBrush.GetColour());
+         if (holdExtent > 0) {
+            const auto colour = mPen.GetColour();
+            if (bar.vert) {
+               scene.Fill(wxRect(x, y + h - holdExtent - 1, w, holdExtent > 1 ? 2 : 1), colour);
+               if (holdExtent > 1) {}
+            }
+            else {
+               scene.Fill(wxRect(x + holdExtent - (holdExtent > 1 ? 1 : 0), y,
+                                 holdExtent > 1 ? 2 : 1, h), colour);
+            }
+         }
+         if (rmsExtent) {
+            scene.Fill(bar.vert
+               ? wxRect(x, y + h - rmsExtent - 1, w, rmsExtent + 1)
+               : wxRect(x, y, rmsExtent + 1, h),
+               mRMSBrush.GetColour());
+         }
+      }
+
+      if (maxExtent > 0) {
+         const auto colour = mPeakPeakPen.GetColour();
+         const int thick = maxExtent > 1 ? 2 : 1;
+         if (bar.vert)
+            scene.Fill(wxRect(x, y + h - maxExtent - 1 + (thick == 2 ? 0 : 0), w, thick), colour);
+         else
+            scene.Fill(wxRect(x + maxExtent - (thick == 2 ? 1 : 0), y, thick, h), colour);
+      }
+
+      if (mClip)
+         scene.Fill(bar.rClip, bar.clipping ? mClipBrush.GetColour() : panelBackground);
+   }
+
+   // Strokes: around the group, between meters, around clip indicators.
+   {
+      const auto stroke = AColor::darkPen[0].GetColour();
+      const wxRect group(mBar[0].r.GetTopLeft(), mBar[mNumBars - 1].r.GetBottomRight());
+      Outline(scene, wxRect(group).Inflate(1), stroke);
+      for (unsigned n = 0; n + 1 < mNumBars; ++n) {
+         const auto &b = mBar[n].b;
+         scene.Fill(wxRect(b.GetLeft(), b.GetBottom(), b.width, 1), stroke);
+      }
+      if constexpr (gap > 0) {
+         for (unsigned n = 1; n < mNumBars; ++n) {
+            const auto &b = mBar[n].b;
+            scene.Fill(wxRect(b.GetLeft(), b.GetTop(), b.width, 1), stroke);
+         }
+      }
+      for (unsigned n = 0; n < mNumBars; ++n)
+         Outline(scene, wxRect(mBar[n].rClip).Inflate(1), stroke);
+   }
+
+   // Ruler ticks, axis and labels.
+   mRuler.SetTickColour(clrText);
+   {
+      const auto snapshot = mRuler.GetDisplaySnapshot(dc);
+      if (snapshot.hasAxis)
+         scene.Fill(
+            wxRect(
+               std::min(snapshot.axisX1, snapshot.axisX2),
+               std::min(snapshot.axisY1, snapshot.axisY2),
+               std::abs(snapshot.axisX2 - snapshot.axisX1) + 1,
+               std::abs(snapshot.axisY2 - snapshot.axisY1) + 1),
+            snapshot.axisColour);
+      for (const auto &tick : snapshot.ticks)
+         scene.Fill(
+            wxRect(
+               std::min(tick.x1, tick.x2), std::min(tick.y1, tick.y2),
+               std::abs(tick.x2 - tick.x1) + 1, std::abs(tick.y2 - tick.y1) + 1),
+            tick.colour);
+      const bool compact =
+         mStyle == HorizontalStereoCompact || mStyle == VerticalStereoCompact;
+      wxColour textColour = clrText;
+      wxColour rmsColour = theTheme.Colour(clrMeterOutputRMSBrush);
+      const bool needBackground = compact &&
+         theTheme.ColourDistance(textColour, rmsColour) < 256;
+      for (const auto &label : snapshot.labels) {
+         const wxFont font{
+            label.fontSize, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL,
+            label.fontWeight };
+         const wxRect bounds(label.x, label.y, label.width, label.height);
+         if (needBackground)
+            scene.Fill(bounds, clrBoxFill);
+         scene.Text(bounds, label.text, label.colour, font);
+      }
+   }
+
+   if (mStyle != MixerTrackCluster) {
+      const bool highlighted =
+         wxRect{ mSliderPos, mSliderSize }.Contains(
+            ScreenToClient(::wxGetMousePosition()));
+      mSlider->Move(mSliderPos);
+      mSlider->AdjustSize(mSliderSize);
+      RetainedLWSlider::Draw(*mSlider, scene, highlighted);
+   }
+
+   return mAlicornScene->Draw(dc, wxRect(0, 0, mWidth, mHeight), scene);
+}
+#endif
 
 void MeterPanel::OnSize(wxSizeEvent & WXUNUSED(event))
 {

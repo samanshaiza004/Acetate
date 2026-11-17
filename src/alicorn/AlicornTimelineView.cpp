@@ -346,7 +346,6 @@ AlicornTimelineView::AlicornTimelineView(
 
 AlicornTimelineView::~AlicornTimelineView()
 {
-   audacity_alicorn_track_controls_view_destroy(mControlsView);
    audacity_alicorn_timeline_view_destroy(mView);
 }
 
@@ -1176,7 +1175,7 @@ bool AlicornTimelineView::DrawRuler(
       });
 }
 
-void AlicornTimelineView::TrackControlsScene::Fill(
+void AlicornScene::Fill(
    const wxRect& bounds, const wxColour& color)
 {
    if (bounds.IsEmpty() || !color.IsOk())
@@ -1188,7 +1187,7 @@ void AlicornTimelineView::TrackControlsScene::Fill(
       linear.r, linear.g, linear.b, linear.a });
 }
 
-void AlicornTimelineView::TrackControlsScene::Line(
+void AlicornScene::Line(
    const wxPoint& start, const wxPoint& end, const wxColour& color,
    float thickness)
 {
@@ -1201,7 +1200,7 @@ void AlicornTimelineView::TrackControlsScene::Line(
       linear.r, linear.g, linear.b, linear.a });
 }
 
-void AlicornTimelineView::TrackControlsScene::Dot(
+void AlicornScene::Dot(
    float centerX, float centerY, float diameter, const wxColour& color)
 {
    if (!color.IsOk() || diameter <= 0.0f)
@@ -1211,17 +1210,28 @@ void AlicornTimelineView::TrackControlsScene::Dot(
       centerX, centerY, diameter, linear.r, linear.g, linear.b, linear.a });
 }
 
-void AlicornTimelineView::TrackControlsScene::Text(
+void AlicornScene::Text(
    const wxRect& bounds, const wxString& text, const wxColour& color,
    const wxFont& font)
 {
    if (bounds.IsEmpty() || text.empty() || !color.IsOk())
       return;
-   labels.push_back(WaveformLabel{ bounds, text, color, font });
+   labels.push_back(AlicornSceneLabel{ bounds, text, color, font });
+}
+
+AlicornSceneView::~AlicornSceneView()
+{
+   audacity_alicorn_track_controls_view_destroy(mView);
 }
 
 bool AlicornTimelineView::DrawTrackControls(
    wxDC& dc, const wxRect& clip, const TrackControlsScene& scene)
+{
+   return mControls.Draw(dc, clip, scene);
+}
+
+bool AlicornSceneView::Draw(
+   wxDC& dc, const wxRect& clip, const AlicornScene& scene)
 {
    if (scene.Empty())
       return true;
@@ -1234,19 +1244,19 @@ bool AlicornTimelineView::DrawTrackControls(
    const auto size = dc.GetSize();
    if (size.x <= 0 || size.y <= 0)
       return false;
-   if (!mControlsView) {
-      mControlsView = audacity_alicorn_track_controls_view_create(
+   if (!mView) {
+      mView = audacity_alicorn_track_controls_view_create(
          static_cast<float>(size.x), static_cast<float>(size.y));
-      if (!mControlsView)
+      if (!mView)
          return false;
-      mControlsSize = size;
+      mSize = size;
    }
-   else if (size != mControlsSize) {
+   else if (size != mSize) {
       if (audacity_alicorn_track_controls_view_resize(
-             mControlsView, static_cast<float>(size.x),
+             mView, static_cast<float>(size.x),
              static_cast<float>(size.y)) < 0)
          return false;
-      mControlsSize = size;
+      mSize = size;
    }
 
    std::vector<std::string> textStorage;
@@ -1272,7 +1282,7 @@ bool AlicornTimelineView::DrawTrackControls(
    }
 
    if (audacity_alicorn_track_controls_view_update(
-          mControlsView,
+          mView,
           scene.rectangles.data(), static_cast<uint64_t>(scene.rectangles.size()),
           scene.segments.data(), static_cast<uint64_t>(scene.segments.size()),
           scene.pointMarkers.data(), static_cast<uint64_t>(scene.pointMarkers.size()),
@@ -1296,21 +1306,21 @@ bool AlicornTimelineView::DrawTrackControls(
    const auto paintOutput = [&](uint32_t kind, auto&& paint) {
       uint64_t revision{};
       const auto pending = audacity_alicorn_track_controls_view_output_revision(
-         mControlsView, kind, &revision);
+         mView, kind, &revision);
       if (pending < 0 || paint() < 0)
          return false;
       return pending == 0 ||
          audacity_alicorn_track_controls_view_output_submission_succeeded(
-            mControlsView, kind, revision) > 0;
+            mView, kind, revision) > 0;
    };
    if (!paintOutput(AUDACITY_TRACK_CONTROLS_OUTPUT_GEOMETRY, [&] {
           return audacity_alicorn_track_controls_view_paint_geometry(
-             mControlsView, &DrawGeometry, &context);
+             mView, &DrawGeometry, &context);
        }))
       return false;
    return paintOutput(AUDACITY_TRACK_CONTROLS_OUTPUT_LABELS, [&] {
       const auto painted = audacity_alicorn_track_controls_view_paint_labels(
-         mControlsView, &DrawCommand, &context);
+         mView, &DrawCommand, &context);
       return painted == static_cast<int32_t>(labels.size()) ? 1 : -1;
    });
 }
