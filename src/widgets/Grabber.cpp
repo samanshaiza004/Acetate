@@ -22,6 +22,9 @@ around to NEW positions.
 
 
 #include "Grabber.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "AlicornChrome.h"
+#endif
 
 #include <wx/defs.h>
 #include <wx/dcclient.h>
@@ -122,6 +125,32 @@ void Grabber::DrawGrabber( wxDC & dc )
    // positioned in its parent at some non zero position.
    r.SetPosition( wxPoint(0,0) );
    int y, left, right, top, bottom;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      wxRect bumps = r;
+      if (mAsSpacer)
+         bumps.width -= 1;
+      bumps.Deflate(2, 2);
+      if ((bumps.GetHeight() % 4) < 2)
+         bumps.Offset(0, 1);
+      const int padding = bumps.GetHeight() > 32 ? 22 : 6;
+      const bool painted = AlicornChrome::Paint(*this, dc, [&](AlicornScene &scene) {
+         scene.Fill(r, AlicornChrome::MediumColour(mOver));
+         if (mAsSpacer)
+            return;
+         const auto colour = mPressed ? AlicornChrome::LightColour()
+                                      : theTheme.Colour(clrGrabber);
+         for (int yy = bumps.GetTop() + padding;
+              yy < bumps.GetBottom() - padding; yy += 5) {
+            scene.Fill(wxRect(bumps.GetLeft(), yy, 2, 2), colour);
+            scene.Fill(wxRect(bumps.GetRight(), yy, 2, 2), colour);
+         }
+      });
+      if (painted)
+         return;
+   }
+#endif
 
    AColor::Medium(&dc, mOver );
    dc.DrawRectangle(r);

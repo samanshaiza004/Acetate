@@ -26,6 +26,9 @@
 
 
 #include "ToolManager.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../widgets/AlicornChrome.h"
+#endif
 
 #include "CommandContext.h"
 
@@ -182,6 +185,31 @@ void ToolFrame::OnPaint( wxPaintEvent & WXUNUSED(event) )
    wxPaintDC dc( this );
    wxSize sz = GetSize();
    wxRect r;
+
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   if (AlicornChrome::Paint(*this, dc, [&](AlicornScene &scene) {
+          const auto text = theTheme.Colour(clrTrackPanelText);
+          scene.Fill(wxRect(0, 0, sz.x, sz.y), theTheme.Colour(clrMedium));
+          // One-pixel outline, as DrawRectangle with a transparent brush.
+          scene.Fill(wxRect(0, 0, sz.x, 1), text);
+          scene.Fill(wxRect(0, sz.y - 1, sz.x, 1), text);
+          scene.Fill(wxRect(0, 1, 1, sz.y - 2), text);
+          scene.Fill(wxRect(sz.x - 1, 1, 1, sz.y - 2), text);
+          if (mBar && mBar->IsResizable()) {
+             wxRect g;
+             g.x = sz.x - sizerW - 2;
+             g.y = sz.y - sizerW - 2;
+             g.width = sizerW + 2;
+             g.height = sizerW + 2;
+             const auto dark = AlicornChrome::DarkColour();
+             for (int offset = 0; offset <= 9; offset += 3)
+                scene.Line(
+                   { g.GetLeft() + offset, g.GetBottom() },
+                   { g.GetRight(), g.GetTop() + offset }, dark);
+          }
+       }))
+      return;
+#endif
 
    dc.SetPen( theTheme.Colour( clrTrackPanelText ) );
    dc.SetBackground( wxBrush( theTheme.Colour( clrMedium ) ) );

@@ -26,6 +26,9 @@ in which buttons can be placed.
 
 
 #include "ToolBar.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../widgets/AlicornChrome.h"
+#endif
 
 // For compilers that support precompilation, includes "wx/wx.h".
 #include <wx/wxprec.h>
@@ -146,6 +149,18 @@ void ToolBarResizer::OnPaint( wxPaintEvent & event )
    // colour in the system theme.
 #if defined( __WXGTK__ )
 //   dc.SetBackground( wxBrush( wxSystemSettings::GetColour( wxSYS_COLOUR_BACKGROUND ) ) );
+#endif
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      const wxSize size = GetSize();
+      if (AlicornChrome::Paint(*this, dc, [&](AlicornScene &scene) {
+             scene.Fill(wxRect(0, 0, size.x, size.y), theTheme.Colour(clrMedium));
+             const auto dark = AlicornChrome::DarkColour();
+             scene.Fill(wxRect(size.x - 4, 0, 1, size.y), dark);
+             scene.Fill(wxRect(size.x - 1, 0, 1, size.y), dark);
+          }))
+         return;
+   }
 #endif
    dc.SetBackground( wxBrush( theTheme.Colour( clrMedium  ) ) );
    dc.Clear();
@@ -975,8 +990,16 @@ void ToolBar::OnPaint( wxPaintEvent & WXUNUSED(event) )
    wxPaintDC dc( this );
 
    // Themed background colour.
-   dc.SetBackground( wxBrush( theTheme.Colour( clrMedium  ) ) );
-   dc.Clear();
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   const wxSize clientSize = GetClientSize();
+   if (!AlicornChrome::Paint(*this, dc, [&](AlicornScene &scene) {
+          scene.Fill(wxRect(0, 0, clientSize.x, clientSize.y), theTheme.Colour(clrMedium));
+       }))
+#endif
+   {
+      dc.SetBackground( wxBrush( theTheme.Colour( clrMedium  ) ) );
+      dc.Clear();
+   }
 
    Repaint( &dc );
 }

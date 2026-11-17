@@ -23,6 +23,9 @@
 
 
 #include "ToolDock.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../widgets/AlicornChrome.h"
+#endif
 
 #include <wx/tokenzr.h>
 
@@ -923,6 +926,27 @@ void ToolDock::OnPaint( wxPaintEvent & WXUNUSED(event) )
    // Under GTK, we don't set the toolbar background to the background
    // colour in the system theme.  Instead we use our own colour.
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      const wxSize clientSize = GetClientSize();
+      if (AlicornChrome::Paint(*this, dc, [&](AlicornScene &scene) {
+             scene.Fill(
+                wxRect(0, 0, clientSize.x, clientSize.y), theTheme.Colour(clrMedium));
+             const auto dark = AlicornChrome::DarkColour();
+             for (const auto &place : GetConfiguration()) {
+                auto toolbar = place.pTree->pBar;
+                if (!toolbar)
+                   continue;
+                const wxRect r = toolbar->GetRect();
+                scene.Fill(
+                   wxRect(r.GetLeft(), r.GetBottom() + 1,
+                          std::max(0, clientSize.x - r.GetLeft() + 1), 1),
+                   dark);
+             }
+          }))
+         return;
+   }
+#endif
    dc.SetBackground( wxBrush( theTheme.Colour( clrMedium )));
    dc.Clear();
 
