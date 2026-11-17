@@ -38,6 +38,7 @@
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 #include "AlicornSnapControl.h"
+#include "widgets/AlicornFields.h"
 #endif
 
 #ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
@@ -268,6 +269,10 @@ SnappingToolBar::SnappingToolBar(AudacityProject& project)
 
             if (mSnapToCombo)
                mSnapToCombo->Enable(settings.newSnapMode != SnapMode::SNAP_OFF);
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+            if (mSnapToCombo)
+               mSnapToCombo->SetCurrentKey(ReadSnapTo().GET());
+#endif
          }))
 {
 #ifdef __WXGTK__
@@ -346,6 +351,40 @@ void SnappingToolBar::Populate()
    SetSnapModeEnabled(snapEnabled);
 
 
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   {
+      auto chooser = safenew AlicornMenuField(
+         this, wxID_ANY, wxDefaultPosition, wxSize(150, -1));
+      std::vector<AlicornMenuField::Entry> entries;
+      int depth = 0;
+      const auto visitor = std::tuple{
+         [&](const SnapRegistryGroup& item, auto&) {
+            if (item.Inlined())
+               return;
+            entries.push_back({ {}, wxStripMenuCodes(item.Label().Translation()), depth, true });
+            ++depth;
+         },
+         [&](const SnapRegistryItem& item, auto&) {
+            entries.push_back({ item.name.GET(), wxStripMenuCodes(item.label.Translation()), depth, false });
+         },
+         [&](const SnapRegistryGroup& item, auto&) {
+            if (!item.Inlined() && depth > 0)
+               --depth;
+         }
+      };
+      SnapFunctionsRegistry::Visit(visitor);
+      chooser->SetEntries(std::move(entries));
+      chooser->SetCurrentKey(ReadSnapTo().GET());
+      chooser->SetName(XO("Snap to combo box").Translation());
+      chooser->SetSelectionHandler([this](const wxString& key) {
+         ProjectSnap::Get(mProject).SetSnapTo(Identifier{ key });
+      });
+      chooser->Enable(snapEnabled);
+      chooser->SetMinSize(wxSize(150, -1));
+      mSnapToCombo = chooser;
+      sizer->Add(mSnapToCombo, 1, wxRIGHT | wxEXPAND, 5);
+   }
+#else
    mSnapToCombo = safenew wxComboCtrl(
       this, wxID_ANY, {}, wxDefaultPosition, wxDefaultSize /*, wxCB_READONLY*/);
 #if wxUSE_ACCESSIBILITY
@@ -365,6 +404,7 @@ void SnappingToolBar::Populate()
    mSnapToCombo->SetMinSize(wxSize(150, -1));
 
    sizer->Add(mSnapToCombo, 1, wxRIGHT | wxEXPAND, 5);
+#endif
 
 #ifndef AUDACITY_USE_ALICORN_SNAP_UI
    mSnapModeCheckBox->Bind(

@@ -236,6 +236,7 @@ void TranscriptionToolBar::Populate()
          //  6 steps using page up/down, and 60 using arrow keys
          .Line( 0.16722f )
          .Page( 1.6722f )
+         .AlicornPaint( true )
    );
    mPlaySpeedSlider->SetSizeHints(wxSize(100, 25), wxSize(2000, 25));
    mPlaySpeedSlider->Set(mPlaySpeed / 1000.0);

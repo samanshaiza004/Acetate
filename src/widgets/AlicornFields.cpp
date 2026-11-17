@@ -403,7 +403,7 @@ public:
          for (size_t i = 0; i < mOptions.size(); ++i) {
             if (event.GetEventObject() == mOptions[i]) {
                mChosen = static_cast<int>(i);
-               Dismiss();
+               DismissAndNotify();
                return;
             }
          }
@@ -411,15 +411,18 @@ public:
       });
       Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent &event) {
          if (event.GetKeyCode() == WXK_ESCAPE)
-            Dismiss();
+            DismissAndNotify();
          else
             event.Skip();
       });
    }
 
-   void ShowAt(const wxPoint &screen, int selected)
+   void ShowAt(const wxPoint &anchorOrigin, const wxSize &anchorSize, int selected)
    {
-      Position(screen, GetSize());
+      // wxPopupWindow::Position places the popup at origin + size, so pass
+      // the anchor's bottom-left corner and no extra offset.
+      (void)anchorSize;
+      Position(anchorOrigin, wxSize(0, 0));
       Popup(mOptions.empty()
          ? nullptr
          : mOptions[std::clamp<int>(selected, 0, mOptions.size() - 1)]);
@@ -518,7 +521,7 @@ void AlicornChoiceField::OpenPopup()
    mPopupOpen = true;
    auto *popup = safenew AlicornChoicePopup(
       this, mItems, mSelection, GetClientSize().x);
-   popup->ShowAt(ClientToScreen(wxPoint(0, GetClientSize().y)), mSelection);
+   popup->ShowAt(ClientToScreen(wxPoint(0, GetClientSize().y)), GetSize(), mSelection);
    Refresh(false);
 }
 
@@ -584,6 +587,254 @@ void AlicornChoiceField::OnSetFocus(wxFocusEvent &event)
 }
 
 void AlicornChoiceField::OnKillFocus(wxFocusEvent &event)
+{
+   Refresh(false);
+   event.Skip();
+}
+
+// --------------------------------------------------------------------------
+// AlicornMenuField
+
+namespace {
+class AlicornMenuPopup final : public wxPopupTransientWindow {
+public:
+   AlicornMenuPopup(
+      AlicornMenuField *owner,
+      const std::vector<AlicornMenuField::Entry> &entries,
+      const wxString &current, int minWidth)
+      : wxPopupTransientWindow(owner, wxBORDER_SIMPLE)
+      , mOwner{ owner }
+   {
+      constexpr size_t rowsPerColumn = 14;
+      const size_t columns = std::max<size_t>(
+         1, (entries.size() + rowsPerColumn - 1) / rowsPerColumn);
+      const size_t perColumn = (entries.size() + columns - 1) / columns;
+      int width = std::max(minWidth, 90);
+      for (const auto &entry : entries) {
+         wxCoord w{}, h{};
+         GetTextExtent(entry.heading ? entry.label.Upper() : entry.label, &w, &h);
+         width = std::max<int>(width, w + 24 + entry.depth * 10);
+      }
+      auto *outer = safenew wxBoxSizer(wxHORIZONTAL);
+      for (size_t c = 0; c < columns; ++c) {
+         auto *column = safenew wxBoxSizer(wxVERTICAL);
+         for (size_t i = c * perColumn;
+              i < std::min(entries.size(), (c + 1) * perColumn); ++i) {
+            const auto &entry = entries[i];
+            auto *option = safenew AlicornActionControl(
+               this, wxID_ANY,
+               entry.heading ? entry.label.Upper() : entry.label,
+               AUDACITY_ACTION_ICON_NONE, wxSize{ width, kHeight });
+            if (entry.heading)
+               option->SetEnabled(false);
+            else
+               option->SetPressed(entry.key == current);
+            column->Add(option, 0, wxEXPAND | wxALL, 1);
+            mOptions.push_back({ option, entry.key });
+         }
+         outer->Add(column, 0, wxEXPAND);
+      }
+      SetSizerAndFit(outer);
+      Bind(wxEVT_BUTTON, [this](wxCommandEvent &event) {
+         for (const auto &option : mOptions) {
+            if (event.GetEventObject() == option.first) {
+               mChosen = option.second;
+               mHasChosen = true;
+               DismissAndNotify();
+               return;
+            }
+         }
+         event.Skip();
+      });
+      Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent &event) {
+         if (event.GetKeyCode() == WXK_ESCAPE)
+            DismissAndNotify();
+         else
+            event.Skip();
+      });
+   }
+
+   void ShowAt(const wxPoint &anchorOrigin, const wxSize &anchorSize)
+   {
+      // wxPopupWindow::Position places the popup at origin + size, so pass
+      // the anchor's bottom-left corner and no extra offset.
+      (void)anchorSize;
+      Position(anchorOrigin, wxSize(0, 0));
+      Popup();
+   }
+
+protected:
+   void OnDismiss() override
+   {
+      wxPopupTransientWindow::OnDismiss();
+      auto *owner = mOwner;
+      const auto chosen = mChosen;
+      const auto hasChosen = mHasChosen;
+      owner->CallAfter([owner, chosen, hasChosen] {
+         owner->PopupClosed();
+         if (hasChosen)
+            owner->Choose(chosen);
+      });
+   }
+
+private:
+   AlicornMenuField *mOwner;
+   std::vector<std::pair<AlicornActionControl *, wxString>> mOptions;
+   wxString mChosen;
+   bool mHasChosen{};
+};
+}
+
+AlicornMenuField::AlicornMenuField(
+   wxWindow *parent, wxWindowID id, const wxPoint &pos, const wxSize &size)
+   : wxControl(parent, id, pos, size, wxBORDER_NONE | wxWANTS_CHARS)
+{
+   SetBackgroundStyle(wxBG_STYLE_PAINT);
+   SetInitialSize(size);
+   Bind(wxEVT_PAINT, &AlicornMenuField::OnPaint, this);
+   Bind(wxEVT_CHAR_HOOK, &AlicornMenuField::OnCharHook, this);
+   Bind(wxEVT_LEFT_DOWN, &AlicornMenuField::OnLeftDown, this);
+   Bind(wxEVT_SET_FOCUS, &AlicornMenuField::OnSetFocus, this);
+   Bind(wxEVT_KILL_FOCUS, &AlicornMenuField::OnKillFocus, this);
+}
+
+wxSize AlicornMenuField::DoGetBestSize() const
+{
+   return wxSize(150, kHeight);
+}
+
+void AlicornMenuField::SetEntries(std::vector<Entry> entries)
+{
+   mEntries = std::move(entries);
+   Refresh(false);
+}
+
+void AlicornMenuField::SetCurrentKey(const wxString &key)
+{
+   mCurrentKey = key;
+   Refresh(false);
+}
+
+wxString AlicornMenuField::CurrentLabel() const
+{
+   for (const auto &entry : mEntries)
+      if (!entry.heading && entry.key == mCurrentKey)
+         return entry.label;
+   return {};
+}
+
+bool AlicornMenuField::Enable(bool enable)
+{
+   const bool result = wxControl::Enable(enable);
+   Refresh(false);
+   return result;
+}
+
+void AlicornMenuField::Choose(const wxString &key)
+{
+   if (mHandler)
+      mHandler(key);
+}
+
+void AlicornMenuField::PopupClosed()
+{
+   mPopupOpen = false;
+   Refresh(false);
+}
+
+void AlicornMenuField::OpenPopup()
+{
+   if (mPopupOpen || !IsEnabled() || mEntries.empty())
+      return;
+   mPopupOpen = true;
+   auto *popup = safenew AlicornMenuPopup(
+      this, mEntries, mCurrentKey, GetClientSize().x);
+   popup->ShowAt(ClientToScreen(wxPoint(0, GetClientSize().y)), GetSize());
+   Refresh(false);
+}
+
+void AlicornMenuField::Step(int direction)
+{
+   int index = -1;
+   std::vector<size_t> items;
+   for (size_t i = 0; i < mEntries.size(); ++i) {
+      if (mEntries[i].heading)
+         continue;
+      if (mEntries[i].key == mCurrentKey)
+         index = static_cast<int>(items.size());
+      items.push_back(i);
+   }
+   if (items.empty())
+      return;
+   const int next = std::clamp(index + direction, 0, static_cast<int>(items.size()) - 1);
+   if (next == index)
+      return;
+   Choose(mEntries[items[next]].key);
+}
+
+void AlicornMenuField::OnPaint(wxPaintEvent &)
+{
+   wxPaintDC dc(this);
+   const auto size = GetClientSize();
+   if (size.x <= 0 || size.y <= 0)
+      return;
+   const bool enabled = IsEnabled();
+   const bool focused = enabled && (HasFocus() || mPopupOpen);
+   const auto colours = Colours(enabled);
+   const auto font = GetFont();
+   dc.SetFont(font);
+   const auto text = CurrentLabel();
+   const auto extent = dc.GetTextExtent(text.empty() ? wxString("0") : text);
+
+   AlicornScene scene;
+   Frame(scene, wxRect(0, 0, size.x, size.y), colours, focused);
+   ChevronDown(
+      scene, wxRect(size.x - kStepperWidth, 0, kStepperWidth, size.y), colours.text);
+   scene.Text(
+      wxRect(kTextPad, (size.y - extent.y) / 2,
+             std::max(1, size.x - kStepperWidth - kTextPad), extent.y),
+      text, colours.text, font);
+   if (!mScene.Draw(dc, wxRect(0, 0, size.x, size.y), scene)) {
+      dc.SetBackground(wxBrush(colours.background));
+      dc.Clear();
+      dc.SetTextForeground(colours.text);
+      dc.DrawText(text, kTextPad, (size.y - extent.y) / 2);
+   }
+}
+
+void AlicornMenuField::OnCharHook(wxKeyEvent &event)
+{
+   if (!HasFocus() || event.HasAnyModifiers()) {
+      event.Skip();
+      return;
+   }
+   switch (event.GetKeyCode()) {
+   case WXK_RETURN: case WXK_NUMPAD_ENTER: case WXK_SPACE:
+      OpenPopup(); return;
+   case WXK_UP: case WXK_NUMPAD_UP: case WXK_LEFT: case WXK_NUMPAD_LEFT:
+      Step(-1); return;
+   case WXK_DOWN: case WXK_NUMPAD_DOWN: case WXK_RIGHT: case WXK_NUMPAD_RIGHT:
+      Step(1); return;
+   default:
+      event.Skip();
+   }
+}
+
+void AlicornMenuField::OnLeftDown(wxMouseEvent &)
+{
+   if (!IsEnabled())
+      return;
+   SetFocus();
+   OpenPopup();
+}
+
+void AlicornMenuField::OnSetFocus(wxFocusEvent &event)
+{
+   Refresh(false);
+   event.Skip();
+}
+
+void AlicornMenuField::OnKillFocus(wxFocusEvent &event)
 {
    Refresh(false);
    event.Skip();

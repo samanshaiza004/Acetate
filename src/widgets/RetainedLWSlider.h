@@ -57,6 +57,29 @@ struct RetainedLWSlider {
                { left + slider.mRightX - 3, y + 2 }, text);
          }
       }
+      // Tick marks under the track (horizontal sliders), as LWSlider draws.
+      if (slider.mDrawTicks && slider.mOrientation == wxHORIZONTAL &&
+          slider.mWidthX > 1) {
+         const auto light = theTheme.Colour(clrSliderLight);
+         if (light != wxColour(60, 60, 60)) {
+            const auto dark = theTheme.Colour(clrSliderDark);
+            const int divs = (slider.mWidth - 1) / 10;
+            const double upp = divs / static_cast<double>(slider.mWidthX - 1);
+            double d = 0.0;
+            int intD = -1;
+            for (int p = 0; p <= slider.mWidthX; ++p) {
+               if (static_cast<int>(d) > intD) {
+                  intD = static_cast<int>(d);
+                  const int length = (intD == 0 || intD == divs) ? 5 : 3;
+                  const int x = left + slider.mLeftX + p;
+                  const int y = top + slider.mCenterY;
+                  scene.Fill(wxRect(x, y - length, 1, length), light);
+                  scene.Fill(wxRect(x + 1, y - length + 1, 1, length - 1), dark);
+               }
+               d += upp;
+            }
+         }
+      }
       const int thumbPos =
          slider.ValueToPosition(slider.mCurrentValue) + 1 - slider.mThumbWidth / 2;
       const float centerX = left + thumbPos + slider.mThumbWidth * 0.5f;

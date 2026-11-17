@@ -154,15 +154,23 @@ public:
             AUDACITY_ACTION_ICON_NONE,
             wxSize{ optionWidth, optionHeight });
          option->SetRadioOption(false);
-         option->Bind(wxEVT_BUTTON, [this, index](wxCommandEvent&) {
-            if (mOnSelection)
-               mOnSelection(static_cast<Mode>(index));
-            mRestoreAnchorFocus = true;
-            Dismiss();
-         });
          sizer->Add(option, 0, wxEXPAND | wxALL, 1);
          mOptions[index] = option;
       }
+      // AlicornActionControl sends wxEVT_BUTTON to its parent (this popup),
+      // so listen here and map the event object back to an option.
+      Bind(wxEVT_BUTTON, [this](wxCommandEvent& event) {
+         for (size_t index = 0; index < mOptions.size(); ++index) {
+            if (event.GetEventObject() == mOptions[index]) {
+               if (mOnSelection)
+                  mOnSelection(static_cast<Mode>(index));
+               mRestoreAnchorFocus = true;
+               DismissAndNotify();
+               return;
+            }
+         }
+         event.Skip();
+      });
 
       SetBackgroundColour(theTheme.Colour(clrMedium));
       SetSizerAndFit(sizer);
@@ -204,7 +212,7 @@ private:
       const auto key = event.GetKeyCode();
       if (key == WXK_ESCAPE) {
          mRestoreAnchorFocus = true;
-         Dismiss();
+         DismissAndNotify();
          return;
       }
 

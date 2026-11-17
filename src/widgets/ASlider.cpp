@@ -60,6 +60,10 @@ or ASlider.
 #include "valnum.h"
 
 #include "AllThemeResources.h"
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+#include "../alicorn/AlicornTimelineView.h"
+#include "RetainedLWSlider.h"
+#endif
 
 #if wxUSE_ACCESSIBILITY
 #include "WindowAccessible.h"
@@ -1724,6 +1728,7 @@ ASlider::ASlider( wxWindow * parent,
 
    mSliderIsFocused = false;
    mStyle = options.style;
+   mAlicornPaint = options.alicornPaint;
 
    mTimer.SetOwner(this);
 
@@ -1787,6 +1792,19 @@ void ASlider::OnPaint(wxPaintEvent & WXUNUSED(event))
       GetClientRect().Contains(
          ScreenToClient(
             ::wxGetMousePosition() ) );
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+   bool alicornPainted = false;
+   if (mAlicornPaint) {
+      if (!mAlicornScene)
+         mAlicornScene = std::make_shared<AlicornSceneView>();
+      const auto size = GetClientSize();
+      AlicornScene scene;
+      scene.Fill(wxRect(0, 0, size.x, size.y), GetBackgroundColour());
+      RetainedLWSlider::Draw(*mLWSlider, scene, highlighted);
+      alicornPainted = mAlicornScene->Draw(dc, wxRect(0, 0, size.x, size.y), scene);
+   }
+   if (!alicornPainted)
+#endif
    mLWSlider->OnPaint(dc, highlighted);
 
    if ( mSliderIsFocused )

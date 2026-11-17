@@ -26,6 +26,12 @@ class wxCheckBox;
 class wxComboCtrl;
 class wxSizeEvent;
 class AlicornSnapControl;
+#ifdef AUDACITY_USE_ALICORN_SNAP_UI
+class AlicornMenuField;
+using SnapToControl = AlicornMenuField;
+#else
+using SnapToControl = wxComboCtrl;
+#endif
 
 class AudacityProject;
 namespace AudacityCaliber { class SnapSession; }
@@ -64,7 +70,7 @@ class SnappingToolBar final : public ToolBar {
 #else
    wxWeakRef<wxCheckBox> mSnapModeCheckBox;
 #endif
-   wxWeakRef<wxComboCtrl> mSnapToCombo;
+   wxWeakRef<SnapToControl> mSnapToCombo;
 #ifdef AUDACITY_USE_ODIN_CALIBER_BACKEND
    std::shared_ptr<AudacityCaliber::SnapSession> mCaliberSnapSession;
 #endif

@@ -13,6 +13,7 @@
 #ifndef __AUDACITY_SLIDER__
 #define __AUDACITY_SLIDER__
 
+#include <memory>
 #include <wx/setup.h> // for wxUSE_* macros
 #include <wx/defs.h>
 #include <wx/timer.h> // member variable
@@ -273,6 +274,7 @@ class AUDACITY_DLL_API ASlider /* not final */ : public wxPanel
       bool alwaysHideTip{ false };
       bool popup{ true };
       bool canUseShift{ true };
+      bool alicornPaint{ false };
       float stepValue{ STEP_CONTINUOUS };
 
       float line{ 1.0 };
@@ -287,6 +289,8 @@ class AUDACITY_DLL_API ASlider /* not final */ : public wxPanel
       Options& AlwayHideTip( bool t) { alwaysHideTip = t; return * this; }
       Options& Popup( bool p ) { popup = p; return *this; }
       Options& CanUseShift( bool c ) { canUseShift = c; return *this; }
+      // Paint through a retained Alicorn scene in the opt-in build.
+      Options& AlicornPaint( bool a ) { alicornPaint = a; return *this; }
       Options& StepValue( float v ) { stepValue = v; return *this; }
 
       Options& Line( float l ) { line = l; return *this; }
@@ -347,6 +351,8 @@ public:
 
  private:
    std::unique_ptr<LWSlider> mLWSlider;
+   bool mAlicornPaint{ false };
+   std::shared_ptr<class AlicornSceneView> mAlicornScene;
    bool mSliderIsFocused;
    wxTimer mTimer;
 

@@ -3,6 +3,7 @@
 
 #ifdef AUDACITY_USE_ALICORN_SNAP_UI
 
+#include <functional>
 #include <vector>
 
 #include <wx/control.h>
@@ -96,6 +97,59 @@ private:
    AlicornSceneView mScene;
    std::vector<wxString> mItems;
    int mSelection{ -1 };
+   bool mPopupOpen{};
+};
+
+// Drop-down that presents a grouped list of choices (headings and nested
+// items flattened into columns), used where the wx build uses a popup menu.
+// The owner supplies the entries and learns about selections through a
+// handler; the control keeps only the display text and the current key.
+class AlicornMenuField final : public wxControl {
+public:
+   struct Entry {
+      wxString key;      // identifies the choice; empty for a heading
+      wxString label;
+      int depth{};       // heading nesting, for indentation
+      bool heading{};
+   };
+
+   AlicornMenuField(
+      wxWindow *parent, wxWindowID id, const wxPoint &pos, const wxSize &size);
+
+   void SetEntries(std::vector<Entry> entries);
+   void SetCurrentKey(const wxString &key);
+   wxString GetCurrentKey() const { return mCurrentKey; }
+   void SetSelectionHandler(std::function<void(const wxString &key)> handler)
+   {
+      mHandler = std::move(handler);
+   }
+   void SelectNone() {}
+
+   bool AcceptsFocus() const override { return IsEnabled(); }
+   bool Enable(bool enable = true) override;
+
+   // Called by the popup.
+   void Choose(const wxString &key);
+   void PopupClosed();
+
+protected:
+   wxSize DoGetBestSize() const override;
+
+private:
+   void OpenPopup();
+   void Step(int direction);
+   wxString CurrentLabel() const;
+
+   void OnPaint(wxPaintEvent &event);
+   void OnCharHook(wxKeyEvent &event);
+   void OnLeftDown(wxMouseEvent &event);
+   void OnSetFocus(wxFocusEvent &event);
+   void OnKillFocus(wxFocusEvent &event);
+
+   AlicornSceneView mScene;
+   std::vector<Entry> mEntries;
+   wxString mCurrentKey;
+   std::function<void(const wxString &key)> mHandler;
    bool mPopupOpen{};
 };
 
