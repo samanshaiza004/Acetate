@@ -6,10 +6,13 @@ package main
 // visible columns, then draws that bounded data through a retained GPU
 // surface. It does not copy sample buffers and it never runs audio or backend
 // work off the main thread.
+import "core:c"
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:path/filepath"
 import "core:strings"
+import "core:time"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
@@ -52,10 +55,23 @@ foreign backend {
 	acetate_backend_get_view :: proc(b: Backend, left, pixels_per_second: ^f64) ---
 	acetate_backend_set_view :: proc(b: Backend, left, pixels_per_second: f64) -> f64 ---
 	acetate_backend_zoom_limits :: proc(min_pps, max_pps: ^f64) ---
+		acetate_backend_pref_int :: proc(b: Backend, key: cstring, fallback: c.long) -> c.long ---
+		acetate_backend_set_pref_int :: proc(b: Backend, key: cstring, value: c.long) ---
+		acetate_backend_pref_string :: proc(b: Backend, key: cstring) -> cstring ---
+		acetate_backend_set_pref_string :: proc(b: Backend, key, value: cstring) ---
+		acetate_backend_recoverable_count :: proc(b: Backend) -> i32 ---
+		acetate_backend_recoverable_info :: proc(b: Backend, index: i32, modified_seconds, bytes: ^f64) -> i32 ---
+		acetate_backend_recover :: proc(b: Backend, index: i32) -> i32 ---
+		acetate_backend_discard_recoverable :: proc(b: Backend, index: i32) -> i32 ---
+		acetate_backend_was_recovered :: proc(b: Backend) -> i32 ---
 	acetate_backend_waveform :: proc(b: Backend, track, channel: i32, t0, t1: f64, columns: i32, min_max: [^]f32) -> i32 ---
 }
 
-EXPECTED_ABI :: 6
+EXPECTED_ABI :: 7
+DEFAULT_WINDOW_WIDTH :: 1100
+DEFAULT_WINDOW_HEIGHT :: 640
+MAX_RECOVERABLES_SHOWN :: 5
+SIZE_SAVE_TICKS :: 30 // about a second at REFRESH_PERIOD of window size stability
 MAX_COLUMNS :: 1024
 MAX_CHANNELS :: 2
 REFRESH_PERIOD :: 33 * 1_000_000
@@ -64,6 +80,7 @@ RULER_TICK_HEIGHT :: 10
 SCROLLBAR_HEIGHT :: 12
 LAYOUT_CHROME_WIDTH :: 40 // window padding plus panel padding, used before a surface is measured
 TEXT :: alicorn.Color{0.09, 0.12, 0.17, 1}
+TEXT_LIGHT :: alicorn.Color{0.93, 0.95, 0.98, 1}
 
 CMD_UNDO   :: host.Application_Command_ID(1)
 CMD_REDO   :: host.Application_Command_ID(2)
@@ -95,8 +112,29 @@ Channel_View :: struct {
 	drawn:    bool,
 }
 
+Recoverable_Entry :: struct {
+	modified: f64, // Unix seconds
+	bytes:    f64,
+}
+
+Recovery_Action :: enum {
+	None,
+	Recover,
+	Arm, // first click on Discard
+	Discard,
+}
+
 App :: struct {
 	backend:   Backend,
+	// Unsaved work left by earlier sessions, listed by the backend at start-up.
+	recoverables:   [dynamic]Recoverable_Entry,
+	discard_armed:  int, // entry waiting for a second click, -1 for none
+	pending_action: Recovery_Action, // applied on the next tick, never while building
+	pending_index:  int,
+	last_dir:       string, // directory of the last file dialog result
+	window_height:  int,
+	saved_width, saved_height: int,
+	size_stable:    int,
 	channels:  int,
 	rate:      f64,
 	duration:  f64,
@@ -250,7 +288,7 @@ WAV_FILTER := [1]host.Dialog_Filter{{name = "WAV audio", pattern = "wav"}}
 // host never runs a nested event loop for it.
 show_dialog :: proc(app: ^App, id: host.Dialog_ID) {
 	if app.dialog_open { return }
-	request := host.File_Dialog_Request{id = id}
+	request := host.File_Dialog_Request{id = id, initial_location = app.last_dir}
 	switch id {
 	case DIALOG_OPEN:
 		request.kind = .Open_File
@@ -292,9 +330,19 @@ dialog_app :: proc(state: rawptr, rt: ^alicorn.Runtime, result: ^host.File_Dialo
 		app.status = fmt.aprintf("File dialog failed: %s", result.error)
 	} else if result.status == .Accepted && len(result.paths) > 0 {
 		path := result.paths[0]
+		// The next dialog starts where this one ended; it is kept across runs.
+		directory := filepath.dir(path)
+		if directory != "" && directory != "." {
+			app.last_dir = strings.clone(directory)
+			acetate_backend_set_pref_string(app.backend, "LastDir", fmt.ctprintf("%s", directory))
+		}
+		delete(directory)
 		switch result.id {
 		case DIALOG_OPEN:
-			set_status_from_backend(app, fmt.aprintf("Opened %s", path), acetate_backend_open(app.backend, fmt.ctprintf("%s", path)))
+			// Read the result before building the message: it reports whether the
+			// file held unsaved changes from a crash.
+			status := acetate_backend_open(app.backend, fmt.ctprintf("%s", path))
+			set_status_from_backend(app, opened_text(app, path), status)
 		case DIALOG_SAVE_AS:
 			save_to(app, path)
 		case DIALOG_EXPORT:
@@ -328,6 +376,99 @@ sync_project :: proc(app: ^App, rt: ^alicorn.Runtime) {
 		app.channels, app.rate, app.duration, app.unsaved = channels, rate, duration, unsaved
 		if path != app.project_path { app.project_path = strings.clone(path) }
 		if rt != nil { alicorn.invalidate_root(rt, "project facts changed") }
+	}
+}
+
+opened_text :: proc(app: ^App, path: string) -> string {
+	if acetate_backend_was_recovered(app.backend) != 0 {
+		return fmt.aprintf("Opened %s · recovered unsaved changes from the last session; save to keep them", path)
+	}
+	return fmt.aprintf("Opened %s", path)
+}
+
+// ---- Recovery --------------------------------------------------------------
+
+refresh_recoverables :: proc(app: ^App) {
+	clear(&app.recoverables)
+	count := int(acetate_backend_recoverable_count(app.backend))
+	for index in 0 ..< count {
+		entry: Recoverable_Entry
+		if acetate_backend_recoverable_info(app.backend, i32(index), &entry.modified, &entry.bytes) == 0 {
+			append(&app.recoverables, entry)
+		}
+	}
+	app.discard_armed = -1
+}
+
+age_text :: proc(modified: f64) -> string {
+	seconds := f64(time.time_to_unix(time.now())) - modified
+	switch {
+	case seconds < 90:    return "moments ago"
+	case seconds < 5400:  return fmt.tprintf("%d min ago", int(math.round(seconds / 60)))
+	case seconds < 129600: return fmt.tprintf("%d h ago", int(math.round(seconds / 3600)))
+	}
+	return fmt.tprintf("%d days ago", int(math.round(seconds / 86400)))
+}
+
+size_text :: proc(bytes: f64) -> string {
+	if bytes >= 1048576 { return fmt.tprintf("%.1f MB", bytes / 1048576) }
+	return fmt.tprintf("%.0f KB", max(bytes / 1024, 1))
+}
+
+// Applies a click made while the description was built. Loading or deleting a
+// project is too heavy and too state-changing to do in the middle of a build.
+apply_pending_recovery :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	action, index := app.pending_action, app.pending_index
+	app.pending_action = .None
+	if action == .None { return }
+	switch action {
+	case .Arm:
+		app.discard_armed = index
+		alicorn.invalidate_root(rt, "discard armed")
+		return
+	case .Recover:
+		if status := acetate_backend_recover(app.backend, i32(index)); status == 0 {
+			app.status = "Recovered unsaved work; save it to keep it"
+			app.fit_pending = true
+		} else {
+			app.status = fmt.aprintf("Recovery failed: %s", acetate_backend_last_error(app.backend))
+		}
+	case .Discard:
+		if acetate_backend_discard_recoverable(app.backend, i32(index)) == 0 {
+			app.status = "Discarded the unsaved project"
+		} else {
+			app.status = fmt.aprintf("Discard failed: %s", acetate_backend_last_error(app.backend))
+		}
+	case .None:
+	}
+	refresh_recoverables(app)
+	sync_project(app, rt)
+	alicorn.invalidate_root(rt, "recovery")
+}
+
+// Offered only while the window holds no project, so recovering never replaces
+// work that is open. Discarding takes two clicks because it deletes for good.
+build_recovery :: proc(app: ^App, ctx: ^alicorn.UI) {
+	if app.channels > 0 || len(app.recoverables) == 0 { return }
+	if ui.panel(ctx, padding = 10, fill = ui.rgb(0x2b3347), label = "recovery") {
+		ui.text(ctx, "Unsaved work from an earlier session can be recovered", size = 16, color = TEXT_LIGHT)
+		shown := min(len(app.recoverables), MAX_RECOVERABLES_SHOWN)
+		for index in 0 ..< shown {
+			entry := app.recoverables[index]
+			if ui.row(ctx, key = u64(2000 + index), gap = 10, align = .Center) {
+				ui.text(ctx, fmt.tprintf("%s · %s", age_text(entry.modified), size_text(entry.bytes)), key = u64(2100 + index), color = TEXT_LIGHT)
+				if ui.button(ctx, "Recover", key = u64(2200 + index), width = 96) {
+					app.pending_action, app.pending_index = .Recover, index
+				}
+				armed := app.discard_armed == index
+				if ui.button(ctx, "Confirm" if armed else "Discard", key = u64(2300 + index), width = 96) {
+					app.pending_action, app.pending_index = .Discard if armed else .Arm, index
+				}
+			}
+		}
+		if len(app.recoverables) > shown {
+			ui.text(ctx, fmt.tprintf("and %d more", len(app.recoverables) - shown), color = TEXT_LIGHT)
+		}
 	}
 }
 
@@ -514,11 +655,12 @@ build_ruler :: proc(app: ^App, ctx: ^alicorn.UI, dpi_scale: f32) {
 build_app :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
-	logical_width, _logical_height: int,
+	logical_width, logical_height: int,
 	dpi_scale: f32,
 ) -> alicorn.Node_ID {
 	app := cast(^App)state
 	app.window_width = logical_width
+	app.window_height = logical_height
 	app.built_left, app.built_pps, app.built_width = app.view_left, app.pps, effective_width(app)
 	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
@@ -539,7 +681,8 @@ build_app :: proc(
 			ui.text(&ctx, app.status, color = TEXT)
 			ui.text(&ctx, app.selection_text, color = TEXT)
 		}
-		build_ruler(app, &ctx, dpi_scale)
+		build_recovery(app, &ctx)
+		if app.channels > 0 { build_ruler(app, &ctx, dpi_scale) }
 		for channel in 0 ..< app.channels {
 			label := fmt.tprintf("channel-%d-panel", channel)
 			if ui.panel(&ctx, key = u64(channel), grow = 1, padding = 4, clip = true, fill = ui.rgb(0x131822), label = label) {
@@ -552,19 +695,21 @@ build_app :: proc(
 				)
 			}
 		}
-		if ui.panel(&ctx, padding = 4, fill = ui.rgb(0x131822), label = "scrollbar-panel") {
-			app.scrollbar.surface = alicorn.gpu_geometry_surface(
-				&ctx,
-				"horizontal-scrollbar",
-				ui.layout_style(width = -1, height = SCROLLBAR_HEIGHT),
-				dpi_scale,
-				.Pointer,
-			)
+		if app.channels > 0 {
+			if ui.panel(&ctx, padding = 4, fill = ui.rgb(0x131822), label = "scrollbar-panel") {
+				app.scrollbar.surface = alicorn.gpu_geometry_surface(
+					&ctx,
+					"horizontal-scrollbar",
+					ui.layout_style(width = -1, height = SCROLLBAR_HEIGHT),
+					dpi_scale,
+					.Pointer,
+				)
+			}
+			ui.text(&ctx, fmt.tprintf(
+				"View %.3f – %.3f s · %.1f px/s · wheel scrolls with Shift, zooms with Ctrl/Cmd",
+				app.view_left, app.view_left + visible_span(app), app.pps,
+			), color = TEXT)
 		}
-		ui.text(&ctx, fmt.tprintf(
-			"View %.3f – %.3f s · %.1f px/s · wheel scrolls with Shift, zooms with Ctrl/Cmd",
-			app.view_left, app.view_left + visible_span(app), app.pps,
-		), color = TEXT)
 	}
 	alicorn.container_end(&ctx)
 	alicorn.end_frame(&ctx)
@@ -733,9 +878,26 @@ refresh_menu_state :: proc(app: ^App) {
 	app.view_items[3].state.enabled = app.sel1 > app.sel0
 }
 
+// Remembers the window size once it has stopped changing, so dragging a window
+// edge does not rewrite the preferences file on every tick.
+save_window_size :: proc(app: ^App) {
+	width, height := app.window_width, app.window_height
+	if width <= 0 || height <= 0 || (width == app.saved_width && height == app.saved_height) {
+		app.size_stable = 0
+		return
+	}
+	app.size_stable += 1
+	if app.size_stable < SIZE_SAVE_TICKS { return }
+	acetate_backend_set_pref_int(app.backend, "WindowWidth", c.long(width))
+	acetate_backend_set_pref_int(app.backend, "WindowHeight", c.long(height))
+	app.saved_width, app.saved_height, app.size_stable = width, height, 0
+}
+
 scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
 	app := cast(^App)state
 	acetate_backend_update(app.backend)
+	apply_pending_recovery(app, rt)
+	save_window_size(app)
 	if app.playing && acetate_backend_is_playing(app.backend) == 0 {
 		// The stream reached its end by itself.
 		app.playing = false
@@ -788,10 +950,6 @@ main :: proc() {
 		if index == 0 { continue }
 		if argument == "--smoke" { smoke = true } else { path = argument }
 	}
-	if path == "" {
-		fmt.eprintln("usage: acetate-host [--smoke] <audio file or .aup3 project>")
-		os.exit(2)
-	}
 	if acetate_backend_abi_version() != EXPECTED_ABI {
 		fmt.eprintln("backend ABI mismatch")
 		os.exit(1)
@@ -803,21 +961,37 @@ main :: proc() {
 		os.exit(1)
 	}
 	defer acetate_backend_destroy(app.backend)
-	cpath := fmt.ctprintf("%s", path)
-	if strings.has_suffix(strings.to_lower(path, context.temp_allocator), ".aup3") {
-		if status := acetate_backend_open(app.backend, cpath); status != 0 {
-			fmt.eprintfln("open failed (%d): %s", status, acetate_backend_last_error(app.backend))
-			os.exit(1)
-		}
-	} else if status := acetate_backend_import(app.backend, cpath); status != 0 {
-		fmt.eprintfln("import failed (%d): %s", status, acetate_backend_last_error(app.backend))
-		os.exit(1)
+	app.discard_armed = -1
+	app.last_dir = strings.clone(string(acetate_backend_pref_string(app.backend, "LastDir")))
+	window_width := clamp(int(acetate_backend_pref_int(app.backend, "WindowWidth", DEFAULT_WINDOW_WIDTH)), 480, 8192)
+	window_height := clamp(int(acetate_backend_pref_int(app.backend, "WindowHeight", DEFAULT_WINDOW_HEIGHT)), 320, 8192)
+	app.saved_width, app.saved_height = window_width, window_height
+	refresh_recoverables(&app)
+	if path == "" {
+		app.status = "Open a project (Cmd/Ctrl+O)"
+		if len(app.recoverables) > 0 { app.status = "Unsaved work from an earlier session can be recovered" }
 	} else {
-		// A fresh import starts fitted to the window; a saved project keeps its stored view.
-		app.fit_pending = true
+		cpath := fmt.ctprintf("%s", path)
+		if strings.has_suffix(strings.to_lower(path, context.temp_allocator), ".aup3") {
+			if status := acetate_backend_open(app.backend, cpath); status != 0 {
+				fmt.eprintfln("open failed (%d): %s", status, acetate_backend_last_error(app.backend))
+				os.exit(1)
+			}
+			if acetate_backend_was_recovered(app.backend) != 0 {
+				app.status = "Recovered unsaved changes from the last session; save to keep them"
+			}
+		} else if status := acetate_backend_import(app.backend, cpath); status != 0 {
+			fmt.eprintfln("import failed (%d): %s", status, acetate_backend_last_error(app.backend))
+			os.exit(1)
+		} else {
+			// A fresh import starts fitted to the window; a saved project keeps its stored view.
+			app.fit_pending = true
+		}
 	}
 	sync_project(&app, nil)
-	fmt.printfln("loaded %s: %d channel(s), %.0f Hz, %.3f s", path, app.channels, app.rate, app.duration)
+	if path != "" {
+		fmt.printfln("loaded %s: %d channel(s), %.0f Hz, %.3f s", path, app.channels, app.rate, app.duration)
+	}
 
 	app.edit_items = {
 		{kind = .Command, command = CMD_UNDO, label = "Undo", state = {enabled = false}, shortcut = {key = 'z', modifiers = {.Primary}}},
@@ -847,8 +1021,8 @@ main :: proc() {
 	host.Run(host.Application{
 		state = rawptr(&app),
 		title = "Acetate (Alicorn host spike)",
-		width = 1100,
-		height = 640,
+		width = window_width,
+		height = window_height,
 		build = build_app,
 		menus = app.menus[:],
 		on_menu_command = menu_command_app,

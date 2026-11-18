@@ -11,15 +11,20 @@ add_library( acetate-host-backend SHARED
    # Audacity's own PCM exporter, compiled in so the shim can run the real
    # WAV export without loading the mod-pcm module.
    "${CMAKE_SOURCE_DIR}/modules/import-export/mod-pcm/ExportPCM.cpp"
-   "${CMAKE_SOURCE_DIR}/tests/MockedPrefs.cpp"
-   "${CMAKE_SOURCE_DIR}/tests/MockedPrefs.h"
+   # Audacity's wxFileConfig-backed preferences, compiled in for the same
+   # reason: lib-wx-init as a whole drags in dialogs and windows.
+   "${CMAKE_SOURCE_DIR}/libraries/lib-wx-init/SettingsWX.cpp"
+   "${CMAKE_SOURCE_DIR}/libraries/lib-wx-init/SettingsWX.h"
 )
 
 target_include_directories( acetate-host-backend
    PRIVATE
-      "${CMAKE_SOURCE_DIR}/tests"
+      "${CMAKE_SOURCE_DIR}/libraries/lib-wx-init"
       "${CMAKE_CURRENT_SOURCE_DIR}/backend"
 )
+
+# SettingsWX.h marks its class for export from lib-wx-init, which is not linked.
+target_compile_definitions( acetate-host-backend PRIVATE WX_INIT_API= )
 
 target_link_libraries( acetate-host-backend
    PRIVATE

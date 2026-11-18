@@ -7,17 +7,31 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <stdexcept>
 #include <thread>
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#   define NOMINMAX
+#   include <windows.h>
+#   include <process.h>
+#else
+#   include <fcntl.h>
+#   include <sys/file.h>
+#   include <unistd.h>
+#endif
+
 #include <sndfile.h>
 #include <wx/app.h>
 
-#include "MockedPrefs.h"
+#include "SettingsWX.h"
 #include "Internat.h"
 #include "Prefs.h"
 #include "RealtimeEffectList.h"
@@ -34,6 +48,7 @@
 #include "TempDirectory.h"
 #include "UndoManager.h"
 #include "ViewInfo.h"
+#include <sqlite3.h>
 #include "sqlite/SQLiteUtils.h"
 #include "Tags.h"
 #include "Track.h"
@@ -146,12 +161,185 @@ private:
    std::deque<BasicUI::Action> mQueue;
    std::string mError;
 };
+
+namespace fs = std::filesystem;
+
+// An exclusive lock that the operating system drops when the process dies, so a
+// crashed host leaves its session directory unlocked. It is how a starting host
+// tells a live session from one it may offer to recover. Untested on Windows.
+class FileLock final {
+public:
+   FileLock() = default;
+   FileLock(const FileLock &) = delete;
+   FileLock &operator=(const FileLock &) = delete;
+   FileLock(FileLock &&other) noexcept { Take(other); }
+   FileLock &operator=(FileLock &&other) noexcept
+   {
+      if (this != &other) {
+         Release();
+         Take(other);
+      }
+      return *this;
+   }
+   ~FileLock() { Release(); }
+
+   bool Held() const
+   {
+#if defined(_WIN32)
+      return mHandle != INVALID_HANDLE_VALUE;
+#else
+      return mFd >= 0;
+#endif
+   }
+
+   bool Acquire(const fs::path &path)
+   {
+      Release();
+#if defined(_WIN32)
+      // Share mode 0 refuses every other open while this handle exists.
+      mHandle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+         nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+#else
+      const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+      if (fd < 0)
+         return false;
+      if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+         ::close(fd);
+         return false;
+      }
+      mFd = fd;
+#endif
+      return Held();
+   }
+
+   void Release()
+   {
+#if defined(_WIN32)
+      if (mHandle != INVALID_HANDLE_VALUE)
+         CloseHandle(mHandle);
+      mHandle = INVALID_HANDLE_VALUE;
+#else
+      if (mFd >= 0)
+         ::close(mFd);   // closing drops the flock
+      mFd = -1;
+#endif
+   }
+
+private:
+   void Take(FileLock &other)
+   {
+#if defined(_WIN32)
+      mHandle = std::exchange(other.mHandle, INVALID_HANDLE_VALUE);
+#else
+      mFd = std::exchange(other.mFd, -1);
+#endif
+   }
+#if defined(_WIN32)
+   HANDLE mHandle{ INVALID_HANDLE_VALUE };
+#else
+   int mFd{ -1 };
+#endif
+};
+
+// The host's own data: preferences and per-session working directories.
+fs::path HostDataDir()
+{
+   if (const char *override = std::getenv("ACETATE_HOST_DATA"))
+      if (*override)
+         return fs::path{ override };
+#if defined(_WIN32)
+   if (const wchar_t *appData = _wgetenv(L"APPDATA"))
+      return fs::path{ appData } / L"Acetate Host";
+#elif defined(__APPLE__)
+   if (const char *home = std::getenv("HOME"))
+      return fs::path{ home } / "Library" / "Application Support" / "Acetate Host";
+#else
+   if (const char *config = std::getenv("XDG_CONFIG_HOME"))
+      if (*config)
+         return fs::path{ config } / "acetate-host";
+   if (const char *home = std::getenv("HOME"))
+      return fs::path{ home } / ".config" / "acetate-host";
+#endif
+   std::error_code ec;
+   return fs::temp_directory_path(ec) / "acetate-host-data";
+}
+
+constexpr const char *kProjectExtension = ".aup3unsaved";
+
+// The working project Audacity creates for a session, if the directory has one.
+fs::path FindSessionProject(const fs::path &dir)
+{
+   std::error_code ec;
+   for (fs::directory_iterator it{ dir, ec }, end; !ec && it != end; it.increment(ec))
+      if (it->is_regular_file(ec) && it->path().extension() == kProjectExtension)
+         return it->path();
+   return {};
+}
+
+// Whether a session's project file holds an autosave document, that is, any
+// state worth recovering: a host that was only started and killed leaves an
+// empty working project. An unreadable file counts as content, because losing
+// something recoverable is worse than offering something empty.
+bool SessionHasContent(const fs::path &file)
+{
+   sqlite3 *db = nullptr;
+   if (sqlite3_open_v2(file.string().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr)
+       != SQLITE_OK) {
+      sqlite3_close(db);
+      return true;
+   }
+   bool content = true;
+   sqlite3_stmt *stmt = nullptr;
+   if (sqlite3_prepare_v2(db, "SELECT COUNT(1) FROM autosave;", -1, &stmt,
+          nullptr) == SQLITE_OK) {
+      if (sqlite3_step(stmt) == SQLITE_ROW)
+         content = sqlite3_column_int(stmt, 0) > 0;
+   }
+   sqlite3_finalize(stmt);
+   sqlite3_close(db);
+   return content;
+}
+
+// Removes a session directory once it no longer holds a project.
+void RemoveSessionIfEmpty(const fs::path &dir)
+{
+   if (dir.empty() || !FindSessionProject(dir).empty())
+      return;
+   std::error_code ec;
+   fs::remove_all(dir, ec);
+}
+
+struct Recoverable {
+   fs::path dir;
+   fs::path file;
+   double modified{};
+   double bytes{};
+};
+
+// Audacity's preference code reads and writes through gPrefs; here it is a
+// file in the host's data directory rather than the wx app's audacity.cfg.
+// SettingsWX is Audacity's own wxFileConfig-backed implementation.
+struct HostPrefs {
+   explicit HostPrefs(const fs::path &file)
+   {
+      InitPreferences(std::make_unique<SettingsWX>(
+         wxString::FromUTF8(file.string())));
+   }
+   ~HostPrefs() { FinishPreferences(); }
+   HostPrefs(const HostPrefs &) = delete;
+   HostPrefs &operator=(const HostPrefs &) = delete;
+};
+
+wxString HostKey(const char *key)
+{
+   return wxString{ "/AcetateHost/" } + wxString::FromUTF8(key);
+}
 }
 
 struct AcetateBackend {
-   // The headless spike keeps settings in memory instead of touching the
-   // user's Audacity preferences.
-   MockedPrefs prefs;
+   fs::path dataDir;
+   fs::path sessionsDir;
+   std::optional<HostPrefs> prefs;
    bool paInitialized{ false };
    std::shared_ptr<AudacityProject> project;
    unsigned long long revision{ 0 };
@@ -161,7 +349,16 @@ struct AcetateBackend {
    // does with mLastSavedTracks.
    std::shared_ptr<TrackList> lastSaved;
    std::string projectPath;
-   std::filesystem::path tempDir;
+   // This process's working directory, locked for its lifetime.
+   fs::path sessionDir;
+   FileLock sessionLock;
+   // Sessions left by earlier processes, found at start-up.
+   std::vector<Recoverable> recoverables;
+   // A recovered session whose project is still the open one.
+   fs::path claimDir;
+   FileLock claimLock;
+   bool recovered{ false };
+   std::string prefString;
    HeadlessServices services;
    BasicUI::Services *previousServices{};
 
@@ -175,18 +372,34 @@ struct AcetateBackend {
          wxAppConsole::SetInstance(&sApp);
       }
       previousServices = BasicUI::Install(&services);
-      // Sample blocks need a writable scratch directory; the application
-      // normally chooses one at start-up.
       std::error_code ec;
-      tempDir = std::filesystem::temp_directory_path(ec) /
-         ("acetate-host-" + std::to_string(reinterpret_cast<uintptr_t>(this)));
-      std::filesystem::create_directories(tempDir, ec);
-      const auto tempPath = wxString::FromUTF8(tempDir.string());
+      dataDir = HostDataDir();
+      sessionsDir = dataDir / "sessions";
+      fs::create_directories(sessionsDir, ec);
+      prefs.emplace(dataDir / "preferences.cfg");
+      // The bundled SQLite is built without auto-initialisation, and the scan
+      // below opens project files.
+      audacity::sqlite::Initialize();
+      ScanSessions();
+      // Sample blocks and the working project need a writable scratch
+      // directory; the application normally chooses one at start-up. Each host
+      // gets its own, locked while it runs. Another host may be creating its
+      // directory at the same moment and sweep ours as an empty leftover, so
+      // creation and locking are retried.
+      for (int attempt = 0; attempt < 3 && !sessionLock.Held(); ++attempt) {
+         sessionDir = sessionsDir / ("session-" + SessionStamp());
+         fs::create_directories(sessionDir, ec);
+         sessionLock.Acquire(sessionDir / "lock");
+      }
+      if (!sessionLock.Held())
+         throw std::runtime_error("could not create a session directory");
+      const auto tempPath = wxString::FromUTF8(sessionDir.string());
       TempDirectory::SetDefaultTempDir(tempPath);
       FileNames::UpdateDefaultPath(FileNames::Operation::Temp, tempPath);
+      // The directory is also stored in the preferences file, and
+      // TempDirectory caches what it read; make it read ours.
+      TempDirectory::ResetTempDir();
       paInitialized = Pa_Initialize() == paNoError;
-      // The bundled SQLite is built without auto-initialisation.
-      audacity::sqlite::Initialize();
       AudioIO::Init();
       project = AudacityProject::Create();
       // A temporary database backs the sample blocks, as for a new project.
@@ -204,17 +417,99 @@ struct AcetateBackend {
          lastSaved->Clear();
       lastSaved.reset();
       if (project) {
+         auto &io = ProjectFileIO::Get(*project);
+         auto &undo = UndoManager::Get(*project);
+         // A never-saved project with edits beyond its import is kept for
+         // recovery instead of being deleted with the session: there is no
+         // quit confirmation yet, so this is the only thing between a stray
+         // quit and lost work. CloseProject removes a temporary project only
+         // when it sits in the temp directory, so point that elsewhere first.
+         const bool keep = io.IsTemporary() && undo.UnsavedChanges() &&
+            undo.GetNumStates() > 2;
          // The application clears history before closing a project.
-         UndoManager::Get(*project).ClearStates();
-         ProjectFileIO::Get(*project).CloseProject();
+         undo.ClearStates();
+         if (keep) {
+            FileNames::UpdateDefaultPath(FileNames::Operation::Temp,
+               wxString::FromUTF8((dataDir / "retained").string()));
+            TempDirectory::ResetTempDir();
+         }
+         io.CloseProject();
+         if (keep) {
+            std::error_code ec;
+            fs::remove(dataDir / "retained", ec);   // only if empty
+         }
       }
       project.reset();
       AudioIO::Deinit();
       if (paInitialized)
          Pa_Terminate();
       BasicUI::Install(previousServices);
+      // Locks drop first so the directories can be removed on every platform.
+      sessionLock.Release();
+      RemoveSessionIfEmpty(sessionDir);
+      ReleaseClaim();
+   }
+
+   static std::string SessionStamp()
+   {
+      const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+         std::chrono::system_clock::now().time_since_epoch()).count();
+#if defined(_WIN32)
+      const auto pid = static_cast<long>(_getpid());
+#else
+      const auto pid = static_cast<long>(::getpid());
+#endif
+      return std::to_string(now) + "-" + std::to_string(pid);
+   }
+
+   // Lists session directories left by earlier processes: unlocked, and holding
+   // a project. Unlocked directories without one are leftovers and are removed.
+   void ScanSessions()
+   {
+      recoverables.clear();
       std::error_code ec;
-      std::filesystem::remove_all(tempDir, ec);
+      for (fs::directory_iterator it{ sessionsDir, ec }, end; !ec && it != end;
+           it.increment(ec)) {
+         const auto dir = it->path();
+         if (!it->is_directory(ec))
+            continue;
+         FileLock probe;
+         if (!probe.Acquire(dir / "lock"))
+            continue;   // a running host, or one that is being recovered
+         const auto file = FindSessionProject(dir);
+         if (file.empty() || !SessionHasContent(file)) {
+            // Nothing to recover: a leftover directory, or a host that was
+            // started and killed before any state was recorded.
+            probe.Release();
+            std::error_code removeError;
+            fs::remove_all(dir, removeError);
+            continue;
+         }
+         Recoverable entry;
+         entry.dir = dir;
+         entry.file = file;
+         const auto written = fs::last_write_time(file, ec);
+         if (!ec) {
+            const auto age = fs::file_time_type::clock::now() - written;
+            entry.modified = std::chrono::duration<double>(
+               (std::chrono::system_clock::now() - age).time_since_epoch())
+               .count();
+         }
+         entry.bytes = static_cast<double>(fs::file_size(file, ec));
+         recoverables.push_back(std::move(entry));
+      }
+      std::sort(recoverables.begin(), recoverables.end(),
+         [](const Recoverable &a, const Recoverable &b) {
+            return a.modified > b.modified;
+         });
+   }
+
+   void ReleaseClaim()
+   {
+      claimLock.Release();
+      if (!claimDir.empty())
+         RemoveSessionIfEmpty(claimDir);
+      claimDir.clear();
    }
 
    WaveTrack *Track(int index) const
@@ -671,6 +966,63 @@ void ClearProject(AudacityProject &project)
    UndoManager::Get(project).ClearStates();
    ProjectFileIO::Get(project).CloseProject();
 }
+
+// Replaces the current project with the file at `path`, as opening a file does
+// in the application: a fresh project with a temporary connection, then
+// LoadProject over it. Whether LoadProject honours an autosave document is
+// Audacity's own behaviour, and a project loaded from one is marked modified
+// by a "Project was recovered" state, as in ProjectFileManager::OpenFile. On
+// failure the current project is kept. Returns 0 or a non-zero status with
+// backend.error set.
+int LoadProjectFile(AcetateBackend &backend, const wxString &path)
+{
+   auto fresh = AudacityProject::Create();
+   auto &io = ProjectFileIO::Get(*fresh);
+   auto discard = [&] { ClearProject(*fresh); };
+   if (!io.OpenProject()) {
+      backend.error = "could not create a working project";
+      return 3;
+   }
+   auto parsed = io.LoadProject(path, false);
+   if (!parsed) {
+      backend.error = backend.services.TakeError();
+      if (backend.error.empty())
+         backend.error = io.GetLastError().Translation().utf8_str().data();
+      discard();
+      return 4;
+   }
+   auto &loadedTracks = TrackList::Get(*fresh);
+   auto snapshot = SnapshotLoaded(loadedTracks);
+   if (!FixTracks(loadedTracks)) {
+      backend.error = "the project file has damaged or missing tracks";
+      snapshot->Clear();
+      discard();
+      return 6;
+   }
+   parsed->Commit();
+   ProjectHistory::Get(*fresh).InitialState();
+   const bool recovered = io.IsRecovered();
+   if (recovered) {
+      // PushState also writes a fresh autosave document.
+      ProjectHistory::Get(*fresh).PushState(
+         XO("Project was recovered"), XO("Recover"));
+   }
+   // A project that was never saved has no project document in its file and
+   // stays an unsaved project; its file is not a user-visible path.
+   const std::string newPath = io.IsTemporary() ? std::string{}
+      : std::string{ path.utf8_str().data() };
+
+   // Success: retire the previous project.
+   if (backend.lastSaved)
+      backend.lastSaved->Clear();
+   ClearProject(*backend.project);
+   backend.project = std::move(fresh);
+   backend.lastSaved = std::move(snapshot);
+   backend.projectPath = newPath;
+   backend.recovered = recovered;
+   ++backend.revision;
+   return 0;
+}
 }
 
 int acetate_backend_save(AcetateBackend *backend, const char *utf8Path)
@@ -743,43 +1095,10 @@ int acetate_backend_open(AcetateBackend *backend, const char *utf8Path)
          backend->error = "the project file does not exist";
          return 3;
       }
-      // Same sequence as opening a file in the application: a fresh project
-      // with a temporary connection, then LoadProject over it.
-      auto fresh = AudacityProject::Create();
-      auto &io = ProjectFileIO::Get(*fresh);
-      auto discard = [&] { ClearProject(*fresh); };
-      if (!io.OpenProject()) {
-         backend->error = "could not create a working project";
-         return 3;
-      }
-      auto parsed = io.LoadProject(path, false);
-      if (!parsed) {
-         backend->error = backend->services.TakeError();
-         if (backend->error.empty())
-            backend->error = io.GetLastError().Translation().utf8_str().data();
-         discard();
-         return 4;
-      }
-      auto &loadedTracks = TrackList::Get(*fresh);
-      auto snapshot = SnapshotLoaded(loadedTracks);
-      if (!FixTracks(loadedTracks)) {
-         backend->error = "the project file has damaged or missing tracks";
-         snapshot->Clear();
-         discard();
-         return 6;
-      }
-      parsed->Commit();
-      ProjectHistory::Get(*fresh).InitialState();
-
-      // Success: retire the previous project.
-      if (backend->lastSaved)
-         backend->lastSaved->Clear();
-      ClearProject(*backend->project);
-      backend->project = std::move(fresh);
-      backend->lastSaved = std::move(snapshot);
-      backend->projectPath = utf8Path;
-      ++backend->revision;
-      return 0;
+      const int status = LoadProjectFile(*backend, path);
+      if (status == 0)
+         backend->ReleaseClaim();
+      return status;
    }
    catch (const std::exception &e) {
       backend->error = e.what();
@@ -892,4 +1211,147 @@ void acetate_backend_zoom_limits(double *minPps, double *maxPps)
       *minPps = ZoomInfo::GetMinZoom();
    if (maxPps)
       *maxPps = ZoomInfo::GetMaxZoom();
+}
+
+long acetate_backend_pref_int(
+   const AcetateBackend *backend, const char *key, long fallback)
+{
+   if (!backend || !key || !gPrefs)
+      return fallback;
+   return gPrefs->ReadLong(HostKey(key), fallback);
+}
+
+void acetate_backend_set_pref_int(AcetateBackend *backend, const char *key, long value)
+{
+   if (!backend || !key || !gPrefs)
+      return;
+   gPrefs->Write(HostKey(key), value);
+   gPrefs->Flush();
+}
+
+const char *acetate_backend_pref_string(AcetateBackend *backend, const char *key)
+{
+   if (!backend || !key || !gPrefs)
+      return "";
+   backend->prefString = gPrefs->Read(HostKey(key), wxString{}).utf8_str().data();
+   return backend->prefString.c_str();
+}
+
+void acetate_backend_set_pref_string(
+   AcetateBackend *backend, const char *key, const char *value)
+{
+   if (!backend || !key || !value || !gPrefs)
+      return;
+   gPrefs->Write(HostKey(key), wxString::FromUTF8(value));
+   gPrefs->Flush();
+}
+
+int acetate_backend_recoverable_count(const AcetateBackend *backend)
+{
+   return backend ? static_cast<int>(backend->recoverables.size()) : 0;
+}
+
+int acetate_backend_recoverable_info(
+   const AcetateBackend *backend, int index, double *modifiedSeconds,
+   double *bytes)
+{
+   if (!backend || index < 0 ||
+       index >= static_cast<int>(backend->recoverables.size()))
+      return 1;
+   const auto &entry = backend->recoverables[static_cast<size_t>(index)];
+   if (modifiedSeconds)
+      *modifiedSeconds = entry.modified;
+   if (bytes)
+      *bytes = entry.bytes;
+   return 0;
+}
+
+int acetate_backend_recover(AcetateBackend *backend, int index)
+{
+   if (!backend)
+      return 1;
+   backend->error.clear();
+   if (index < 0 || index >= static_cast<int>(backend->recoverables.size())) {
+      backend->error = "no such recoverable project";
+      return 3;
+   }
+   if (!CanEdit(*backend))
+      return 2;
+   try {
+      const auto entry = backend->recoverables[static_cast<size_t>(index)];
+      // Claim the session first: another host may be recovering it too.
+      FileLock claim;
+      if (!claim.Acquire(entry.dir / "lock")) {
+         backend->error = "another Acetate host is using that project";
+         return 3;
+      }
+      std::error_code ec;
+      if (!fs::exists(entry.file, ec)) {
+         backend->error = "the project file is gone";
+         return 3;
+      }
+      const int status = LoadProjectFile(
+         *backend, wxString::FromUTF8(entry.file.string()));
+      if (status != 0)
+         return status;
+      // The old claim, if any, was for the project just closed.
+      backend->ReleaseClaim();
+      backend->claimDir = entry.dir;
+      backend->claimLock = std::move(claim);
+      backend->recoverables.erase(
+         backend->recoverables.begin() + index);
+      return 0;
+   }
+   catch (const std::exception &e) {
+      backend->error = e.what();
+   }
+   catch (...) {
+      backend->error = "unexpected error while recovering";
+   }
+   return 7;
+}
+
+int acetate_backend_discard_recoverable(AcetateBackend *backend, int index)
+{
+   if (!backend)
+      return 1;
+   backend->error.clear();
+   if (index < 0 || index >= static_cast<int>(backend->recoverables.size())) {
+      backend->error = "no such recoverable project";
+      return 3;
+   }
+   const auto entry = backend->recoverables[static_cast<size_t>(index)];
+   // Only ever delete a directory this host listed from its own sessions
+   // directory.
+   if (entry.dir.parent_path() != backend->sessionsDir ||
+       entry.dir == backend->sessionDir || entry.dir == backend->claimDir) {
+      backend->error = "refusing to delete that directory";
+      return 3;
+   }
+   FileLock claim;
+   if (!claim.Acquire(entry.dir / "lock")) {
+      backend->error = "another Acetate host is using that project";
+      return 3;
+   }
+   std::error_code ec;
+   std::vector<fs::path> contents;
+   for (fs::directory_iterator it{ entry.dir, ec }, end; !ec && it != end;
+        it.increment(ec))
+      if (it->path().filename() != "lock")
+         contents.push_back(it->path());
+   for (const auto &path : contents)
+      fs::remove_all(path, ec);
+   claim.Release();
+   fs::remove_all(entry.dir, ec);
+   if (fs::exists(entry.dir, ec)) {
+      backend->error = "could not delete the project";
+      return 4;
+   }
+   backend->recoverables.erase(backend->recoverables.begin() + index);
+   return 0;
+}
+
+int acetate_backend_was_recovered(const AcetateBackend *backend)
+{
+   return backend && backend->recovered;
 }

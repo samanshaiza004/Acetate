@@ -18,7 +18,7 @@ extern "C" {
 typedef struct AcetateBackend AcetateBackend;
 
 // Bumped whenever the exported surface changes shape.
-#define ACETATE_BACKEND_ABI_VERSION 6
+#define ACETATE_BACKEND_ABI_VERSION 7
 
 ACETATE_BACKEND_API int acetate_backend_abi_version(void);
 
@@ -133,6 +133,51 @@ ACETATE_BACKEND_API double acetate_backend_set_view(
    AcetateBackend *backend, double left, double pixelsPerSecond);
 ACETATE_BACKEND_API void acetate_backend_zoom_limits(
    double *minPixelsPerSecond, double *maxPixelsPerSecond);
+
+// Preferences. Audacity's own preference code (gPrefs) is backed by a file in
+// the host's data directory, separate from the wx application's audacity.cfg:
+// ~/Library/Application Support/Acetate Host on macOS, %APPDATA%\Acetate Host
+// on Windows, $XDG_CONFIG_HOME/acetate-host elsewhere. The environment variable
+// ACETATE_HOST_DATA overrides the directory. The host stores its own values in
+// the same file under a private group. Reads fall back to the given default.
+ACETATE_BACKEND_API long acetate_backend_pref_int(
+   const AcetateBackend *backend, const char *key, long fallback);
+ACETATE_BACKEND_API void acetate_backend_set_pref_int(
+   AcetateBackend *backend, const char *key, long value);
+// Returns "" when unset. The pointer is valid until the next call of this
+// function.
+ACETATE_BACKEND_API const char *acetate_backend_pref_string(
+   AcetateBackend *backend, const char *key);
+ACETATE_BACKEND_API void acetate_backend_set_pref_string(
+   AcetateBackend *backend, const char *key, const char *value);
+
+// Recovery. Each running host keeps its working project in its own session
+// directory under the data directory, locked while the process lives. When a
+// host starts it lists the session directories whose lock is free and that
+// still hold a project (a crash, or a clean exit with unsaved edits) and
+// offers them. Nothing is deleted without an explicit discard.
+ACETATE_BACKEND_API int acetate_backend_recoverable_count(
+   const AcetateBackend *backend);
+// Modification time (seconds since the Unix epoch) and size in bytes of the
+// recoverable project at `index`. Returns 0 on success.
+ACETATE_BACKEND_API int acetate_backend_recoverable_info(
+   const AcetateBackend *backend, int index, double *modifiedSeconds,
+   double *bytes);
+// Replaces the current project with the recoverable one, using Audacity's own
+// recovery (LoadProject honours the autosave document). The result is marked
+// as having unsaved changes, as the app does. The project file stays where it
+// is until the project is saved elsewhere, so it can be recovered again if
+// the host exits before saving. Returns 0 on success; on failure the current
+// project is kept.
+ACETATE_BACKEND_API int acetate_backend_recover(
+   AcetateBackend *backend, int index);
+// Deletes the recoverable project at `index` for good. Returns 0 on success.
+ACETATE_BACKEND_API int acetate_backend_discard_recoverable(
+   AcetateBackend *backend, int index);
+// Non-zero when the last open or recover loaded unsaved changes from an
+// autosave document (a crash left them in the file).
+ACETATE_BACKEND_API int acetate_backend_was_recovered(
+   const AcetateBackend *backend);
 
 #ifdef __cplusplus
 }
